@@ -1,0 +1,12 @@
+//! Providers module for rllm-compatible agent framework.
+//!
+//! This module contains implementations of chat providers for various LLM backends.
+//! All providers implement rllm's ChatProvider trait for compatibility.
+
+pub mod openai;
+#[cfg(test)]
+mod test_streaming;
+pub mod tools;
+
+pub use openai::{OpenAIConfig, OpenAIProvider};
+pub use tools::{execute_tool, get_all_tools};

@@ -1,0 +1,1288 @@
+/* Comn Tiptap Editor - Markdown Styles */
+@import "highlight.js/styles/github-dark.css";
+/* Outer container, responsible for scrollbar */
+.comn-tiptap-editor {
+  display: block;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Inner content block, constrained to 680px and centered */
+.comn-tiptap-editor .editor-content {
+  position: relative;
+  box-sizing: border-box;
+  height: 100%;
+  overflow-y: auto;
+  /* Reserve space for the vertical scrollbar so the content area width
+   * never changes when the scrollbar appears or hides (prevents the
+   * ProseMirror width jitter described in the editor layout notes). */
+  scrollbar-gutter: stable;
+}
+
+/* Tiptap ProseMirror: fills .editor-content, no horizontal scrolling */
+.comn-tiptap-editor .ProseMirror {
+  display: block;
+  width: 100%;
+  min-height: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 0 2.5rem 10rem 2.5rem;
+  outline: none;
+  font-family: var(--app-font-family, 'Nunito Sans', 'Inter', -apple-system, 'Segoe UI', sans-serif, BlinkMacSystemFont);
+  font-size: var(--app-font-size, 15px);
+  line-height: var(--app-line-height, 1.6);
+  color: #333333;
+  background: transparent !important;
+  caret-color: #5262DC;
+  cursor: text;
+
+}
+
+.comn-tiptap-editor:focus .ProseMirror {
+  outline: none;
+}
+
+.comn-tiptap-editor .ProseMirror > *:not(.tiptap-datetime-widget):first-of-type {
+  margin-top: 0.5rem;
+}
+
+.comn-tiptap-editor .tiptap h1,
+.comn-tiptap-editor .tiptap h2,
+.comn-tiptap-editor .tiptap h3,
+.comn-tiptap-editor .tiptap h4,
+.comn-tiptap-editor .tiptap h5,
+.comn-tiptap-editor .tiptap h6 {
+  margin: 1.5rem 0 0.5rem 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.comn-tiptap-editor .tiptap h1 {
+  font-size: 1.9rem;
+  padding-bottom: 0.3rem;
+  color: #5262DC;
+}
+
+.comn-tiptap-editor .tiptap h2 {
+  font-size: 1.4rem;
+}
+
+.comn-tiptap-editor .tiptap h3 {
+  font-size: 1.15rem;
+}
+
+.comn-tiptap-editor .tiptap h4 {
+  font-size: 1.05rem;
+}
+
+.comn-tiptap-editor .tiptap p {
+  margin: 0 0 1rem 0;
+}
+
+.comn-tiptap-editor .tiptap p:empty,
+.comn-tiptap-editor .tiptap p:has(> br.ProseMirror-trailingBreak:only-child) {
+  min-height: 1.6em;
+}
+
+.comn-tiptap-editor .tiptap p:empty::before {
+  content: "\00a0";
+}
+
+.comn-tiptap-editor .tiptap strong {
+  font-weight: 700;
+}
+
+.comn-tiptap-editor .tiptap em {
+  font-style: italic;
+  font-weight: 300;
+}
+
+.comn-tiptap-editor .tiptap p code {
+  background: #e2e1e1;
+  border-radius: 0.1875rem;
+  padding: 0.2rem 0.4rem;
+  font-family: inherit;
+  font-size: 0.76rem;
+}
+
+.comn-tiptap-editor .tiptap pre  {
+  background: #ffffff;
+  border: 1px solid #e2e2e2;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem 1rem;
+  margin: 1rem 0;
+  font-family: inherit;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: visible;
+  line-height: 1.6;
+}
+
+.comn-tiptap-editor .tiptap pre code {
+  padding: 0;
+}
+
+/* Code Block Header (language selector + copy button) */
+.code-block-wrapper {
+  position: relative;
+  display: block;
+  background: transparent;
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+  position: relative;
+  z-index: 10;
+}
+
+.code-block-language-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0 0.5rem;
+  background: transparent;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: #666;
+  position: relative;
+}
+
+.code-block-language-selector:hover {
+  color: #949292;
+}
+
+.code-block-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  color: #888;
+}
+
+.code-block-copy-btn:hover {
+  background: #eee;
+  color: #333;
+}
+
+/* Code Block Language Dropdown */
+.code-block-language-dropdown {
+  position: absolute;
+  top: 36px !important;
+  left: 16px !important;
+  z-index: 100;
+  min-width: 120px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d0d0d0;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 0.25rem;
+}
+
+.code-block-language-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 0.8rem;
+  color: #333;
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: 0.5rem !important;
+}
+
+.code-block-language-dropdown-item:hover {
+  background: #f0f0f0;
+}
+
+.code-block-language-dropdown-item.active {
+  background: #e6e6e6;
+  font-weight: 500;
+}
+
+.code-block-copy-btn.copied {
+  color: #22c55e;
+  border-color: #22c55e;
+}
+
+.comn-tiptap-editor .tiptap blockquote {
+  border-left: 0.1875rem solid #ddd;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  color: #666;
+  font-style: italic;
+}
+
+.comn-tiptap-editor .tiptap ul,
+.comn-tiptap-editor .tiptap ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.comn-tiptap-editor .tiptap li {
+  margin: 0.25rem 0;
+  line-height: 1.6;
+}
+
+.comn-tiptap-editor .tiptap table td p,
+.comn-tiptap-editor .tiptap table th p {
+  margin-bottom: 0;
+}
+
+.comn-tiptap-editor .tiptap li p {
+  margin: 0;
+}
+
+.comn-tiptap-editor .tiptap ul {
+  list-style-type: disc;
+}
+
+.comn-tiptap-editor .tiptap ul ul {
+  list-style-type: circle;
+}
+
+.comn-tiptap-editor .tiptap mark {
+  background-color: #fef08a;
+  border-radius: 0.15rem;
+  padding: 0.1rem 0.2rem;
+}
+
+.comn-tiptap-editor .tiptap table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: auto;
+  width: 100%;
+  min-width: 60px;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+}
+
+.comn-tiptap-editor .tiptap table td,
+.comn-tiptap-editor .tiptap table th {
+  border: 1px solid #e0e0e0;
+  border-top: none;
+  border-left: none;
+  padding: 0.5rem;
+  min-width: 60px;
+  max-width: 600px;
+  width: auto;
+  vertical-align: top;
+}
+
+.comn-tiptap-editor .tiptap table th {
+  background: #f5f5f5;
+  font-weight: 600;
+  text-align: left;
+}
+
+.comn-tiptap-editor .tiptap table tr td:first-child,
+.comn-tiptap-editor .tiptap table tr th:first-child {
+  border-left: 1px solid #e0e0e0;
+}
+
+.comn-tiptap-editor .tiptap table tr:first-child td,
+.comn-tiptap-editor .tiptap table tr:first-child th {
+  border-top: 1px solid #e0e0e0;
+}
+
+.comn-tiptap-editor .tiptap table tr:first-child th:first-child {
+  border-top-left-radius: 8px;
+}
+
+.comn-tiptap-editor .tiptap table tr:first-child th:last-child {
+  border-top-right-radius: 8px;
+}
+
+.comn-tiptap-editor .tiptap table tr:last-child td:first-child {
+  border-bottom-left-radius: 8px;
+}
+
+.comn-tiptap-editor .tiptap table tr:last-child td:last-child {
+  border-bottom-right-radius: 8px;
+}
+
+/* Table Cell Selection Styles */
+.comn-tiptap-editor .tiptap .selectedCell {
+  background-color: rgba(82, 98, 220, 0.15) !important;
+}
+
+/* Column Resize Handle Styles
+ * prosemirror-tables inserts one .column-resize-handle widget per cell of the
+ * active column whenever the cursor is within ~5px of a column edge. Because
+ * all cells in a column share the same right boundary, the per-cell handles
+ * align pixel-perfectly and visually form a single continuous vertical line
+ * down the entire column edge. We make the default state visible (not just on
+ * direct hover) so the whole column edge is highlighted as soon as the user
+ * hovers near it. */
+.comn-tiptap-editor .tiptap .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  cursor: col-resize !important;
+  background: #5262DC;
+  opacity: 0.4;
+  z-index: 10;
+  pointer-events: auto !important;
+}
+
+.comn-tiptap-editor .tiptap .column-resize-handle:hover,
+.comn-tiptap-editor .tiptap .column-resize-handle.dragging {
+  background: #5262DC;
+  opacity: 0.8;
+}
+
+/* prosemirror-tables sets a `resize-cursor` class on the editor root whenever
+ * the mouse is within the column-resize detection zone (default 5px from a
+ * column edge). The default cursor: col-resize rule lives in
+ * prosemirror-tables/style/tables.css, but that stylesheet is not imported by
+ * this project, so we declare it here. This makes the entire editor area
+ * show the column-resize cursor whenever the user hovers near a column edge,
+ * not just the 2px handle widget itself. */
+.comn-tiptap-editor .tiptap.resize-cursor,
+.comn-tiptap-editor .tiptap.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+/* Note: prosemirror-tables adds a `column-resize-dragging` class to the cells
+ * themselves during drag (as a node decoration). We intentionally do NOT style
+ * that class — the column-edge highlight comes purely from the per-cell
+ * .column-resize-handle widgets, which already form a continuous line. */
+
+/* Table wrapper for resizable tables - enables horizontal scroll */
+.comn-tiptap-editor .tiptap .tableWrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+  position: relative;
+  display: block;
+  /* Enable touch scrolling on mobile */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure table cells have relative positioning for resize handle */
+.comn-tiptap-editor .tiptap table td,
+.comn-tiptap-editor .tiptap table th {
+  position: relative;
+}
+
+.comn-tiptap-editor .tiptap ul li::marker {
+  color: #5262DC;
+}
+
+/* Task List Styles */
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li > label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  appearance: none;
+  background-color: #fff;
+  border: 1px solid #5262DC;
+  border-radius: 6px;
+  position: relative;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li > label input[type="checkbox"]:checked {
+  background-color: transparent;
+  border-color: #666;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #666;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li > div {
+  flex: 1;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  color: #999;
+}
+
+.comn-tiptap-editor .tiptap ol {
+  list-style-type: decimal;
+}
+
+.comn-tiptap-editor .tiptap ol li::marker {
+  color: #5262DC;
+}
+
+.comn-tiptap-editor .tiptap img {
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+  margin-bottom: 1rem;
+}
+
+/* 图片加载失败占位样式 */
+.comn-tiptap-editor .tiptap img.error {
+  border: 1px dashed #ccc;
+  border-radius: 8px;
+  opacity: 1 !important;
+}
+
+/* 视频附件样式 */
+.comn-tiptap-editor .tiptap .tiptap-video-attachment {
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-video-attachment.is-selected {
+  outline: 1px solid #5262DC;
+  outline-offset: 0px;
+}
+
+
+.comn-tiptap-editor .tiptap .tiptap-video-attachment video {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+}
+
+/* File Attachment - Inline Document Card */
+.comn-tiptap-editor .tiptap .tiptap-file-attachment {
+  display: inline;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__card {
+  --file-attachment-color: #5262DC;
+  --file-attachment-hover-color: #6b78e8;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 0.9em;
+  vertical-align: baseline;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__card:hover {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__card:hover .tiptap-file-attachment__name {
+  color: var(--file-attachment-hover-color);
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  color: var(--file-attachment-color);
+  flex-shrink: 0;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment,
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__card,
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__card * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__name {
+  color: var(--file-attachment-color);
+  font-weight: 500;
+  cursor: default;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment.is-selected .tiptap-file-attachment__card {
+  background-color: #dee1ff;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-image-attachment {
+  display: block;
+}
+
+
+.comn-tiptap-editor .tiptap a {
+  color: #5262DC;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-link-selection-highlight {
+  background: rgba(82, 98, 220, 0.18);
+  border-radius: 2px;
+}
+
+/* Link hover tooltip - rendered into document.body to avoid panel clipping. */
+.tiptap-link-hover-tooltip {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #333;
+  color: #fff;
+  padding: 6px 6px 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: min(380px, calc(100vw - 16px));
+  opacity: 0;
+  pointer-events: auto;
+  transition: opacity 0.2s ease;
+  z-index: 2147483647;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+}
+
+.tiptap-link-hover-tooltip-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tiptap-link-hover-tooltip-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.tiptap-link-hover-tooltip-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.84);
+  background: transparent;
+  cursor: pointer;
+}
+
+.tiptap-link-hover-tooltip-button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.tiptap-link-hover-tooltip-button svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.comn-tiptap-editor .tiptap hr {
+  border: none;
+  border-top: 0.0625rem solid #eee;
+  margin: 1rem 0 2rem 0;
+}
+
+/* Tag node styling */
+.comn-tiptap-editor .tag-node {
+  color: #ffffff;
+  font-weight: 400;
+  font-size: 0.78rem;
+  cursor: pointer;
+  background: #6c7092;
+  border-radius: 8px;
+  line-height: 1.2;
+  padding: 2px 6px;
+  caret-color: #ffffff;
+}
+
+.comn-tiptap-editor .tag-node:hover {
+  background: #6b78e8;
+}
+
+/* Placeholder styling */
+.comn-tiptap-editor .tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: #aaa;
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* Drag Handle Styles */
+.comn-tiptap-editor .drag-handle {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5262DC;
+  pointer-events: none;
+}
+
+.comn-tiptap-editor .drag-handle:hover {
+  color: #3d4bb8;
+}
+
+/* Block selection highlight
+ * Toggled by the drag context menu when the user clicks the handle, so they
+ * can see which paragraph the floating menu's transform / delete actions
+ * apply to. We use a soft background + rounded radius + a left accent bar
+ * to read as a "row" indicator without overpowering the text.
+ *
+ * `transition` only animates the properties we change, so the caret blink
+ * and other ProseMirror-internal updates are not affected.
+ */
+.comn-tiptap-editor .ProseMirror .is-block-selected {
+  position: relative;
+  background-color: rgba(82, 98, 220, 0.06);
+  border-radius: 6px;
+  box-shadow: inset 3px 0 0 0 #5262DC;
+  transition:
+    background-color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+
+/* On hover while a block is "selected", intensify the background so the
+ * connection between the highlighted row and the floating menu reads clearly.
+ */
+.comn-tiptap-editor .ProseMirror .is-block-selected:hover {
+  background-color: rgba(82, 98, 220, 0.1);
+}
+
+/* Toolbar Styles */
+.comn-tiptap-toolbar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.comn-tiptap-toolbar.toolbar-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  animation: toolbarSlideUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.comn-tiptap-toolbar.toolbar-hidden {
+  opacity: 0;
+}
+
+@keyframes toolbarSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.comn-tiptap-toolbar .toolbar-content {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 5px 8px rgba(172, 172, 172, 0.12);
+  padding: 4px 8px;
+}
+
+/* Timestamp Row - non-editable header that scrolls with editor */
+.comn-tiptap-editor .timestamp-row {
+  font-size: 0.75rem;
+  color: #999;
+  padding: 0.5rem 0;
+  pointer-events: none;
+  user-select: none;
+  background: transparent;
+}
+
+.comn-tiptap-toolbar .toolbar-item-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.comn-tiptap-toolbar .toolbar-button {
+  padding: 6px 6px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #333;
+  transition: background-color 0.15s ease;
+  min-width: 28px;
+  text-align: center;
+}
+
+.comn-tiptap-toolbar .toolbar-button:hover {
+  background: #f0f0f0;
+}
+
+.comn-tiptap-toolbar .toolbar-button.active {
+  background: #e8ecf4;
+  color: #5262DC;
+}
+
+.comn-tiptap-toolbar .toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: #e0e0e0;
+  margin: 0 4px;
+}
+
+/* Table Bubble Menu Styles */
+.table-bubble-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
+  padding: 4px 6px;
+}
+
+.table-bubble-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #333;
+  transition: background-color 0.15s ease;
+}
+
+.table-bubble-menu button:hover {
+  background: #f0f0f0;
+}
+
+.table-bubble-menu button:active {
+  background: #e8ecf4;
+}
+
+.table-bubble-menu .menu-divider {
+  width: 1px;
+  height: 20px;
+  background: #e0e0e0;
+  margin: 0 4px;
+}
+
+/* Frontmatter Styles */
+.comn-tiptap-editor .frontmatter-container {
+  padding: 0px 0px;
+  border-bottom: 1px solid #ededed;
+  cursor: pointer;
+}
+
+.comn-tiptap-editor .frontmatter-container.selected {
+  outline: 2px solid #3b82f6;
+}
+
+.comn-tiptap-editor .frontmatter-container.editing {
+  outline: 2px solid #3b82f6;
+  background-color: #fff;
+}
+
+.comn-tiptap-editor .frontmatter-container [contenteditable] {
+  outline: none;
+}
+
+.table-bubble-menu .delete-table-btn:hover {
+  background: #ffebee;
+}
+
+/* Selection AI Bubble Menu Styles */
+.selection-ai-bubble-menu {
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(180deg, #fafafa 0%, #f0f0f0 100%);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  box-shadow:
+    0 4px 12px -4px rgba(15, 23, 42, 0.10),
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  padding: 0;
+  user-select: none;
+  white-space: nowrap;
+  -webkit-user-select: none;
+}
+
+.selection-ai-bubble-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #1f2937;
+  font-size: 12px;
+  line-height: 1.3;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.selection-ai-bubble-button:hover {
+  background: #e5e5e5;
+  color: #0f172a;
+}
+
+.selection-ai-bubble-button:active {
+  background: #d4d4d4;
+  transform: scale(0.98);
+}
+
+.selection-ai-bubble-icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+.selection-ai-bubble-label {
+  letter-spacing: 0.01em;
+}
+
+/* Link Bubble Menu Styles */
+.link-bubble-popup {
+  background: #333;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-width: 236px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+}
+
+.link-bubble-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.link-bubble-row + .link-bubble-row {
+  margin-top: 6px;
+}
+
+.link-bubble-text,
+.link-bubble-href {
+  flex: 1;
+  padding: 4px 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+  border-radius: 4px;
+}
+
+.link-bubble-text {
+  color: #ccc;
+}
+
+.link-bubble-href {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.link-bubble-href:focus {
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.link-bubble-save {
+  padding: 4px 12px;
+  border: none;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.link-bubble-save:hover {
+  background: #2563eb;
+}
+
+/* DateTime Widget decoration */
+.comn-tiptap-editor .tiptap-datetime-widget {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  padding-bottom: 4px;
+  opacity: 0.7;
+  user-select: none;
+  pointer-events: none;
+  text-align: center;
+}
+
+/* Doc Reference Styles */
+.comn-tiptap-editor .doc-reference {
+  display: inline-block;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 0.9em;
+  vertical-align: baseline;
+  margin: 0 2px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.comn-tiptap-editor .doc-reference:hover {
+  border-color: rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.comn-tiptap-editor .doc-reference-l,
+.comn-tiptap-editor .doc-reference-r {
+  display: inline-block;
+  color: var(--primary);
+  opacity: 0.35;
+  font-weight: 400;
+}
+
+.comn-tiptap-editor .doc-reference:hover .doc-reference-l,
+.comn-tiptap-editor .doc-reference:hover .doc-reference-r {
+  opacity: 0.6;
+}
+
+.comn-tiptap-editor .doc-reference-title {
+  font-weight: 500;
+}
+
+/* Doc Reference Dropdown */
+.doc-ref-dropdown {
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+/* Doc Reference Card (inline node view) */
+.doc-ref-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f5f7ff 0%, #e8ecf8 100%);
+  border: 1px solid rgba(82, 98, 220, 0.2);
+  box-shadow: 0 1px 3px rgba(82, 98, 220, 0.1);
+  cursor: pointer;
+  font-size: 0.85rem;
+  vertical-align: baseline;
+  transition: all 0.15s ease;
+}
+
+.doc-ref-card:hover {
+  background: linear-gradient(135deg, #f0f3ff 0%, #e4e9f8 100%);
+  border-color: rgba(82, 98, 220, 0.4);
+  box-shadow: 0 2px 6px rgba(82, 98, 220, 0.12);
+}
+
+.doc-ref-card-icon {
+  font-size: 1rem;
+}
+
+.doc-ref-card-name {
+  font-weight: 500;
+  color: #3d4bb8;
+}
+
+/* Mermaid Diagram Styles */
+.comn-tiptap-editor .mermaid-diagram-wrapper {
+  position: relative;
+  margin: 1rem 0;
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7ebe2;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.comn-tiptap-editor .mermaid-svg-container {
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.comn-tiptap-editor .mermaid-svg-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.comn-tiptap-editor .mermaid-toolbar {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 4px;
+  z-index: 10;
+}
+
+.comn-tiptap-editor .mermaid-edit-btn,
+.comn-tiptap-editor .mermaid-view-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.comn-tiptap-editor .mermaid-edit-btn:hover,
+.comn-tiptap-editor .mermaid-view-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.comn-tiptap-editor .mermaid-loading {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.comn-tiptap-editor .mermaid-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 1rem;
+  margin: 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.5rem;
+  color: #dc2626;
+  font-size: 0.85rem;
+}
+
+.comn-tiptap-editor .mermaid-error-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #fff;
+  font-weight: bold;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.comn-tiptap-editor .mermaid-editor {
+  width: 100%;
+  min-height: 120px;
+  padding: 1rem;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border: none;
+  background: #ffffff;
+  color: #1f2937;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.comn-tiptap-editor .mermaid-editor:focus {
+  outline: none;
+}
+
+.comn-tiptap-editor .mermaid-diagram-wrapper.mermaid-editing {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Search Result Highlight Styles */
+.comn-tiptap-editor .ProseMirror .search-result {
+  background-color: rgba(255, 213, 79, 0.4);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.comn-tiptap-editor .ProseMirror .search-result-current {
+  background-color: rgba(255, 193, 7, 0.6);
+  outline: 1px solid rgba(255, 152, 0, 0.8);
+}
+
+/* File Card Upload Styles */
+.comn-tiptap-editor .tiptap-upload-file {
+  margin: 1rem 0;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__card:hover {
+  background: #f1f3f5;
+  border-color: #dee2e6;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__card--selected {
+  border-color: #5262DC;
+  box-shadow: 0 0 0 2px rgba(82, 98, 220, 0.15);
+}
+
+.comn-tiptap-editor .tiptap-upload-file__icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e9ecef;
+  border-radius: 6px;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__icon-inner {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6c757d;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__meta {
+  font-size: 12px;
+  color: #6c757d;
+  margin-top: 2px;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__download {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #6c757d;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__download:hover {
+  background: #e9ecef;
+  color: #5262DC;
+}
+
+/* Markdown Source View */
+.markdown-source-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: #ffffff;
+}
+
+.markdown-source-view .monaco-editor {
+  height: 100% !important;
+}
+
+.markdown-source-view .monaco-editor .overflow-guard {
+  border-radius: 0;
+}

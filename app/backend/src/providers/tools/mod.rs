@@ -1,0 +1,121 @@
+//! Agent tools.
+
+use rllm::chat::Tool;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+
+mod filesystem;
+mod notebook;
+
+/// Tool result type for returning data from tool executions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolResult {
+    pub success: bool,
+    pub data: Option<serde_json::Value>,
+    pub error: Option<String>,
+}
+
+impl ToolResult {
+    pub fn success(data: impl Serialize) -> Self {
+        Self {
+            success: true,
+            data: Some(serde_json::to_value(data).unwrap_or(serde_json::Value::Null)),
+            error: None,
+        }
+    }
+
+    pub fn error(msg: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            data: None,
+            error: Some(msg.into()),
+        }
+    }
+}
+
+fn function_tool(name: &str, description: &str, parameters: serde_json::Value) -> Tool {
+    Tool {
+        tool_type: "function".to_string(),
+        function: rllm::chat::FunctionTool {
+            name: name.to_string(),
+            description: description.to_string(),
+            parameters,
+        },
+        cache_control: None,
+    }
+}
+
+/// Get all available tools registered to the agent.
+pub fn get_all_tools() -> Vec<Tool> {
+    vec![
+        notebook::list_notebooks_tool(),
+        notebook::get_notebook_detail_tool(),
+        filesystem::read_tool(),
+        filesystem::write_tool(),
+        filesystem::edit_tool(),
+        filesystem::ls_tool(),
+        filesystem::glob_tool(),
+        filesystem::grep_tool(),
+    ]
+}
+
+#[derive(Clone, Debug)]
+pub struct ToolScope {
+    allowed_roots: Vec<PathBuf>,
+}
+
+impl ToolScope {
+    pub fn from_memo_file(memo_file: &std::sync::RwLock<crate::memo_file::MemoFile>) -> Self {
+        let allowed_roots = memo_file
+            .read()
+            .map(|guard| guard.registered_notebook_paths())
+            .unwrap_or_default();
+        Self { allowed_roots }
+    }
+
+    pub fn is_allowed(&self, path: &Path) -> bool {
+        self.allowed_roots
+            .iter()
+            .any(|root| path_is_inside(path, root))
+    }
+}
+
+fn canonical_existing_or_parent(path: &Path) -> Option<PathBuf> {
+    if path.exists() {
+        return std::fs::canonicalize(path).ok();
+    }
+
+    let parent = path.parent()?;
+    let canonical_parent = std::fs::canonicalize(parent).ok()?;
+    Some(canonical_parent.join(path.file_name()?))
+}
+
+fn path_is_inside(path: &Path, root: &Path) -> bool {
+    let Some(path) = canonical_existing_or_parent(path) else {
+        return false;
+    };
+    let Some(root) = canonical_existing_or_parent(root) else {
+        return false;
+    };
+    path.starts_with(root)
+}
+
+/// Execute a tool by name with the given arguments.
+pub async fn execute_tool(
+    tool_name: &str,
+    arguments: &str,
+    memo_file: &std::sync::RwLock<crate::memo_file::MemoFile>,
+    read_snapshot: Option<&str>,
+) -> ToolResult {
+    let scope = ToolScope::from_memo_file(memo_file);
+    match tool_name {
+        "list_notebooks" | "get_notebook_detail" => {
+            notebook::execute_tool(tool_name, arguments, memo_file).await
+        }
+        "read" | "write" | "edit" | "ls" | "glob" | "grep" => {
+            filesystem::execute_tool(tool_name, arguments, read_snapshot, &scope).await
+        }
+        "bash" => ToolResult::error("Shell execution is disabled for AI agents"),
+        _ => ToolResult::error(format!("Unknown tool: {}", tool_name)),
+    }
+}
