@@ -1,11 +1,11 @@
 import { useRef, useEffect, useState } from "react";
 import { ChatMessage as ChatMessageComponent } from "./chat-message";
-import { Inputbox } from "./inputbox";
+import { Inputbox } from "./agent-inputbox";
 import { AgentWelcome } from "./agent-welcome";
 import { ChatHistory } from "./chat-history";
 import { useChatStore } from "../../../lib/store/chat-store";
 import { CaretDoubleRightIcon } from "@phosphor-icons/react";
-import { windows } from "../../../lib/tauri/client";
+import { aiConfig, windows } from "../../../lib/tauri/client";
 
 interface AgentRootProps {
 	onSendMessage?: (content: string, options?: { includeSelectedFile?: boolean }) => void;
@@ -20,24 +20,38 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const [loadingVisible, setLoadingVisible] = useState(false);
+	// 仅作为"未配置 → 跳转偏好设置"的 gate, 不再保留 agentId / agent instance:
+	// 后端 chat 时按需读 ai_config.json。
+	const [isAgentConfigured, setIsAgentConfigured] = useState<boolean | null>(null);
 	const headerHeightClass = isWindowsPlatform() ? "h-9" : "h-12";
 
 	const messages = useChatStore((state) => state.messages);
 	const isLoading = useChatStore((state) => state.isLoading);
-	const currentAgentId = useChatStore((state) => state.currentAgentId);
-	const savedAgentConfig = useChatStore((state) => state.savedAgentConfig);
 	const onSendMessageStore = useChatStore((state) => state.sendMessageStream);
-	const restoreAgent = useChatStore((state) => state.restoreAgent);
 	const threadId = useChatStore((state) => state.threadId);
 	const loadThread = useChatStore((state) => state.loadThread);
 	const loadThreadList = useChatStore((state) => state.loadThreadList);
 
-	// Restore agent on mount if config is saved
+	// 启动时探一下 ai_config.json 是否已填 model — 仅决定要不要直接跳偏好设置,
+	// 真正的 provider 由后端在 chat 时构建。
 	useEffect(() => {
-		if (savedAgentConfig && !currentAgentId) {
-			restoreAgent();
-		}
+		let cancelled = false;
+		(async () => {
+			try {
+				const cfg = await aiConfig.get();
+				if (!cancelled) {
+					setIsAgentConfigured(Boolean(cfg.model?.model));
+				}
+			} catch {
+				if (!cancelled) {
+					setIsAgentConfigured(false);
+				}
+			}
+		})();
 		loadThreadList();
+		return () => {
+			cancelled = true;
+		};
 	}, []);
 
 	useEffect(() => {
@@ -72,7 +86,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	};
 
 	const handleSendMessage = (content: string, options?: { includeSelectedFile?: boolean }) => {
-		if (!currentAgentId) {
+		if (isAgentConfigured === false) {
 			windows.openPreferences("agent");
 			return;
 		}

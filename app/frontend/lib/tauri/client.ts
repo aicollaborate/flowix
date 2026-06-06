@@ -2,6 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { UserSettings } from '../constants';
 import type { ChatMessage } from '../../types/agent';
 
 // ============================================
@@ -48,12 +49,27 @@ export function isInitialized(): boolean {
 // RPC Method Wrappers (for type safety)
 // ============================================
 
-// Settings
+// Preferences (后端 ~/.woop/preference.json, 见 backend/src/user_config.rs)
+export const preferences = {
+  get: () => invoke<UserSettings>('get_preference'),
+  set: (preference: UserSettings) => invoke<void>('set_preference', { preference }),
+};
+
+// AI Config (后端 ~/.woop/ai_config.json, 字段与 AgentConfig 镜像)
+// ─ 真源在后端文件; 偏好设置的智能体 tab 用 get/set 加载与保存。
+//   chat 调用走 backend AgentManager, 无需前端再 init。
+export const aiConfig = {
+  get: () => invoke<{ model: AgentConfig }>('get_ai_config'),
+  set: (config: AgentConfig) => invoke<void>('set_ai_config', { config: { model: config } }),
+};
+
+// 全局元数据 KV (~/.woop/global_meta_data.json, 用于 notebook 的 tag 顺序 / 隐藏状态等非偏好数据)
+// 后端 set_* 返回 Result<(), String>, 前端 await 即抛错。
 export const settings = {
   get: (key: string) => invoke<{ value: string | null }>('get_setting', { key }),
   getAll: () => invoke<{ settings: Record<string, string> }>('get_all_settings'),
-  set: (key: string, value: string) => invoke<boolean>('set_setting', { key, value }),
-  setMultiple: (settings: Record<string, string>) => invoke<boolean>('set_multiple_settings', { settings }),
+  set: (key: string, value: string) => invoke<void>('set_setting', { key, value }),
+  setMultiple: (settings: Record<string, string>) => invoke<void>('set_multiple_settings', { settings }),
   delete: (key: string) => invoke<boolean>('delete_setting', { key }),
 };
 
@@ -149,18 +165,20 @@ export const windows = {
 };
 
 // Agent
+//
+// 智能体配置以 ~/.woop/ai_config.json 为真源 ─ 见 aiConfig.set/get 上方。
+// 前端不再 init agent / 提交模型信息: chat / thread 调用时, 后端按需读取配置
+// 并惰性构建 provider 实例 (见 backend/src/agent.rs AgentManager::ensure_instance)。
+//
+// 字段命名: 后端 AiModelConfig 用 `#[serde(rename_all = "camelCase")]`, 所以
+// IPC 传过去必须是 camelCase ─ snake_case 会被 serde 静默丢弃, 字段全部回退
+// 到 #[serde(default)] = 空串, 表现就是"保存后刷新 apiKey/apiUrl 都空了"。
 export interface AgentConfig {
-  name: string;
-  api_url: string;
-  api_key: string;
+  provider: string;
+  modelName: string;
   model: string;
-  system_prompt: string;
-}
-
-export interface AgentInfo {
-  id: string;
-  name: string;
-  model: string;
+  apiUrl: string;
+  apiKey: string;
 }
 
 export interface ChatResponse {
@@ -183,16 +201,14 @@ export interface ThreadInfo {
 }
 
 export const agent = {
-  init: (config: AgentConfig) =>
-    invoke<AgentInfo>('init_agent', { config }),
-  chat: (agentId: string, threadId: string, message: AgentUserMessage) =>
-    invoke<ChatResponse>('chat_with_agent', { agentId, threadId, message }),
-  chatStream: (agentId: string, threadId: string, message: AgentUserMessage) =>
-    invoke<ChatResponse>('chat_with_agent_stream', { agentId, threadId, message }),
+  chat: (threadId: string, message: AgentUserMessage) =>
+    invoke<ChatResponse>('chat_with_agent', { threadId, message }),
+  chatStream: (threadId: string, message: AgentUserMessage) =>
+    invoke<ChatResponse>('chat_with_agent_stream', { threadId, message }),
   listThreads: () =>
     invoke<ThreadInfo[]>('thread_list'),
-  createThread: (agentId: string, title: string) =>
-    invoke<ThreadInfo>('thread_create', { agentId, title }),
+  createThread: (title: string) =>
+    invoke<ThreadInfo>('thread_create', { title }),
   getThread: (threadId: string) =>
     invoke<{ messages: ChatMessage[] }>('thread_get', { threadId }),
   deleteThread: (threadId: string) =>
@@ -217,5 +233,36 @@ export function stopListeningToAgentStream(): void {
   if (streamUnlisten) {
     streamUnlisten();
     streamUnlisten = null;
+  }
+}
+
+// ============================================
+// 跨窗口同步
+// ============================================
+// 后端 set_preference / set_ai_config 成功后 emit 'user-config-changed',
+// payload 是 "preference" | "ai_config" 指明哪个文件变了。
+// 其它窗口收到后从磁盘重新 load, 解决: 两个 Tauri 窗口各跑独立 React 树
+// + 独立 zustand store, 一边改动另一边看不到的问题。
+
+export type UserConfigChangeKind = 'preference' | 'ai_config';
+export type UserConfigChangeHandler = (kind: UserConfigChangeKind) => void;
+
+let userConfigUnlisten: UnlistenFn | null = null;
+
+export async function listenToUserConfigChanges(
+  handler: UserConfigChangeHandler,
+): Promise<void> {
+  if (userConfigUnlisten) {
+    userConfigUnlisten();
+  }
+  userConfigUnlisten = await listen<UserConfigChangeKind>('user-config-changed', (event) => {
+    handler(event.payload);
+  });
+}
+
+export function stopListeningToUserConfigChanges(): void {
+  if (userConfigUnlisten) {
+    userConfigUnlisten();
+    userConfigUnlisten = null;
   }
 }

@@ -5,8 +5,8 @@ import { MessageSquareDashed, SquarePen, Search, ChevronDown } from 'lucide-reac
 import { HashStraightIcon, HashIcon, DotsSixIcon, EyeIcon, EyeSlashIcon, ArrowLineUpIcon, CaretRightIcon } from "@phosphor-icons/react";
 import { useMemoStore, useDocumentStore, type MemoItem } from '../../../lib/store';
 import type { Notebook } from '../../../lib/store';
-import { useTauriRpc } from '../../../hooks/useTauriRpc';
-import { useMemoInsertAnimation } from '../../../hooks/useMemoInsertAnimation';
+import { useTauriRpc } from '../../../lib/hooks/useTauriRpc';
+import { useMemoInsertAnimation } from '../../../lib/hooks/useMemoInsertAnimation';
 import { files, notebooks as notebooksClient, settings as tauriSettings } from '../../../lib/tauri/client';
 import { toast } from '../../../lib/toast';
 import { joinNotebookMemoPath } from '../../../lib/path';
@@ -1023,7 +1023,7 @@ export function MemoList() {
                       selectedTodoKey={selectedTodoKey}
                       onSelect={handleSelectTodo}
                     />
-                    <hr className="border-t border-[var(--border)] opacity-50" />
+                    <hr className="mx-3 border-t border-[var(--border)] opacity-50" />
                   </div>
                 );
               })}
@@ -1046,7 +1046,7 @@ export function MemoList() {
                   onFavoriteToggle={handleFavoriteToggle}
                   onDelete={setDeleteMemo}
                 />
-                <hr className="border-t border-[var(--border)] opacity-50" />
+                <hr className="mx-3 border-t border-[var(--border)] opacity-50" />
               </div>
             ))}
           </div>

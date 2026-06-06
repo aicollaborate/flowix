@@ -1,7 +1,7 @@
 import React, { useState, useRef, forwardRef, useEffect, useMemo } from "react";
 import { Plus, X, FileText, Hash, Quote } from "lucide-react";
 import { PaperPlaneRight } from "@phosphor-icons/react";
-import { AITextarea } from "../../../components/ui/textarea";
+import { AITextarea } from "../../../components/ui/aitextarea";
 import { Button } from "../../../components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "../../../components/ui/popover";
 import {
@@ -188,7 +188,7 @@ export const Inputbox = forwardRef<HTMLTextAreaElement, InputboxProps>((props, r
 									value={input}
 									onChange={handleChange}
 									onKeyDown={handleKeyDown}
-									placeholder="Ask me anything .."
+									placeholder="问 AI 进行写作"
 									disabled={isLoading}
 									className="min-h-[44px] max-h-[180px] w-full overflow-auto resize-none border-0 p-0 bg-transparent placeholder:text-gray-600 placeholder:opacity-60 focus:outline-none focus:ring-0 text-[15px]"
 									style={{ fontFamily: 'var(--agent-font)' }}

@@ -1,12 +1,28 @@
-﻿import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { NodeView as ProseMirrorNodeView, EditorView, Decoration } from '@tiptap/pm/view';
 import type { ViewMutationRecord } from '@tiptap/pm/view';
 import { Node, InputRule, mergeAttributes } from '@tiptap/core';
 import { assetMarkdownUrl, assetUrl, decodeStorageKey, isVideoUrl } from './utils';
 
-export { decodeStorageKey, isVideoUrl };
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-// 鈹€鈹€鈹€ VideoView 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+/** Yield to a future idle frame; fall back to setTimeout(0) on older runtimes. */
+function whenIdle(cb: () => void, timeout = 200): number {
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+        return window.requestIdleCallback(cb, { timeout }) as unknown as number;
+    }
+    return setTimeout(cb, 0) as unknown as number;
+}
+
+function cancelIdle(handle: number): void {
+    if (typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(handle);
+    } else {
+        clearTimeout(handle);
+    }
+}
+
+// ─── VideoView ───────────────────────────────────────────────────────────────
 
 class VideoView implements ProseMirrorNodeView {
     dom: HTMLElement;
@@ -17,13 +33,18 @@ class VideoView implements ProseMirrorNodeView {
     decorations: readonly Decoration[];
     selected = false;
 
+    /** Tracks the last applied source so duplicate updates don't restart the load. */
+    private appliedSrc: string | null = null;
+    /** Handle for a pending src-set scheduled via whenIdle. */
+    private pendingLoadHandle: number | null = null;
+
     constructor(node: ProseMirrorNode, view: EditorView, getPos: () => number, decorations: readonly Decoration[]) {
         this.node = node;
         this.view = view;
         this.getPos = getPos;
         this.decorations = decorations;
 
-        const { src, title, storageMode, storageKey } = node.attrs;
+        const { title } = node.attrs;
 
         const wrapper = document.createElement('div');
         wrapper.className = 'tiptap-video-attachment';
@@ -34,33 +55,49 @@ class VideoView implements ProseMirrorNodeView {
         video.className = 'tiptap-video-attachment__video';
         video.controls = true;
         video.preload = 'metadata';
-        video.crossOrigin = 'anonymous';
-        video.src = storageMode === 'attachment' && storageKey ? assetUrl(storageKey) : src ?? '';
         video.style.maxHeight = '290px';
         if (title) video.title = title;
-
-        video.addEventListener('loadedmetadata', () => {
-            video.currentTime = 0.1;
-        });
-
-        video.addEventListener('seeked', () => {
-            if (video.poster) return;
-            try {
-                const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth || 320;
-                canvas.height = video.videoHeight || 180;
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    video.poster = canvas.toDataURL('image/jpeg', 0.8);
-                }
-            } catch {
-                // cross-origin video 鈥?poster generation failed, ignore
-            }
-        });
+        // No poster generation, no currentTime seek: a poster would force a
+        // synchronous JPEG encode + base64 string on the main thread, and the
+        // seek would force the browser to download media data even though we
+        // only asked for metadata. With preload=metadata the <video> shows the
+        // default black surface + native controls until the user plays it,
+        // which keeps setContent() fast and clickable.
 
         wrapper.appendChild(video);
         this.dom = wrapper;
+
+        this.applySrc(video, node.attrs as Record<string, any>);
+    }
+
+    /**
+     * Apply a new src to the <video>, but only if it actually changed. The actual
+     * `video.src = ...` assignment is scheduled on a future idle frame so we
+     * never block the current task (which is typically the editor's setContent).
+     */
+    private applySrc(video: HTMLVideoElement, attrs: Record<string, any>): void {
+        const nextSrc = attrs.storageMode === 'attachment' && attrs.storageKey
+            ? assetUrl(attrs.storageKey)
+            : (attrs.src ?? '');
+
+        if (nextSrc === this.appliedSrc) return;
+        this.appliedSrc = nextSrc;
+
+        if (this.pendingLoadHandle !== null) {
+            cancelIdle(this.pendingLoadHandle);
+            this.pendingLoadHandle = null;
+        }
+
+        if (!nextSrc) {
+            video.removeAttribute('src');
+            return;
+        }
+
+        this.pendingLoadHandle = whenIdle(() => {
+            this.pendingLoadHandle = null;
+            if (!video.isConnected) return;                // view torn down
+            video.src = nextSrc;
+        });
     }
 
     update(node: ProseMirrorNode): boolean {
@@ -68,12 +105,9 @@ class VideoView implements ProseMirrorNodeView {
         this.node = node;
 
         const video = this.dom.querySelector('video');
-        if (video) {
-            video.src = node.attrs.storageMode === 'attachment' && node.attrs.storageKey
-                ? assetUrl(node.attrs.storageKey)
-                : node.attrs.src ?? '';
-            if (node.attrs.title) video.title = node.attrs.title;
-        }
+        if (!video) return true;
+        if (node.attrs.title) video.title = node.attrs.title;
+        this.applySrc(video, node.attrs as Record<string, any>);
         return true;
     }
 
@@ -117,11 +151,20 @@ class VideoView implements ProseMirrorNodeView {
     }
 
     destroy(): void {
-        // Clean up blob URL if needed
+        if (this.pendingLoadHandle !== null) {
+            cancelIdle(this.pendingLoadHandle);
+            this.pendingLoadHandle = null;
+        }
+
+        const video = this.dom.querySelector('video');
+        if (video) {
+            video.removeAttribute('src');
+            video.load();
+        }
     }
 }
 
-// 鈹€鈹€鈹€ VideoAttachment Node 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ─── VideoAttachment Node ────────────────────────────────────────────────────
 
 export const VideoAttachment = Node.create({
     name: 'videoAttachment',
@@ -255,7 +298,7 @@ export const VideoAttachment = Node.create({
             return -1;
         },
         tokenize(src: string): any {
-            // src should start with '[' 鈥?if not, this isn't a video link
+            // src should start with '[' — if not, this isn't a video link
             if (!src.startsWith('[')) return undefined;
             const closeBracket = src.indexOf(']');
             if (closeBracket === -1) return undefined;
@@ -329,4 +372,3 @@ export const VideoAttachment = Node.create({
         return `[${title || ''}](${videoSrc})`;
     },
 });
-

@@ -31,7 +31,7 @@ Roles: background, foreground, primary, secondary, muted, accent, border, ring *
 		--secondary: #5f7ba0;
 		--secondary-foreground: oklch(0.21 0.006 285.885);
 
-		--muted: oklch(0.98 0.001 197.1);
+		--muted: oklch(91.174% 0.00166 148.475);
 		--muted-foreground: #979797;
 
 		--accent: #f3f5f6;
@@ -45,6 +45,12 @@ Roles: background, foreground, primary, secondary, muted, accent, border, ring *
 		--input: oklch(0.925 0.005 214.3);
 		--ring: oklch(0.723 0.014 214.4);
 		--outline-ring: oklch(0.723 0.014 214.4);
+
+		/* Lighter than --border. Reserved for non-interactive separators
+		 * (title bar bottom, sidebar right, section header underline).
+		 * Keep distinct from --border so input/select affordance is
+		 * preserved when dividers are tuned down. */
+		--divider: oklch(0.955 0.003 214.3);
 
 		--radius: 0.625rem;
 

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { tags } from '../tauri/client';
-import { STORAGE_KEYS } from '../../constants';
+import { STORAGE_KEYS } from '../constants';
 
 export interface MemoTagItem {
   id: string;

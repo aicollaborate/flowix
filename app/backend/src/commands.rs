@@ -1,17 +1,23 @@
-use crate::agent::{AgentChatResponse, AgentInfo, AgentInitConfig, AgentManager, AgentUserMessage};
-use crate::db::Database;
+use crate::agent::{
+    AgentChatResponse, AgentManager, AgentUserMessage, DEFAULT_AGENT_ID,
+};
+use crate::global_meta_data::GlobalMetaData;
 use crate::memo_file::{Memo, MemoFile, Notebook, TodoItem};
 use crate::threads::{ChatMessage, ThreadInfo, ThreadManager};
+use crate::user_config::{AiConfigFile, PreferenceFile, UserConfigStore};
 use base64::Engine;
 use serde::Serialize;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
-use tauri::{Manager, State};
+use std::sync::{Arc, RwLock};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct AppState {
-    pub db: Database,
+    pub user_config: Arc<UserConfigStore>,
+    /// 全局元数据 KV (notebook tag 顺序、隐藏状态等)。
+    /// 存 `~/.woop/global_meta_data.json`, 替代旧版 SQLite `app.db`。
+    pub global_meta_data: GlobalMetaData,
     pub memo_file: RwLock<MemoFile>,
     pub agent_manager: tokio::sync::RwLock<AgentManager>,
     pub thread_manager: tokio::sync::RwLock<ThreadManager>,
@@ -188,6 +194,54 @@ fn unique_attachment_path(attachments_dir: &Path, requested_name: &str) -> Resul
 
 // ==================== Settings Commands ====================
 
+/// 跨窗口同步事件 — 任一窗口成功写入偏好 / AI 配置后 emit, 其它窗口
+/// (主窗口 / 偏好窗口 / 未来的多窗口) 收到后从磁盘重新 load。
+/// 解决: 两个 Tauri 窗口各跑独立 React 树 + 独立 zustand store, 一边
+/// 改动另一边看不到的问题。
+const USER_CONFIG_CHANGED_EVENT: &str = "user-config-changed";
+
+/// 用户偏好 (preference.json) — 走 ~/.woop/preference.json
+#[tauri::command]
+pub fn get_preference(state: State<AppState>) -> PreferenceFile {
+    state.user_config.get_preference()
+}
+
+#[tauri::command]
+pub fn set_preference(
+    preference: PreferenceFile,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    state
+        .user_config
+        .set_preference(preference)
+        .map(|_| app.emit(USER_CONFIG_CHANGED_EVENT, "preference").map_err(|e| e.to_string()))
+        .map_err(|e| e.to_string())?
+}
+
+/// 智能体配置 (ai_config.json) — 走 ~/.woop/ai_config.json
+#[tauri::command]
+pub fn get_ai_config(state: State<AppState>) -> AiConfigFile {
+    state.user_config.get_ai_config()
+}
+
+#[tauri::command]
+pub fn set_ai_config(
+    config: AiConfigFile,
+    state: State<AppState>,
+    app: AppHandle,
+) -> Result<(), String> {
+    state
+        .user_config
+        .set_ai_config(config)
+        .map(|_| app.emit(USER_CONFIG_CHANGED_EVENT, "ai_config").map_err(|e| e.to_string()))
+        .map_err(|e| e.to_string())?
+}
+
+// ==================== App State Commands (KV 存储, 非偏好) ====================
+// 用于 memo-list 存每个 notebook 的 tag 顺序 / 隐藏状态等。
+// 保留原 settings.* 命令名 + 旧签名, 避免破坏前端调用方。
+
 #[derive(Serialize)]
 pub struct GetSettingResponse {
     pub value: Option<String>,
@@ -196,7 +250,7 @@ pub struct GetSettingResponse {
 #[tauri::command]
 pub fn get_setting(key: String, state: State<AppState>) -> GetSettingResponse {
     GetSettingResponse {
-        value: state.db.get_user_setting(&key),
+        value: state.global_meta_data.get(&key),
     }
 }
 
@@ -207,34 +261,35 @@ pub struct GetAllSettingsResponse {
 
 #[tauri::command]
 pub fn get_all_settings(state: State<AppState>) -> GetAllSettingsResponse {
-    let settings = state.db.get_all_user_settings();
     let mut map = std::collections::HashMap::new();
-    for s in settings {
-        map.insert(s.key, s.value);
+    for (k, v) in state.global_meta_data.get_all() {
+        map.insert(k, v);
     }
     GetAllSettingsResponse { settings: map }
 }
 
 #[tauri::command]
-pub fn set_setting(key: String, value: String, state: State<AppState>) -> bool {
-    state.db.set_user_setting(&key, &value);
-    true
+pub fn set_setting(key: String, value: String, state: State<AppState>) -> Result<(), String> {
+    // 现有 set/delete 是 fire-and-forget, 内部已 warn 但不返回错误。
+    // 这里返回 Ok 让前端能 await; 真正的磁盘错误仍在 tracing 日志里。
+    state.global_meta_data.set(&key, &value);
+    Ok(())
 }
 
 #[tauri::command]
 pub fn set_multiple_settings(
     settings: std::collections::HashMap<String, String>,
     state: State<AppState>,
-) -> bool {
+) -> Result<(), String> {
     for (key, value) in settings {
-        state.db.set_user_setting(&key, &value);
+        state.global_meta_data.set(&key, &value);
     }
-    true
+    Ok(())
 }
 
 #[tauri::command]
-pub fn delete_setting(key: String, state: State<AppState>) -> bool {
-    state.db.delete_user_setting(&key)
+pub fn delete_setting(key: String, state: State<AppState>) -> Result<bool, String> {
+    Ok(state.global_meta_data.delete(&key))
 }
 
 // ==================== Memo Commands ====================
@@ -1075,20 +1130,14 @@ pub fn write_export_file(file_path: String, content: String) -> bool {
 }
 
 // ==================== Agent Commands ====================
-
-#[tauri::command]
-pub async fn init_agent(
-    config: AgentInitConfig,
-    state: State<'_, AppState>,
-) -> Result<AgentInfo, String> {
-    let manager = state.agent_manager.read().await;
-    manager.create_agent(config).await
-}
+//
+// Agent 的配置真源是 ~/.woop/ai_config.json (经 `set_ai_config` 命令落盘)。
+// 后端按需从 `UserConfigStore` 拉取并在 `AgentManager` 里缓存 provider 实例,
+// 前端不再 init agent / 提交模型信息, 只发起 chat / thread 操作。
 
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn chat_with_agent(
-    agentId: String,
     threadId: String,
     message: AgentUserMessage,
     state: State<'_, AppState>,
@@ -1096,7 +1145,7 @@ pub async fn chat_with_agent(
 ) -> Result<AgentChatResponse, String> {
     let manager = state.agent_manager.read().await;
     manager
-        .chat(&agentId, &threadId, message, &state, &app_handle)
+        .chat(&threadId, message, &state, &app_handle)
         .await
         .map(|response| AgentChatResponse { response })
 }
@@ -1104,31 +1153,24 @@ pub async fn chat_with_agent(
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn chat_with_agent_stream(
-    agentId: String,
     threadId: String,
     message: AgentUserMessage,
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<AgentChatResponse, String> {
     tracing::info!(
-        "[Command] chat_with_agent_stream called for agent: {}",
-        agentId
+        "[Command] chat_with_agent_stream called for thread: {}",
+        threadId
     );
     let manager = state.agent_manager.read().await;
     let result = manager
-        .chat_stream(&agentId, &threadId, message, &state, &app_handle)
+        .chat_stream(&threadId, message, &state, &app_handle)
         .await;
     tracing::info!(
         "[Command] chat_with_agent_stream result: {:?}",
         result.is_ok()
     );
     result.map(|response| AgentChatResponse { response })
-}
-
-#[tauri::command]
-pub async fn list_agents(state: State<'_, AppState>) -> Result<Vec<AgentInfo>, String> {
-    let manager = state.agent_manager.read().await;
-    Ok(manager.list_agents().await)
 }
 
 // ==================== Thread Commands ====================
@@ -1141,12 +1183,14 @@ pub async fn thread_list(state: State<'_, AppState>) -> Result<Vec<ThreadInfo>, 
 
 #[tauri::command]
 pub async fn thread_create(
-    agent_id: String,
     title: String,
     state: State<'_, AppState>,
 ) -> Result<ThreadInfo, String> {
     let manager = state.thread_manager.read().await;
-    manager.create_thread(agent_id, title).await
+    // agent_id 列保留以兼容旧 schema, 统一用 DEFAULT_AGENT_ID 占位 ─ 见 agent.rs。
+    manager
+        .create_thread(DEFAULT_AGENT_ID.to_string(), title)
+        .await
 }
 
 #[derive(Serialize)]
@@ -1209,15 +1253,15 @@ pub async fn open_preferences_window(
     // macOS: use the same overlay title bar style as the main window so the
     // app-rendered drag region is contiguous with the system-rendered traffic
     // lights, instead of stacking a second native title strip on top. The
-    // traffic light cluster is positioned at y=18 so it sits vertically
-    // centered within the app's 48px (`h-12`) drag bar; x=18 matches the
-    // main window and macOS' default left inset.
+    // traffic light cluster is positioned at x=18, y=25 — mirroring the main
+    // window (`app/backend/tauri.conf.json`) so both windows visually share
+    // the same origin and stay centered within the 48px (`h-12`) drag bar.
     #[cfg(target_os = "macos")]
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
         .traffic_light_position(tauri::Position::Logical(
-            tauri::LogicalPosition::new(18.0, 18.0),
+            tauri::LogicalPosition::new(18.0, 25.0),
         ));
 
     #[cfg(target_os = "windows")]

@@ -79,7 +79,7 @@ function SelectTrigger({ children, className, asChild }: SelectTriggerProps) {
 				type="button"
 				onClick={handleClick}
 				className={cn(
-					"flex items-center justify-between w-full px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)]",
+					"flex items-center justify-between w-full h-8 px-3 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)]",
 					className
 				)}
 				data-state={open ? "open" : "closed"}
@@ -105,7 +105,7 @@ function SelectTrigger({ children, className, asChild }: SelectTriggerProps) {
 			type="button"
 			onClick={handleClick}
 			className={cn(
-				"flex items-center justify-between w-full px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)]",
+				"flex items-center justify-between w-full h-8 px-3 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--primary)]",
 				className
 			)}
 			data-state={open ? "open" : "closed"}

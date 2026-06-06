@@ -27,44 +27,36 @@ export const STORAGE_KEYS = {
   MEMO: 'woopmemo-memo-storage',
 } as const;
 
-// AI Settings 键名
-export const USER_SETTINGS_KEYS = {
-  CUSTOM_INSTRUCTION: 'customInstruction',
-  SELECTED_TAGS: 'selectedTags',
-  RESPONSE_LENGTH: 'responseLength',
-  PREFERRED_LANGUAGE: 'preferredLanguage',
-  USER_NAME: 'userName',
-  USER_EMAIL: 'userEmail',
-  AGENT_MODEL: 'agentModel',
-  AGENT_API_URL: 'agentApiUrl',
-  AGENT_API_KEY: 'agentApiKey',
-  // 格式 (Format)
-  FONT_FAMILY: 'fontFamily',
-  FONT_SIZE: 'fontSize',
-  LINE_HEIGHT: 'lineHeight',
-  // 主题 (Theme)
-  THEME: 'theme',
-} as const;
+/* ============================================================
+ * User Settings (镜像后端 ~/.woop/preference.json 结构)
+ * 字段与后端 PreferenceFile / *Config 一一对应, 改 nested 后:
+ *   - settings.personalize.customInstruction
+ *   - settings.format.fontFamily
+ *   - settings.theme
+ * 调用方传 updateSettings({ personalize: { customInstruction: 'x' } })
+ * 由 hooks/useUserSettings.ts 里的 mergeSettings 合并。
+ * ============================================================ */
 
-export type UserSettingsKey = typeof USER_SETTINGS_KEYS[keyof typeof USER_SETTINGS_KEYS];
-
-export interface UserSettings {
+export interface PersonalizeConfig {
   customInstruction: string;
-  selectedTags: string[];
   responseLength: string;
   preferredLanguage: string;
-  userName: string;
-  userEmail: string;
-  agentModel: string;
-  agentApiUrl: string;
-  agentApiKey: string;
+  selectedTags: string[];
+}
+
+export interface FormatConfig {
   /** 字体族 (CSS font-family stack) */
   fontFamily: string;
   /** 字号 (px) */
   fontSize: number;
   /** 行间距 (unitless line-height) */
   lineHeight: number;
-  /** 主题 id, 见 THEME_OPTIONS */
+}
+
+export interface UserSettings {
+  personalize: PersonalizeConfig;
+  format: FormatConfig;
+  /** 主题 id, 见 THEME_OPTIONS (顶层字段, 不分组) */
   theme: ThemeId;
 }
 
@@ -105,7 +97,7 @@ const LIGHT_VARS: Record<string, string> = {
   '--popover-foreground': '#0d1a2b',
   '--primary': '#09244B',
   '--primary-foreground': '#ffffff',
-  '--secondary': '#f1f3f5',
+  '--secondary': '#eef2f5',
   '--secondary-foreground': '#1f2937',
   '--muted': '#f5f7fa',
   '--muted-foreground': '#979797',
@@ -113,6 +105,7 @@ const LIGHT_VARS: Record<string, string> = {
   '--accent-foreground': '#1f2937',
   '--border': '#e5e7eb',
   '--input': '#e5e7eb',
+  '--divider': '#eef0f2',
   '--ring': '#b6c0cc',
   '--bg-titlebar': '#F8F8F8',
   '--memo-detail-bg': '#f6f8fb8e',
@@ -128,7 +121,7 @@ const DARK_VARS: Record<string, string> = {
   '--popover-foreground': '#e6e8eb',
   '--primary': '#7aa2ff',
   '--primary-foreground': '#0e1014',
-  '--secondary': '#1c2028',
+  '--secondary': '#1d2027',
   '--secondary-foreground': '#cfd3d8',
   '--muted': '#1a1d23',
   '--muted-foreground': '#8a8f97',
@@ -136,6 +129,7 @@ const DARK_VARS: Record<string, string> = {
   '--accent-foreground': '#e6e8eb',
   '--border': '#262a31',
   '--input': '#262a31',
+  '--divider': '#1c2028',
   '--ring': '#3a4150',
   '--bg-titlebar': '#0e1014',
   '--memo-detail-bg': '#13161c',
@@ -151,7 +145,7 @@ const ROCK_VARS: Record<string, string> = {
   '--popover-foreground': '#2e2c28',
   '--primary': '#4a4744',
   '--primary-foreground': '#f3f2ed',
-  '--secondary': '#e0ded7',
+  '--secondary': '#dcd9d1',
   '--secondary-foreground': '#3a3733',
   '--muted': '#e6e4dd',
   '--muted-foreground': '#8a857c',
@@ -159,6 +153,7 @@ const ROCK_VARS: Record<string, string> = {
   '--accent-foreground': '#3a3733',
   '--border': '#cfccc4',
   '--input': '#cfccc4',
+  '--divider': '#dad7d0',
   '--ring': '#b1aea4',
   '--bg-titlebar': '#e6e4dd',
   '--memo-detail-bg': '#f0eee8',
@@ -174,7 +169,7 @@ const MIST_VARS: Record<string, string> = {
   '--popover-foreground': '#2a2440',
   '--primary': '#6b5bd6',
   '--primary-foreground': '#ffffff',
-  '--secondary': '#ece5fa',
+  '--secondary': '#e8dcf5',
   '--secondary-foreground': '#3b3160',
   '--muted': '#efeaf8',
   '--muted-foreground': '#857ba0',
@@ -182,6 +177,7 @@ const MIST_VARS: Record<string, string> = {
   '--accent-foreground': '#3b3160',
   '--border': '#dccff1',
   '--input': '#dccff1',
+  '--divider': '#ebe2f5',
   '--ring': '#b6a6e5',
   '--bg-titlebar': '#eee7fa',
   '--memo-detail-bg': '#f3eefc',
@@ -279,18 +275,19 @@ export const LINE_HEIGHT_MAX = 2.4;
 export const LINE_HEIGHT_STEP = 0.05;
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {
-  customInstruction: '',
-  selectedTags: [],
-  responseLength: 'standard',
-  preferredLanguage: 'zh',
-  userName: 'User',
-  userEmail: '',
-  agentModel: 'MiniMax-M3',
-  agentApiUrl: 'https://api.minimaxi.com/v1',
-  agentApiKey: '',
-  fontFamily: FONT_FAMILY_OPTIONS[0].value,
-  fontSize: 15,
-  lineHeight: 1.6,
+  personalize: {
+    customInstruction: '',
+    // 字段值必须与 general.tsx 中 <SelectItem value=...> 的可选值一致,
+    // 否则下拉显示空白。preferredLanguage 之前误写 'zh' 不会匹配任何选项。
+    responseLength: '标准',
+    preferredLanguage: '简体中文',
+    selectedTags: [],
+  },
+  format: {
+    fontFamily: FONT_FAMILY_OPTIONS[0].value,
+    fontSize: 15,
+    lineHeight: 1.6,
+  },
   theme: 'system',
 };
 
@@ -311,7 +308,7 @@ export const TOAST_SHADOW =
 
 /** Toast 4 种 tone 对应的图标颜色 */
 export const TOAST_COLORS = {
-  success: '#09244B',
+  success: '#22C55E',
   error:   '#FF8A8A',
   info:    '#7CB9FF',
   warning: '#FFC56B',

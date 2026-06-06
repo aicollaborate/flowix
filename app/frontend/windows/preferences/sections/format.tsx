@@ -16,8 +16,8 @@ import {
   LINE_HEIGHT_MAX,
   LINE_HEIGHT_STEP,
   DEFAULT_USER_SETTINGS,
-} from '../../../constants';
-import { Field } from './primitives';
+} from '../../../lib/constants';
+import { FieldRow, SectionHeader } from './primitives';
 
 interface FormatSectionProps {
   settings: {
@@ -25,16 +25,23 @@ interface FormatSectionProps {
     fontSize: number;
     lineHeight: number;
   };
-  updateSettings: (updates: Partial<{
-    fontFamily: string;
-    fontSize: number;
-    lineHeight: number;
-  }>) => Promise<void>;
+  updateSettings: (updates: {
+    format?: Partial<{
+      fontFamily: string;
+      fontSize: number;
+      lineHeight: number;
+    }>;
+  }) => Promise<void>;
 }
 
 /**
  * Native range slider styled to match the rest of the Preferences UI.
- * Bound to a numeric setting; updates fire on every change for live preview.
+ *
+ * Track is a single linear-gradient: filled (--primary) up to the
+ * current value, then a darker neutral (#cbd5e1) for the unfilled
+ * remainder. Bound to a numeric setting; updates fire on every change
+ * for live preview. Used inside a FieldRow; container is fixed-width
+ * so the slider doesn't stretch across the full preferences content area.
  */
 function SliderRow({
   value,
@@ -52,8 +59,9 @@ function SliderRow({
   formatValue?: (v: number) => string;
 }) {
   const display = formatValue ? formatValue(value) : String(value);
+  const percent = max === min ? 0 : ((value - min) / (max - min)) * 100;
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex w-64 items-center gap-3">
       <input
         type="range"
         min={min}
@@ -61,7 +69,10 @@ function SliderRow({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1 h-1.5 rounded-full bg-[var(--muted)] appearance-none cursor-pointer accent-[var(--primary)]"
+        className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer accent-[var(--primary)]"
+        style={{
+          background: `linear-gradient(to right, var(--primary) 0%, var(--primary) ${percent}%, #cbd5e1 ${percent}%, #cbd5e1 100%)`,
+        }}
       />
       <span className="w-12 text-right text-sm tabular-nums text-[var(--muted-foreground)]">
         {display}
@@ -77,6 +88,10 @@ export function FormatSection({ settings, updateSettings }: FormatSectionProps) 
   const fontLabel = currentFont?.label ?? settings.fontFamily;
   return (
     <div className="space-y-6 pb-16">
+      <SectionHeader
+        title="排版"
+      />
+
       {/* Live preview — label sits as a chip at the top-left inside
           the frame. The font styles are scoped to an inner wrapper so
           the chip itself doesn't resize with the preview controls. */}
@@ -102,18 +117,23 @@ export function FormatSection({ settings, updateSettings }: FormatSectionProps) 
       </div>
 
       {/* Font Family */}
-      <Field
-        title="字体 Font"
+      <FieldRow
+        title="字体"
         description="选择应用整体使用的字体"
       >
         <Select
           value={settings.fontFamily}
-          onValueChange={(value) => updateSettings({ fontFamily: value })}
+          onValueChange={(value) => updateSettings({ format: { fontFamily: value } })}
         >
-          <SelectTrigger className="w-full justify-between">
-            <span style={{ fontFamily: settings.fontFamily }}>{fontLabel}</span>
+          <SelectTrigger className="w-48">
+            <span
+              className="flex-1 text-left"
+              style={{ fontFamily: settings.fontFamily }}
+            >
+              {fontLabel}
+            </span>
           </SelectTrigger>
-          <SelectContent align="start" className="w-full min-w-[260px]">
+          <SelectContent align="end" className="w-48">
             {FONT_FAMILY_OPTIONS.map((font) => (
               <SelectItem key={font.value} value={font.value}>
                 <span style={{ fontFamily: font.value }}>{font.label}</span>
@@ -121,10 +141,10 @@ export function FormatSection({ settings, updateSettings }: FormatSectionProps) 
             ))}
           </SelectContent>
         </Select>
-      </Field>
+      </FieldRow>
 
       {/* Font Size */}
-      <Field
+      <FieldRow
         title="字号"
         description="拖动调节正文字号 (px)"
       >
@@ -133,13 +153,13 @@ export function FormatSection({ settings, updateSettings }: FormatSectionProps) 
           min={FONT_SIZE_MIN}
           max={FONT_SIZE_MAX}
           step={FONT_SIZE_STEP}
-          onChange={(v) => updateSettings({ fontSize: v })}
+          onChange={(v) => updateSettings({ format: { fontSize: v } })}
           formatValue={(v) => `${v}px`}
         />
-      </Field>
+      </FieldRow>
 
       {/* Line Height */}
-      <Field
+      <FieldRow
         title="行间距"
         description="拖动调节正文行高 (倍数)"
       >
@@ -148,22 +168,23 @@ export function FormatSection({ settings, updateSettings }: FormatSectionProps) 
           min={LINE_HEIGHT_MIN}
           max={LINE_HEIGHT_MAX}
           step={LINE_HEIGHT_STEP}
-          onChange={(v) => updateSettings({ lineHeight: v })}
+          onChange={(v) => updateSettings({ format: { lineHeight: v } })}
           formatValue={(v) => v.toFixed(2)}
         />
-      </Field>
+      </FieldRow>
 
       {/* Reset */}
       <div className="flex justify-start">
         <Button
           variant="outline"
-          size="sm"
-          className="rounded-full px-4"
+          className="px-3"
           onClick={() =>
             updateSettings({
-              fontFamily: DEFAULT_USER_SETTINGS.fontFamily,
-              fontSize: DEFAULT_USER_SETTINGS.fontSize,
-              lineHeight: DEFAULT_USER_SETTINGS.lineHeight,
+              format: {
+                fontFamily: DEFAULT_USER_SETTINGS.format.fontFamily,
+                fontSize: DEFAULT_USER_SETTINGS.format.fontSize,
+                lineHeight: DEFAULT_USER_SETTINGS.format.lineHeight,
+              },
             })
           }
         >

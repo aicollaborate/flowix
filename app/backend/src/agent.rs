@@ -8,29 +8,36 @@ use tauri::Emitter;
 use crate::prompt::{build_system_prompt, SystemPromptConfig};
 use crate::providers::{execute_tool, get_all_tools, OpenAIConfig, OpenAIProvider};
 use crate::threads::ChatMessage as ThreadChatMessage;
+use crate::user_config::AiModelConfig;
 use rllm::chat::{ChatMessage as LlmChatMessage, ChatProvider, ChatRole, StreamChunk, Tool};
 
+/// 线程表 `agent_id` 列的固定占位值。
+///
+/// 重构后前端不再传 agent_id ─ 整个应用同一时刻只有"当前 ai_config 描述的那一个
+/// agent"。 schema 仍保留 agent_id 列以兼容历史数据, 全部写入此常量。
+pub const DEFAULT_AGENT_ID: &str = "default";
+
+/// AgentManager 现在只维护"当前生效的 provider 实例", 真正的配置真源是
+/// `~/.woop/ai_config.json` (经 `UserConfigStore` 暴露)。每次 chat 调用前
+/// 读最新配置, 与构建缓存的配置对比, 不一致则重建 provider。
+///
+/// 这样 ai_config 变更 (例如用户在偏好里换了模型 / API key) 不再依赖前端重新
+/// "init agent", 后端自己感知并热替换。
 pub struct AgentManager {
-    agents: tokio::sync::RwLock<Vec<AgentInstance>>,
+    instance: tokio::sync::RwLock<Option<CachedInstance>>,
+    /// 每个 thread 的 read 工具快照。edit 工具需要 read 后的内容做漂移检测。
     read_snapshots: tokio::sync::RwLock<HashMap<String, HashMap<String, String>>>,
+}
+
+struct CachedInstance {
+    config: AiModelConfig,
+    instance: AgentInstance,
 }
 
 #[derive(Clone)]
 pub struct AgentInstance {
-    pub id: String,
-    pub name: String,
-    pub model: String,
     provider: Arc<dyn ChatProvider>,
     tools: Vec<Tool>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct AgentInitConfig {
-    pub name: String,
-    pub api_url: String,
-    pub api_key: String,
-    pub model: String,
-    pub system_prompt: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -45,13 +52,6 @@ pub struct AgentUserMessage {
     pub content: String,
     pub llm_content: Option<String>,
     pub system_reminder_directory: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct AgentInfo {
-    pub id: String,
-    pub name: String,
-    pub model: String,
 }
 
 #[derive(Serialize)]
@@ -79,20 +79,41 @@ fn tool_path_key(arguments: &str) -> Option<String> {
 impl AgentManager {
     pub fn new() -> Self {
         Self {
-            agents: tokio::sync::RwLock::new(Vec::new()),
+            instance: tokio::sync::RwLock::new(None),
             read_snapshots: tokio::sync::RwLock::new(HashMap::new()),
         }
     }
 
-    pub async fn create_agent(&self, config: AgentInitConfig) -> Result<AgentInfo, String> {
-        let id = format!("agent_{}", chrono::Utc::now().timestamp_millis());
+    /// 拿到与当前 ai_config 对应的 provider 实例; 配置缺 model 则报错。
+    ///
+    /// 走双读锁: 先 read 尝试命中缓存, 不命中再升级到 write 重建。这样并发 chat
+    /// 不会互相阻塞 — 只有真正发生配置变更时才有写锁竞争。
+    async fn ensure_instance(&self, config: &AiModelConfig) -> Result<AgentInstance, String> {
+        if config.model.trim().is_empty() {
+            return Err("尚未配置模型, 请到偏好设置 → 智能体 填写 ai_config".to_string());
+        }
+        {
+            let guard = self.instance.read().await;
+            if let Some(cached) = guard.as_ref() {
+                if &cached.config == config {
+                    return Ok(cached.instance.clone());
+                }
+            }
+        }
+        let instance = Self::build_instance(config);
+        let mut guard = self.instance.write().await;
+        *guard = Some(CachedInstance {
+            config: config.clone(),
+            instance: instance.clone(),
+        });
+        Ok(instance)
+    }
 
+    fn build_instance(config: &AiModelConfig) -> AgentInstance {
         // Enable reasoning_split to separate thinking from final response
         let reasoning_split = config.model.contains("MiniMax");
         let system_prompt = build_system_prompt(SystemPromptConfig {
-            agent_name: &config.name,
             model: &config.model,
-            user_prompt: &config.system_prompt,
             tools_enabled: true,
         });
 
@@ -102,45 +123,25 @@ impl AgentManager {
                 .with_reasoning_split(reasoning_split),
         );
 
-        let info = AgentInfo {
-            id: id.clone(),
-            name: config.name.clone(),
-            model: config.model.clone(),
-        };
-
-        let instance = AgentInstance {
-            id,
-            name: config.name,
-            model: config.model,
+        AgentInstance {
             provider: Arc::new(provider),
             tools: get_all_tools(),
-        };
-
-        let mut agents = self.agents.write().await;
-        agents.push(instance);
-
-        Ok(info)
+        }
     }
 
     pub async fn chat(
         &self,
-        agent_id: &str,
         thread_id: &str,
         message: AgentUserMessage,
         app_state: &crate::commands::AppState,
         app_handle: &tauri::AppHandle,
     ) -> Result<String, String> {
+        let ai_config = app_state.user_config.get_ai_config().model;
+        let instance = self.ensure_instance(&ai_config).await?;
+
         self.persist_user_message(thread_id, &message, app_state)
             .await?;
         let messages = self.load_thread_llm_messages(thread_id, app_state).await?;
-        let instance = {
-            let agents = self.agents.read().await;
-            agents
-                .iter()
-                .find(|a| a.id == agent_id)
-                .ok_or_else(|| format!("Agent not found: {}", agent_id))?
-                .clone()
-        };
 
         // Convert messages to rllm format
         let mut llm_messages: Vec<LlmChatMessage> = messages
@@ -227,23 +228,17 @@ impl AgentManager {
 
     pub async fn chat_stream(
         &self,
-        agent_id: &str,
         thread_id: &str,
         message: AgentUserMessage,
         app_state: &crate::commands::AppState,
         app_handle: &tauri::AppHandle,
     ) -> Result<String, String> {
+        let ai_config = app_state.user_config.get_ai_config().model;
+        let instance = self.ensure_instance(&ai_config).await?;
+
         self.persist_user_message(thread_id, &message, app_state)
             .await?;
         let messages = self.load_thread_llm_messages(thread_id, app_state).await?;
-        let instance = {
-            let agents = self.agents.read().await;
-            agents
-                .iter()
-                .find(|a| a.id == agent_id)
-                .ok_or_else(|| format!("Agent not found: {}", agent_id))?
-                .clone()
-        };
 
         // Convert messages to rllm format
         let mut llm_messages: Vec<LlmChatMessage> = messages
@@ -267,7 +262,7 @@ impl AgentManager {
         let mut reasoning_buffer = String::new();
         let mut assistant_buffer = String::new();
 
-        tracing::debug!("[Agent] Starting chat_stream for agent_id: {}", agent_id);
+        tracing::debug!("[Agent] Starting chat_stream for thread_id: {}", thread_id);
 
         for _cycle in 0..max_cycles {
             reasoning_buffer.clear();
@@ -662,18 +657,6 @@ impl AgentManager {
         manager
             .update_tool_result(thread_id, tool_call_id, tool_name, result_content)
             .await
-    }
-
-    pub async fn list_agents(&self) -> Vec<AgentInfo> {
-        let agents = self.agents.read().await;
-        agents
-            .iter()
-            .map(|a| AgentInfo {
-                id: a.id.clone(),
-                name: a.name.clone(),
-                model: a.model.clone(),
-            })
-            .collect()
     }
 }
 

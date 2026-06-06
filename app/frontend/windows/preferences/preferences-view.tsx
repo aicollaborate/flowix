@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Sparkles, Keyboard, Link2, History, Bot, Type, Palette } from 'lucide-react';
-import { useUserSettings } from '../../hooks/useUserSettings';
+import { Keyboard, Link2, History, Infinity, Type, Palette, Settings } from 'lucide-react';
+import { useUserSettings } from '../../lib/hooks/useUserSettings';
 import {
-	PersonalizeSection,
+	GeneralSection,
 	FormatSection,
 	ThemeSection,
 	AgentSection,
@@ -24,13 +24,13 @@ function isWindowsPlatform(): boolean {
 }
 
 const TABS: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
-	{ id: 'format', label: 'Format', icon: <Type className="w-4 h-4" /> },
-	{ id: 'theme', label: 'Theme', icon: <Palette className="w-4 h-4" /> },
-	{ id: 'personalize', label: '个性化', icon: <Sparkles className="w-4 h-4" /> },
-	{ id: 'agent', label: 'Agent Config', icon: <Bot className="w-4 h-4" /> },
-	{ id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard className="w-4 h-4" /> },
-	{ id: 'connections', label: 'Connections', icon: <Link2 className="w-4 h-4" /> },
-	{ id: 'history', label: 'History', icon: <History className="w-4 h-4" /> },
+	{ id: 'general', label: '通用', icon: <Settings className="w-4 h-4" /> },
+	{ id: 'format', label: '排版', icon: <Type className="w-4 h-4" /> },
+	{ id: 'theme', label: '主题', icon: <Palette className="w-4 h-4" /> },
+	{ id: 'agent', label: '智能体', icon: <Infinity className="w-4 h-4" /> },
+	{ id: 'shortcuts', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
+	{ id: 'connections', label: '连接应用', icon: <Link2 className="w-4 h-4" /> },
+	{ id: 'history', label: '历史', icon: <History className="w-4 h-4" /> },
 ];
 
 interface PreferencesViewProps {
@@ -39,7 +39,7 @@ interface PreferencesViewProps {
 
 export function PreferencesView({ initialTab }: PreferencesViewProps) {
 	const { settings, updateSettings } = useUserSettings();
-	const [activeTab, setActiveTab] = useState<SettingsTab>('personalize');
+	const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
 	useEffect(() => {
 		if (initialTab && TABS.some(t => t.id === initialTab)) {
@@ -53,35 +53,44 @@ export function PreferencesView({ initialTab }: PreferencesViewProps) {
 			{isWindowsPlatform() ? <PreferencesTitlebarWin /> : <PreferencesTitlebarMac />}
 			<div className="flex-1 flex min-h-0">
 				{/* Left sidebar */}
-				<div className="w-[255px] border-r border-[var(--border)] bg-white shrink-0 pl-6 pr-2 py-2 space-y-1 flex flex-col">
+				<div className="w-[204px] border-r border-[var(--divider)] bg-white shrink-0 px-2 pt-6 pb-2 space-y-1 flex flex-col">
 					{TABS.map((tab) => (
 						<Button
 							key={tab.id}
 							variant={activeTab === tab.id ? 'secondary' : 'ghost'}
 							size="sm"
 							className={cn(
-								'w-full justify-start gap-3 py-5 rounded-lg',
+								'w-full justify-start gap-1.5 py-4 rounded-lg',
 								activeTab === tab.id && 'text-[var(--primary)]'
 							)}
 							onClick={() => setActiveTab(tab.id)}
 						>
 							{tab.icon}
-							<span className="text-sm">{tab.label}</span>
+							<span className="text-sm font-normal">{tab.label}</span>
 						</Button>
 					))}
 				</div>
 				{/* Right content */}
 				<div className="flex-1 flex flex-col min-w-0">
 					<div className="flex-1 flex justify-center p-6 overflow-y-auto">
-						<div className="w-full max-w-[600px]">
-							{activeTab === 'personalize' && (
-								<PersonalizeSection settings={settings} updateSettings={updateSettings} />
+						<div className="w-full max-w-[500px]">
+							{activeTab === 'general' && (
+								<GeneralSection
+									settings={settings.personalize}
+									updateSettings={updateSettings}
+								/>
 							)}
 							{activeTab === 'format' && (
-								<FormatSection settings={settings} updateSettings={updateSettings} />
+								<FormatSection
+									settings={settings.format}
+									updateSettings={updateSettings}
+								/>
 							)}
 							{activeTab === 'theme' && (
-								<ThemeSection settings={settings} updateSettings={updateSettings} />
+								<ThemeSection
+									settings={settings}
+									updateSettings={updateSettings}
+								/>
 							)}
 							{activeTab === 'agent' && <AgentSection />}
 							{activeTab === 'shortcuts' && <ShortcutsSection />}

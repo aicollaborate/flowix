@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { memos, notebooks, type FilterType, type SortType } from '../tauri/client';
-import { STORAGE_KEYS } from '../../constants';
+import { STORAGE_KEYS } from '../constants';
 
 export interface MemoItem {
   id: string;

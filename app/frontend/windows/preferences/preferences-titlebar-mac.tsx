@@ -10,21 +10,22 @@
  *
  * Design rules:
  * - h-12 (48px) — matches the other Mac title bars in the app
- * - 左侧 90px 留空给红绿灯 (与 document-titlebar-mac 保持一致)
- * - 标题居中, 沿用 macOS Big Sur+ 的窗口标题惯例
+ * - 标题在整条 bar 内水平居中
+ *   红绿灯在 Rust 端固定在 (x=18, y=25) — 与主窗口 tauri.conf.json 完全相同
+ *   标题较短（4 字符），与红绿灯无视觉冲突
  * - 整条作为 Tauri drag region
  */
 export function PreferencesTitlebarMac() {
   return (
     <div
       data-tauri-drag-region
-      className="h-12 shrink-0 pl-[90px] pr-4 flex items-center justify-center bg-[#f7f7f7] border-b border-black/5 select-none"
+      className="h-12 shrink-0 pr-4 flex items-center justify-center bg-[#f7f7f7] border-b border-[var(--divider)] select-none"
     >
       <span
-        className="text-sm font-semibold tracking-tight text-[var(--foreground)] pointer-events-none"
-        aria-label="Preferences"
+        className="text-base font-semibold tracking-tight text-center text-[var(--foreground)] pointer-events-none"
+        aria-label="偏好设置"
       >
-        Preferences
+        偏好设置
       </span>
     </div>
   );

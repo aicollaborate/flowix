@@ -2,7 +2,7 @@
 
 import { Check, MonitorSmartphone } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
-import { DEFAULT_USER_SETTINGS, THEME_OPTIONS, type ThemeId } from '../../../constants';
+import { DEFAULT_USER_SETTINGS, THEME_OPTIONS, type ThemeId } from '../../../lib/constants';
 import { cn } from '../../../lib/utils';
 import { SectionHeader, FIELD_TITLE_CLASS, FIELD_DESC_CLASS } from './primitives';
 
@@ -41,7 +41,7 @@ function ThemeCard({
     >
       {/* Selected check */}
       {active && (
-        <span className="absolute top-2 right-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--primary-foreground)]">
+        <span className="absolute top-2 right-2 z-10 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] ring ring-white">
           <Check className="h-3 w-3" />
         </span>
       )}
@@ -109,8 +109,7 @@ export function ThemeSection({ settings, updateSettings }: ThemeSectionProps) {
   return (
     <div className="space-y-6 pb-16">
       <SectionHeader
-        title="Theme"
-        description="选择应用的整体配色; 「跟随系统」会随设备外观自动切换"
+        title="主题"
       />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -127,8 +126,7 @@ export function ThemeSection({ settings, updateSettings }: ThemeSectionProps) {
       <div className="flex justify-start">
         <Button
           variant="outline"
-          size="sm"
-          className="rounded-full px-4"
+          className="px-3"
           onClick={() => updateSettings({ theme: DEFAULT_USER_SETTINGS.theme })}
         >
           恢复默认

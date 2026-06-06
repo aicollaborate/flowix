@@ -112,7 +112,7 @@ export function DocumentTitlebarMac({
                   <><PushPinIcon className="w-4 h-4 mr-2" /> 置顶</>
                 )}
               </DropdownMenuItem>
-              <div className="h-px bg-black/10 mx-1" />
+              <hr className="mx-2 border-t border-[var(--border)] opacity-50" />
               <DropdownMenuItem
                 onClick={onExportMarkdown}
                 className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
@@ -125,7 +125,7 @@ export function DocumentTitlebarMac({
               >
                 <FileDocIcon className="w-4 h-4 mr-2" /> 导出为 Word
               </DropdownMenuItem>
-              <div className="h-px bg-black/10 mx-1" />
+              <hr className="mx-2 border-t border-[var(--border)] opacity-50" />
               <DropdownMenuItem className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]">
                 <ClockIcon className="w-4 h-4 mr-2" /> 历史版本
               </DropdownMenuItem>

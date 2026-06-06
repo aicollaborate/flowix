@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ChatMessage, ThreadListItem } from '../../types';
-import { STORAGE_KEYS } from '../../constants';
-import { agent, listenToAgentStream, stopListeningToAgentStream, type AgentConfig } from '../tauri/client';
+import { STORAGE_KEYS } from '../constants';
+import { agent, listenToAgentStream, stopListeningToAgentStream } from '../tauri/client';
 import { useMemoStore } from './memo-store';
 import { useDocumentStore } from './document-store';
 import { isEmptyAssistantMessage } from '../message/empty';
@@ -80,8 +80,6 @@ function buildThreadTitle(content: string): string {
 export interface ChatStore {
   messages: ChatMessage[];
   threadId: string | undefined;
-  currentAgentId: string | undefined;
-  savedAgentConfig: AgentConfig | undefined;
   isLoading: boolean;
   streamingContent: string;
   streamingReasoningContent: string;
@@ -102,7 +100,6 @@ export interface ChatStore {
   addMessage: (message: ChatMessage) => void;
   setMessages: (messages: ChatMessage[]) => void;
   setThreadId: (id: string | undefined) => void;
-  setCurrentAgentId: (id: string | undefined) => void;
   clearMessages: () => void;
   updateLastMessage: (updates: Partial<ChatMessage>) => void;
   setIsLoading: (loading: boolean) => void;
@@ -118,27 +115,26 @@ export interface ChatStore {
   consumePendingCitation: () => string | undefined;
   loadThreadList: () => Promise<void>;
   loadThread: (threadId: string) => Promise<void>;
-  createThread: (agentId?: string, title?: string) => Promise<void>;
+  createThread: (title?: string) => Promise<void>;
   deleteThread: (threadId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   sendMessageStream: (content: string) => Promise<void>;
-  initAgent: (config: AgentConfig) => Promise<import('../tauri/client').AgentInfo | undefined>;
-  restoreAgent: () => Promise<boolean>;
 }
 
 export const useChatStore = create<ChatStore>()(
   persist(
     (set, get) => {
-      const ensureThread = async (agentId: string, content: string): Promise<string> => {
+      // 首次 send 时若没有 thread, 先创建一个。 thread 不再绑定 agent 信息 —
+      // 后端按需读 ai_config.json, 取消了 agent_id 透传。
+      const ensureThread = async (content: string): Promise<string> => {
         const existingThreadId = get().threadId;
         if (existingThreadId) {
           return existingThreadId;
         }
 
-        const thread = await agent.createThread(agentId, buildThreadTitle(content));
+        const thread = await agent.createThread(buildThreadTitle(content));
         set({
           threadId: thread.threadId,
-          currentAgentId: agentId,
           currentThreadTitle: thread.title,
           messages: [],
         });
@@ -149,8 +145,6 @@ export const useChatStore = create<ChatStore>()(
       return {
         messages: [],
         threadId: undefined,
-        currentAgentId: undefined,
-        savedAgentConfig: undefined,
         isLoading: false,
         streamingContent: '',
         streamingReasoningContent: '',
@@ -162,7 +156,6 @@ export const useChatStore = create<ChatStore>()(
         addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
         setMessages: (messages) => set({ messages }),
         setThreadId: (id) => set({ threadId: id }),
-        setCurrentAgentId: (id) => set({ currentAgentId: id }),
         clearMessages: () => set({ messages: [], threadId: undefined, currentThreadTitle: undefined }),
         updateLastMessage: (updates) =>
           set((state) => ({
@@ -196,32 +189,6 @@ export const useChatStore = create<ChatStore>()(
           return pendingCitation;
         },
 
-        initAgent: async (config) => {
-          try {
-            const info = await agent.init(config);
-            set({ currentAgentId: info.id, savedAgentConfig: config });
-            return info;
-          } catch (err) {
-            console.error('[ChatStore] Failed to init agent:', err);
-            throw err;
-          }
-        },
-
-        restoreAgent: async () => {
-          const { savedAgentConfig } = get();
-          if (!savedAgentConfig) {
-            return false;
-          }
-          try {
-            const info = await agent.init(savedAgentConfig);
-            set({ currentAgentId: info.id });
-            return true;
-          } catch (err) {
-            console.error('Failed to restore agent:', err);
-            return false;
-          }
-        },
-
         loadThreadList: async () => {
           try {
             const threads = await agent.listThreads();
@@ -244,26 +211,18 @@ export const useChatStore = create<ChatStore>()(
               threadId,
               messages,
               currentThreadTitle: threadInfo?.title ?? 'Untitled Chat',
-              currentAgentId: get().currentAgentId ?? threadInfo?.agentId,
             });
           } catch (err) {
             console.error('Failed to load thread:', err);
           }
         },
 
-        createThread: async (agentId, title = '新对话') => {
-          const effectiveAgentId = agentId || get().currentAgentId;
-          if (!effectiveAgentId) {
-            console.error('No agent selected');
-            return;
-          }
-
+        createThread: async (title = '新对话') => {
           try {
-            const thread = await agent.createThread(effectiveAgentId, title);
+            const thread = await agent.createThread(title);
             set({
               messages: [],
               threadId: thread.threadId,
-              currentAgentId: effectiveAgentId,
               currentThreadTitle: thread.title,
             });
             await get().loadThreadList();
@@ -292,22 +251,15 @@ export const useChatStore = create<ChatStore>()(
 
         sendMessageStream: async (content) => {
           const {
-            currentAgentId,
             appendStreamingContent,
             clearStreamingContent,
             appendStreamingReasoning,
             clearStreamingReasoning,
           } = get();
 
-          if (!currentAgentId) {
-            console.error('[ChatStore] No agent selected');
-            set({ isLoading: false });
-            return;
-          }
-
           let effectiveThreadId: string;
           try {
-            effectiveThreadId = await ensureThread(currentAgentId, content);
+            effectiveThreadId = await ensureThread(content);
           } catch (err) {
             console.error('Failed to ensure thread:', err);
             set({ isLoading: false });
@@ -433,7 +385,7 @@ export const useChatStore = create<ChatStore>()(
           });
 
           try {
-            const response = await agent.chatStream(currentAgentId, effectiveThreadId, {
+            const response = await agent.chatStream(effectiveThreadId, {
               content,
               llmContent: userPayload.llmContent,
               systemReminderDirectory: userPayload.systemReminderDirectory,
@@ -463,7 +415,9 @@ export const useChatStore = create<ChatStore>()(
             const errorMessage: ChatMessage = {
               id: `error-${Date.now()}`,
               role: 'assistant',
-              content: '抱歉，发生了错误。',
+              content: typeof err === 'string' && err
+                ? err
+                : '抱歉，发生了错误。',
               timestamp: new Date().toISOString(),
             };
             set((state) => ({ messages: [...state.messages, errorMessage] }));
@@ -481,7 +435,6 @@ export const useChatStore = create<ChatStore>()(
       partialize: (state) => ({
         threadId: state.threadId,
         currentThreadTitle: state.currentThreadTitle,
-        savedAgentConfig: state.savedAgentConfig,
       }),
     }
   )

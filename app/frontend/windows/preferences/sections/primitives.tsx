@@ -3,25 +3,26 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../../lib/utils';
 
-export const FIELD_TITLE_CLASS = 'text-sm font-medium text-[var(--foreground)]';
-export const FIELD_DESC_CLASS = 'text-xs text-[var(--muted-foreground)]';
+export const FIELD_TITLE_CLASS = 'text-sm font-normal text-[var(--foreground)]';
+export const FIELD_DESC_CLASS = 'text-sm text-[var(--muted-foreground)]';
+export const SECTION_HEADER_TITLE_CLASS =
+  'text-base font-medium text-[var(--foreground)]';
 export const FIELD_INPUT_CLASS =
   'bg-[var(--card)] border-[var(--border)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]';
 
-/** Top-of-tab header. Use once per tab to introduce the section. */
+/** Top-of-tab header. Use once per tab to introduce the section.
+ *  Renders the title with a light-gray divider underneath, visually
+ *  separating the page heading from the form fields below. */
 export function SectionHeader({
   title,
-  description,
   className,
 }: {
   title: string;
-  description?: string;
   className?: string;
 }) {
   return (
-    <div className={cn('space-y-1', className)}>
-      <h3 className={FIELD_TITLE_CLASS}>{title}</h3>
-      {description && <p className={FIELD_DESC_CLASS}>{description}</p>}
+    <div className={cn('pb-3 border-b border-[var(--divider)]', className)}>
+      <h3 className={SECTION_HEADER_TITLE_CLASS}>{title}</h3>
     </div>
   );
 }
@@ -65,7 +66,7 @@ export function FieldRow({
   className?: string;
 }) {
   return (
-    <div className={cn('flex items-start justify-between gap-4', className)}>
+    <div className={cn('flex items-center justify-between gap-4', className)}>
       <div className="space-y-0.5 min-w-0">
         <label className={FIELD_TITLE_CLASS}>{title}</label>
         {description && <p className={FIELD_DESC_CLASS}>{description}</p>}

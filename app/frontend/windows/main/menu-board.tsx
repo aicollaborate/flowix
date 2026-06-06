@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import {
-  User,
   Sparkles,
   Keyboard,
   Link2,
@@ -12,12 +11,11 @@ import {
   Type,
   Palette,
 } from 'lucide-react';
-import { useUserSettings } from '../../hooks/useUserSettings';
+import { useUserSettings } from '../../lib/hooks/useUserSettings';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
 import {
-  AccountSection,
-  PersonalizeSection,
+  GeneralSection,
   FormatSection,
   ThemeSection,
   AgentSection,
@@ -34,8 +32,7 @@ interface TabItem {
 }
 
 const TABS: TabItem[] = [
-  { id: 'account', label: 'Account', icon: <User className="w-4 h-4" /> },
-  { id: 'personalize', label: 'Personalization', icon: <Sparkles className="w-4 h-4" /> },
+  { id: 'general', label: 'Personalization', icon: <Sparkles className="w-4 h-4" /> },
   { id: 'format', label: 'Format', icon: <Type className="w-4 h-4" /> },
   { id: 'theme', label: 'Theme', icon: <Palette className="w-4 h-4" /> },
   { id: 'agent', label: 'Agent', icon: <Bot className="w-4 h-4" /> },
@@ -59,7 +56,7 @@ interface MenuBoardProps {
  * overlay, sidebar, tab switching, close button.
  */
 export function MenuBoard({ open, onOpenChange }: MenuBoardProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('account');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const { settings, updateSettings } = useUserSettings();
 
   if (!open) return null;
@@ -104,12 +101,11 @@ export function MenuBoard({ open, onOpenChange }: MenuBoardProps) {
           {/* Right content */}
           <div className="flex-1 flex justify-center pt-[36px] pb-3 px-12">
             <div className="w-full max-w-[800px]">
-              {activeTab === 'account' && <AccountSection />}
-              {activeTab === 'personalize' && (
-                <PersonalizeSection settings={settings} updateSettings={updateSettings} />
+              {activeTab === 'general' && (
+                <GeneralSection settings={settings.personalize} updateSettings={updateSettings} />
               )}
               {activeTab === 'format' && (
-                <FormatSection settings={settings} updateSettings={updateSettings} />
+                <FormatSection settings={settings.format} updateSettings={updateSettings} />
               )}
               {activeTab === 'theme' && (
                 <ThemeSection settings={settings} updateSettings={updateSettings} />

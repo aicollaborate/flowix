@@ -189,15 +189,20 @@ fn start_of_this_month(now_ms: i64) -> i64 {
 
 pub struct MemoFile {
     app_data_path: PathBuf,
+    /// 笔记本配置文件的实际路径。早期版本写在 `app_data_path/notebook.json`,
+    /// 现已迁到 `~/.woop/notebook.json` 与 preference.json / ai_config.json 同目录。
+    /// 见 `lib.rs` 中的迁移逻辑。
+    notebook_file_path: PathBuf,
     current_notebook_id: Option<String>,
     // 缂撳瓨鐨勭瑪璁版湰閰嶇疆
     notebook_configs: RwLock<Vec<NotebookConfig>>,
 }
 
 impl MemoFile {
-    pub fn new(app_data_path: PathBuf) -> Self {
+    pub fn new(app_data_path: PathBuf, notebook_file_path: PathBuf) -> Self {
         Self {
             app_data_path,
+            notebook_file_path,
             current_notebook_id: None,
             notebook_configs: RwLock::new(Vec::new()),
         }
@@ -469,7 +474,7 @@ impl MemoFile {
     }
 
     fn get_notebook_file_path(&self) -> PathBuf {
-        self.app_data_path.join("notebook.json")
+        self.notebook_file_path.clone()
     }
 
     fn get_default_notebook_path(&self) -> PathBuf {

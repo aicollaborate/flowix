@@ -1,9 +1,9 @@
 // 这是 lib/ 下唯一的 .tsx —— 因为模块内要内联一段居中修复用的 JSX 模板。
 // 其他 lib 文件保持 .ts。
 import type { ComponentType } from 'react';
-import { AlertTriangle, CircleCheckBig, Info, XCircle } from 'lucide-react';
+import { CheckCircleIcon, InfoIcon, WarningCircleIcon, XCircleIcon } from '@phosphor-icons/react';
 import { toast as sonnerToast } from 'sonner';
-import { TOAST_BG, TOAST_COLORS, TOAST_DURATION_MS, TOAST_SHADOW } from '../constants';
+import { TOAST_BG, TOAST_COLORS, TOAST_DURATION_MS, TOAST_SHADOW } from './constants';
 
 /** Toast 视觉 tone */
 export type ToastTone = 'success' | 'error' | 'info' | 'warning';
@@ -24,15 +24,23 @@ export interface ToastApi {
   dismiss(id?: string | number): void;
 }
 
-// 4 种 tone 对应的 lucide 图标;沿用 lib/message/icons.ts:21 的 Record 命名风格
+// 4 种 tone 对应的 phosphor 图标;统一在渲染处注入 weight="fill"
+type PhosphorWeight = 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
+
 const TONE_ICONS: Record<
   ToastTone,
-  ComponentType<{ className?: string; style?: React.CSSProperties }>
+  ComponentType<
+    React.SVGProps<SVGSVGElement> & {
+      className?: string;
+      style?: React.CSSProperties;
+      weight?: PhosphorWeight;
+    }
+  >
 > = {
-  success: CircleCheckBig,
-  error: XCircle,
-  info: Info,
-  warning: AlertTriangle,
+  success: CheckCircleIcon,
+  error: XCircleIcon,
+  info: InfoIcon,
+  warning: WarningCircleIcon,
 };
 
 /**
@@ -53,7 +61,7 @@ function ToastPill({ tone, message }: { tone: ToastTone; message: string }) {
         className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-white"
         style={{ backgroundColor: TOAST_BG, boxShadow: TOAST_SHADOW }}
       >
-        <Icon className="h-4 w-4" style={{ color }} />
+        <Icon className="h-4 w-4" style={{ color }} weight="fill" />
         <span>{message}</span>
       </div>
     </div>

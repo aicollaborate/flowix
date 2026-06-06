@@ -9,7 +9,7 @@ import { MemoList } from './memo-pane/memo-list';
 import { MemoListTitlebarWin } from './memo-pane/memo-list-titlebar-win';
 import { MemoListTitlebarMac } from './memo-pane/memo-list-titlebar-mac';
 import { AgentChatRoot } from './agent-panel/agent-root';
-import { useTauriRpc } from '../../hooks/useTauriRpc';
+import { useTauriRpc } from '../../lib/hooks/useTauriRpc';
 import { useMemoStore, useDocumentStore, useSettingsStore, type Notebook, type MemoItem } from '../../lib/store';
 import { files, memos as memosClient, notebooks as notebooksClient, dialogs, type SaveFileFilter, windows } from '../../lib/tauri/client';
 import { WindowsTitlebarControls } from '../../components/windows-titlebar-controls';

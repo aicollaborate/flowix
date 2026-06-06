@@ -41,6 +41,8 @@
   caret-color: #5262DC;
   cursor: text;
 
+  /* Lets heading rem values track the user-chosen base font size. */
+  --editor-scale: calc(var(--app-font-size, 15px) / 16px);
 }
 
 .comn-tiptap-editor:focus .ProseMirror {
@@ -63,30 +65,31 @@
 }
 
 .comn-tiptap-editor .tiptap h1 {
-  font-size: 1.9rem;
-  padding-bottom: 0.3rem;
+  font-size: calc(1.9rem * var(--editor-scale));
+  padding-bottom: calc(0.3rem * var(--editor-scale));
   color: #5262DC;
 }
 
 .comn-tiptap-editor .tiptap h2 {
-  font-size: 1.4rem;
+  font-size: calc(1.4rem * var(--editor-scale));
 }
 
 .comn-tiptap-editor .tiptap h3 {
-  font-size: 1.15rem;
+  font-size: calc(1.15rem * var(--editor-scale));
 }
 
 .comn-tiptap-editor .tiptap h4 {
-  font-size: 1.05rem;
+  font-size: calc(1.05rem * var(--editor-scale));
 }
 
 .comn-tiptap-editor .tiptap p {
-  margin: 0 0 1rem 0;
+  /* Spacing = 0.5 line box; grows with both font-size and line-height. */
+  margin: 0 0 calc(1em * var(--app-line-height, 1.6) * 0.5) 0;
 }
 
 .comn-tiptap-editor .tiptap p:empty,
 .comn-tiptap-editor .tiptap p:has(> br.ProseMirror-trailingBreak:only-child) {
-  min-height: 1.6em;
+  min-height: calc(1em * var(--app-line-height, 1.6));
 }
 
 .comn-tiptap-editor .tiptap p:empty::before {
@@ -107,7 +110,8 @@
   border-radius: 0.1875rem;
   padding: 0.2rem 0.4rem;
   font-family: inherit;
-  font-size: 0.76rem;
+  /* em: scales with parent (e.g. code inside an h1 grows with the heading). */
+  font-size: 0.76em;
 }
 
 .comn-tiptap-editor .tiptap pre  {
@@ -117,11 +121,12 @@
   padding: 0.5rem 1rem 1rem;
   margin: 1rem 0;
   font-family: inherit;
-  font-size: 0.85rem;
+  /* em: tracks surrounding paragraph font-size. */
+  font-size: 0.85em;
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: visible;
-  line-height: 1.6;
+  line-height: var(--app-line-height, 1.6);
 }
 
 .comn-tiptap-editor .tiptap pre code {
@@ -240,7 +245,7 @@
 
 .comn-tiptap-editor .tiptap li {
   margin: 0.25rem 0;
-  line-height: 1.6;
+  line-height: var(--app-line-height, 1.6);
 }
 
 .comn-tiptap-editor .tiptap table td p,
