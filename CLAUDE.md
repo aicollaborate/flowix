@@ -24,8 +24,16 @@ npm run tauri build   # 生产构建
 
 ## 架构
 
+### 窗口拓扑
+前端按 Tauri 窗口边界组织。每个窗口自包含（layout、组件、专属逻辑），共享层只在最浅位置：
+
+- **`windows/main/`** - 主窗口（三栏编辑器 + AI 代理面板 + 状态栏 + Cmd+K 命令面板）
+- **`windows/preferences/`** - 偏好设置窗口；`sections/` 下的设置 tab 内容（account/personalize/format/theme/agent/shortcuts/connections/history）被命令面板和偏好设置窗口共用，单一真源
+- **`components/`** - 仅放跨窗口共享资源：`mdeditor/`（Tiptap）、`srceditor/`（Monaco）、`ui/`（shadcn）、`icons/`、`loading/`、`error-boundary.tsx`、`windows-titlebar-controls.tsx`
+- **`hooks/`** - 全部 hooks 集中管理，**不**在 `windows/<window>/hooks/` 下维护镜像
+
 ### 三栏布局
-`app/frontend/components/app-layout.tsx` 实现：MemoList（左侧，350px）| MemoDetail（中间）| MemoDetailMeta（右侧，可选）
+`app/frontend/windows/main/main-layout.tsx` 实现：MemoList（左侧，350px）| MemoDetail（中间）| MemoDetailMeta（右侧，可选）
 
 ### 后端（`app/backend/src/`）
 - `lib.rs` - 应用入口，插件配置，命令路由
@@ -36,14 +44,18 @@ npm run tauri build   # 生产构建
 - `threads.rs` - 对话线程管理
 
 ### 前端（`app/frontend/`）
-- `lib/store/` - Zustand store（memo、tag、settings、chat）
-- `lib/tauri/client.ts` - Tauri RPC 封装，按领域组织
-- `hooks/` - Store + RPC 逻辑封装（useMemoStore、useTagStore 等）
-- `components/mdeditor/` - Tiptap 编辑器及自定义扩展
-- `components/memo/` - 备忘录列表、详情、元数据组件
-- `components/agent/` - AI 代理管理界面
-- `components/ui/` - shadcn UI 组件库
-- `components/menu-board.tsx` - 命令面板
+- `App.tsx` - 入口；按 `window.location.hash` 路由到 `MainLayout` 或 `PreferencesView`（均用 `lazy()` + `Suspense` 加载）
+- `windows/main/` - 主窗口
+  - `main-layout.tsx` - 三栏布局编排
+  - `memo-pane/`, `document-pane/`, `agent-panel/`, `status-bar/`
+  - `menu-board.tsx` - Cmd+K 命令面板
+- `windows/preferences/` - 偏好设置窗口
+  - `preferences-view.tsx`, `preferences-titlebar-{mac,win}.tsx`
+  - `sections/` - 设置 tab 内容 + `primitives.tsx`（Field/SectionHeader/FieldRow）+ `types.ts`（SettingsTab）
+- `components/` - 跨窗口共享资源（见上）
+- `hooks/` - 全局 hooks（`useUserSettings`, `useApplyTheme`, `useApplyFontSettings`, `useTauriRpc`, `useMemoInsertAnimation`）
+- `lib/` - 业务工具（`store/` Zustand, `tauri/client.ts` IPC, `toast`, `export`, `path`, `utils`, `message/`）
+- `types/`, `constants/`, `css/`, `assets/`
 
 ### 数据流
 1. 前端通过 `lib/tauri/client.ts` 调用 Tauri IPC 命令
@@ -78,6 +90,10 @@ npm run tauri build   # 生产构建
 
 ## 关键模式
 
+- **窗口路由**：`App.tsx` 按 `window.location.hash` 分发：
+  - `#preferences/<tab>` → `PreferencesView`（`tab` 可选：`account`/`personalize`/`format`/`theme`/`agent`/`shortcuts`/`connections`/`history`）
+  - 其他 → `MainLayout`
+  两个窗口共用同一份前端 bundle；设置类 hooks（`useUserSettings` / `useApplyTheme` / `useApplyFontSettings`）在 `App.tsx` 顶层挂载，两侧都会即时同步。
 - URL 参数 `?memoWindowId=` 可打开独立窗口（参见 `app/frontend/App.tsx`）
 - 文件监听：前端 `chokidar` / Rust `notify` crate
 - AI 流式响应：通过 Tauri 事件 `agent-chunk` 推送
