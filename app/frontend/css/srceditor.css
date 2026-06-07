@@ -1,4 +1,4 @@
-/* ---------- Source Editor (Monaco) 样式 ---------- */
+/* Source Editor (Monaco) — 样式 */
 
 .srceditor {
   display: flex;
@@ -58,12 +58,11 @@
   max-width: 100%;
 }
 
-/* 移除 Monaco 顶部的内阴影 */
+/* 去掉 Monaco 顶部的内阴影, 与无边框编辑器风格一致 */
 .srceditor-editor .monaco-editor .scroll-decoration {
   box-shadow: none;
 }
 
-/* 序号颜色 - 50% 透明度 */
 .srceditor-editor .monaco-editor .line-numbers {
   opacity: 0.3 !important;
 }

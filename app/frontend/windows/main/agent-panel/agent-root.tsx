@@ -3,6 +3,7 @@ import { ChatMessage as ChatMessageComponent } from "./chat-message";
 import { Inputbox } from "./agent-inputbox";
 import { AgentWelcome } from "./agent-welcome";
 import { ChatHistory } from "./chat-history";
+import { AgentThinkingIndicator } from "./agent-thinking-indicator";
 import { useChatStore } from "../../../lib/store/chat-store";
 import { CaretDoubleRightIcon } from "@phosphor-icons/react";
 import { aiConfig, windows } from "../../../lib/tauri/client";
@@ -12,18 +13,15 @@ interface AgentRootProps {
 	onClosePanel?: () => void;
 }
 
-function isWindowsPlatform() {
-	return /Windows/i.test(navigator.userAgent) || /Win/i.test(navigator.platform);
-}
+const IS_WINDOWS = /Windows/i.test(navigator.userAgent) || /Win/i.test(navigator.platform);
+const HEADER_HEIGHT_CLASS = IS_WINDOWS ? "h-9" : "h-12";
 
 export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
-	const [loadingVisible, setLoadingVisible] = useState(false);
 	// 仅作为"未配置 → 跳转偏好设置"的 gate, 不再保留 agentId / agent instance:
 	// 后端 chat 时按需读 ai_config.json。
 	const [isAgentConfigured, setIsAgentConfigured] = useState<boolean | null>(null);
-	const headerHeightClass = isWindowsPlatform() ? "h-9" : "h-12";
 
 	const messages = useChatStore((state) => state.messages);
 	const isLoading = useChatStore((state) => state.isLoading);
@@ -60,16 +58,6 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 		}
 	}, [threadId, loadThread]);
 
-	// Loading fade animation
-	useEffect(() => {
-		if (isLoading) {
-			setLoadingVisible(true);
-		} else {
-			const timer = setTimeout(() => setLoadingVisible(false), 1000);
-			return () => clearTimeout(timer);
-		}
-	}, [isLoading]);
-
 	// Scroll to bottom
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -98,20 +86,26 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	};
 
 	return (
-		<div className="flex flex-col h-full">
-			<div className="shrink-0">
-				<div data-tauri-drag-region className={`${headerHeightClass} flex items-center gap-0 px-2`}>
-					{onClosePanel && (
-						<button
-							onClick={onClosePanel}
-							className="w-6 h-8 flex items-center justify-center text-gray-500 hover:text-gray-400 rounded-lg transition-colors"
-							title="关闭面板"
-						>
-							<CaretDoubleRightIcon className="w-4 h-4" weight="regular" />
-						</button>
-					)}
-					<ChatHistory onSelectThread={loadThread} />
-				</div>
+		<div
+			className="flex flex-col h-full"
+			// 子树内 --foreground 重定义到 --agent-foreground, 已有 text-[var(--foreground)]
+			// 工具类自动跟随 agent 主题色; 其它 token 保持原值, chrome 仍清晰。
+			style={{ "--foreground": "var(--agent-foreground)" } as React.CSSProperties}
+		>
+			<div
+				data-tauri-drag-region
+				className={`shrink-0 ${HEADER_HEIGHT_CLASS} flex items-center gap-0 px-2`}
+			>
+				{onClosePanel && (
+					<button
+						onClick={onClosePanel}
+						className="w-6 h-8 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-lg transition-colors"
+						title="关闭面板"
+					>
+						<CaretDoubleRightIcon className="w-4 h-4" weight="regular" />
+					</button>
+				)}
+				<ChatHistory onSelectThread={loadThread} />
 			</div>
 
 			<div className="flex-1 overflow-y-auto scrollbar overflow-x-hidden">
@@ -125,17 +119,12 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 				) : (
 					<AgentWelcome onSelectPrompt={setInputValue} />
 				)}
-				{loadingVisible && (
-					<div className={`sticky bottom-0 px-6 py-4 transition-opacity duration-300 ${isLoading ? 'opacity-100' : 'opacity-0'}`}>
-						<div className="agent-thinking-loader">
-							<span className="agent-thinking-dot" aria-hidden="true" />
-							<span className="agent-thinking-text">思考中</span>
-						</div>
-					</div>
-				)}
 			</div>
 
+			{/* 底部 footer: 思考中指示器按需渲染, 不流式时完全脱离布局,
+			    容器自然收缩到 Inputbox 高度。 */}
 			<div className="shrink-0">
+				{isLoading && <AgentThinkingIndicator />}
 				<Inputbox ref={textareaRef} onSend={handleSendMessage} isLoading={isLoading} />
 			</div>
 		</div>

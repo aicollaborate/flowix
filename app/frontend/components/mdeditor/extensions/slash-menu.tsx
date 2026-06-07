@@ -16,15 +16,15 @@ interface SlashMenuState {
 const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   {
     id: 'table',
-    label: 'Table',
+    label: '表格',
     icon: '📊',
-    description: 'Insert a table',
+    description: '插入表格',
   },
   {
     id: 'code-block',
-    label: 'Code Block',
+    label: '代码块',
     icon: '💻',
-    description: 'Insert a code block',
+    description: '插入代码块',
   },
 ]
 

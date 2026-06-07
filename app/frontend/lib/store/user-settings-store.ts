@@ -6,8 +6,8 @@ import {
   type PersonalizeConfig,
   type FormatConfig,
   type UserSettings,
-  type ThemeId,
 } from '../constants';
+import { sanitizeTheme, type ThemeId } from '../theme';
 
 /**
  * 偏好设置全局单例 store。
@@ -22,15 +22,7 @@ import {
  * 状态层的统一源。
  */
 
-const VALID_THEME_IDS: ReadonlySet<ThemeId> = new Set<ThemeId>([
-  'system', 'light', 'dark', 'rock', 'mist',
-]);
-
-function sanitizeTheme(value: unknown, fallback: ThemeId = 'system'): ThemeId {
-  return typeof value === 'string' && VALID_THEME_IDS.has(value as ThemeId)
-    ? (value as ThemeId)
-    : fallback;
-}
+// sanitizeTheme / VALID_THEME_IDS 统一收敛在 lib/theme/sanitize.ts, 这里不再重复。
 
 function mergeSettings(base: UserSettings, updates: UserSettingsUpdate): UserSettings {
   const theme = updates.theme !== undefined

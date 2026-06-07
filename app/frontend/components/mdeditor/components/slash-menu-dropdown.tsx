@@ -15,7 +15,7 @@ export const SlashMenuDropdown = ({ items, selectedIndex, onSelect }: SlashMenuP
   if (!items.length) {
     return (
       <div className="slash-menu-dropdown bg-background rounded-lg border shadow-md overflow-hidden p-4 text-center text-sm text-muted-foreground min-w-[200px]">
-        No items
+        暂无内容
       </div>
     )
   }

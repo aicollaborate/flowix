@@ -82,7 +82,7 @@ function mimeTypeFromName(name: string): string {
 }
 
 function fileNameFromPath(path: string): string {
-    return path.split(/[\\/]/).pop() || 'attachment';
+    return path.split(/[\\/]/).pop() || '附件';
 }
 
 function isTauriApp(): boolean {

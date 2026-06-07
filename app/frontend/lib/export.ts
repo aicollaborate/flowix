@@ -123,7 +123,7 @@ export function buildWordHtml(title: string, bodyHtml: string): string {
       xmlns="http://www.w3.org/TR/REC-html40">
 <head>
 <meta charset="utf-8" />
-<title>${escapeHtml(title || 'Untitled')}</title>
+<title>${escapeHtml(title || '未命名')}</title>
 <!--[if gte mso 9]>
 <xml>
   <w:WordDocument>
@@ -150,5 +150,5 @@ export function sanitizeFileName(name: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, MAX_FILE_NAME_LENGTH);
-  return cleaned || 'Untitled';
+  return cleaned || '未命名';
 }

@@ -38,7 +38,7 @@ export const DocRefDropdown = forwardRef<DocRefDropdownRef, DocRefDropdownProps>
     if (!items.length) {
       return (
         <div className="doc-ref-dropdown bg-background rounded-lg border shadow-md overflow-hidden p-4 text-center text-sm text-muted-foreground min-w-[200px]">
-          No memos found
+          未找到备忘录
         </div>
       )
     }

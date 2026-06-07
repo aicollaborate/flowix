@@ -39,6 +39,9 @@ interface ComnTiptapEditorProps {
   autoFocus?: boolean;
   editorStorageUpdatedAt?: Date | null;
   onBeforeCreate?: (editor: Editor) => void;
+  // 搜索面板由父组件控制（titlebar 按钮 / Ctrl+F 共享同一开关）
+  searchPanelOpen?: boolean;
+  onSearchPanelOpenChange?: (open: boolean) => void;
 }
 
 function normalizeMarkdownOutput(markdown: string): string {
@@ -105,10 +108,11 @@ export function ComnTiptapEditor({
   autoFocus = false,
   editorStorageUpdatedAt,
   onBeforeCreate,
+  searchPanelOpen = false,
+  onSearchPanelOpenChange,
 }: ComnTiptapEditorProps) {
   const elementRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
-  const [showSearchPanel, setShowSearchPanel] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -116,8 +120,10 @@ export function ComnTiptapEditor({
   const contentRef = useRef(content);
   const isApplyingExternalContentRef = useRef(false);
   const onChangeRef = useRef(onChange);
+  const onSearchPanelOpenChangeRef = useRef(onSearchPanelOpenChange);
   onEditorScrollRef.current = onEditorScroll;
   onChangeRef.current = onChange;
+  onSearchPanelOpenChangeRef.current = onSearchPanelOpenChange;
 
   const findScrollable = useCallback((el: Element): HTMLElement | null => {
     const style = window.getComputedStyle(el);
@@ -178,7 +184,7 @@ export function ComnTiptapEditor({
           },
         }),
         Placeholder.configure({
-          placeholder: placeholder || 'Write Something',
+          placeholder: placeholder || '开始书写…',
         }),
         Tag,
         MarkdownPaste,
@@ -285,7 +291,7 @@ export function ComnTiptapEditor({
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
-        setShowSearchPanel(true);
+        onSearchPanelOpenChangeRef.current?.(true);
         return;
       }
 
@@ -328,12 +334,41 @@ export function ComnTiptapEditor({
     };
   }, []);
 
+  // 主题切换时强制 Shiki 重新着色。
+  //
+  // 链路: useApplyTheme.apply() 写完 --shiki-theme 后 dispatch 'app-theme-changed' →
+  // 本 effect 收到事件 → 在下一帧给 PM view 发一个带 'shikiPluginForceDecoration'
+  // meta 的空事务, shiki-plugin.ts 的 state.apply 据此重跑 getDecorations。
+  // 用 rAF 而非同步触发是为了与浏览器布局/绘制合批, 避免 CSS var 写入和
+  // decoration 重建在同一 microtask 里冲突 (rAF 还顺带去抖, 多次连续切换主题
+  // 时只触发一次 dispatch)。
+  useEffect(() => {
+    let rafId: number | null = null;
+    const handleThemeChange = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const editor = editorRef.current;
+        if (!editor || editor.isDestroyed) return;
+        editor.view.dispatch(
+          editor.state.tr.setMeta('shikiPluginForceDecoration', true)
+        );
+      });
+    };
+
+    window.addEventListener('app-theme-changed', handleThemeChange);
+    return () => {
+      window.removeEventListener('app-theme-changed', handleThemeChange);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
   return (
     <div className={`comn-tiptap-editor ${className || ''}`}>
       <SearchReplacePanel
         editor={editorRef.current}
-        visible={showSearchPanel}
-        onClose={() => setShowSearchPanel(false)}
+        visible={searchPanelOpen}
+        onClose={() => onSearchPanelOpenChangeRef.current?.(false)}
       />
       <div ref={elementRef} className="editor-content">
         {editorRef.current && editorRef.current.view && <DragContextMenu editor={editorRef.current} />}

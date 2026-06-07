@@ -32,13 +32,13 @@ interface TabItem {
 }
 
 const TABS: TabItem[] = [
-  { id: 'general', label: 'Personalization', icon: <Sparkles className="w-4 h-4" /> },
-  { id: 'format', label: 'Format', icon: <Type className="w-4 h-4" /> },
-  { id: 'theme', label: 'Theme', icon: <Palette className="w-4 h-4" /> },
-  { id: 'agent', label: 'Agent', icon: <Bot className="w-4 h-4" /> },
-  { id: 'shortcuts', label: 'Shortcuts', icon: <Keyboard className="w-4 h-4" /> },
-  { id: 'connections', label: 'Connections', icon: <Link2 className="w-4 h-4" /> },
-  { id: 'history', label: 'History', icon: <History className="w-4 h-4" /> },
+  { id: 'general', label: '通用', icon: <Sparkles className="w-4 h-4" /> },
+  { id: 'format', label: '排版', icon: <Type className="w-4 h-4" /> },
+  { id: 'theme', label: '主题', icon: <Palette className="w-4 h-4" /> },
+  { id: 'agent', label: '智能体', icon: <Bot className="w-4 h-4" /> },
+  { id: 'shortcuts', label: '快捷键', icon: <Keyboard className="w-4 h-4" /> },
+  { id: 'connections', label: '连接应用', icon: <Link2 className="w-4 h-4" /> },
+  { id: 'history', label: '历史', icon: <History className="w-4 h-4" /> },
 ];
 
 interface MenuBoardProps {
@@ -77,9 +77,9 @@ export function MenuBoard({ open, onOpenChange }: MenuBoardProps) {
           </Button>
 
           {/* Left sidebar */}
-          <div className="w-56 border-r border-[var(--border)] p-4 bg-white shrink-0 flex flex-col">
+          <div className="w-56 border-r border-[var(--border)] p-4 bg-[var(--card)] shrink-0 flex flex-col">
             <div className="text-sm text-[var(--muted-foreground)] mb-3 pl-3 pt-[50px] pb-[20px] font-light">
-              Settings
+              偏好设置
             </div>
             {TABS.map((tab) => (
               <Button

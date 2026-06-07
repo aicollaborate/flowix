@@ -31,31 +31,31 @@ pub struct FormatConfig {
     pub line_height: f64,
 }
 
-fn default_theme() -> String {
-    "system".to_string()
+/// 合法主题枚举 — 替代原来的裸 `String`, 在 serde 边界上约束取值。
+///
+/// 序列化形式是小写字符串 (`"system"` / `"light"` / ...), 与前端 `ThemeId` 联合
+/// 类型字面量一一对应; 老的 preference.json (字符串) 仍然兼容读取。
+/// 任何不在 4 个变体里的字符串 (例如用户手改磁盘 / 未来客户端加新主题) 会在
+/// 反序列化阶段直接报错, 不会写回内存 — 兜底由前端的 sanitizeTheme 兜底成 "system"。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    #[default]
+    System,
+    Light,
+    Dark,
+    Rock,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreferenceFile {
     #[serde(default)]
     pub personalize: PersonalizeConfig,
     #[serde(default)]
     pub format: FormatConfig,
-    #[serde(default = "default_theme")]
-    pub theme: String,
-}
-
-/// 手写 Default: theme 字段必须用 default_theme, 不能用 String::default() (= "")。
-/// 派生宏 #[derive(Default)] 不会为单个字段调指定函数, 必须手工实现。
-impl Default for PreferenceFile {
-    fn default() -> Self {
-        Self {
-            personalize: PersonalizeConfig::default(),
-            format: FormatConfig::default(),
-            theme: default_theme(),
-        }
-    }
+    #[serde(default)]
+    pub theme: Theme,
 }
 
 /// ~/.woop/ai_config.json — 智能体配置

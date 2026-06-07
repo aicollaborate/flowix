@@ -11,7 +11,7 @@ const Kbd = React.forwardRef<HTMLElement, KbdProps>(
       <kbd
         ref={ref}
         className={cn(
-          "absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-flex h-5 select-none items-center rounded border border-[rgba(0,0,0,0.06)] bg-transparent px-1.5 font-sans text-[10px] font-medium text-[#9ca3af]",
+          "absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-flex h-5 select-none items-center rounded border border-[var(--border)] bg-transparent px-1.5 font-sans text-[10px] font-medium text-[var(--muted-foreground)]",
           className
         )}
         {...props}

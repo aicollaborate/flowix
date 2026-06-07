@@ -15,7 +15,7 @@ export function PreferencesTitlebarWin() {
   return (
     <div
       data-tauri-drag-region
-      className="h-9 shrink-0 pl-4 pr-[126px] flex items-center bg-[#f7f7f7] border-b border-[var(--divider)] select-none"
+      className="h-9 shrink-0 pl-4 pr-[126px] flex items-center bg-[var(--bg-titlebar)] border-b border-solid border-[var(--divider)] select-none"
     >
       <span
         className="text-sm font-semibold tracking-tight text-[var(--foreground)] pointer-events-none"

@@ -51,7 +51,7 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 					)}
 				>
 					<span className="text-sm text-[var(--foreground)] truncate font-medium min-w-0">
-						{currentThreadTitle || 'Untitled Chat'}
+						{currentThreadTitle || '未命名对话'}
 					</span>
 					<ChevronDown className="w-4 h-4 text-[var(--muted-foreground)] shrink-0" />
 				</button>
@@ -71,7 +71,7 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 						>
 							<ChatCircleTextIcon className="w-4 h-4 shrink-0 text-[var(--muted-foreground)]" />
 							<span className="flex-1 min-w-0 truncate text-left text-sm text-[var(--foreground)]">
-								{item.title || 'Untitled'}
+								{item.title || '未命名'}
 							</span>
 							<span className="text-xs text-[var(--muted-foreground)] shrink-0">
 								{formatRelativeTime(item.createdAt)}

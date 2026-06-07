@@ -13,31 +13,31 @@ export function WindowsTitlebarControls() {
   if (!isWindowsPlatform() || !isTauriApp()) return null;
 
   return (
-    <div className="fixed top-0 right-0 z-[100] flex h-9 select-none bg-[#f7f7f7]/95">
+    <div className="fixed top-0 right-0 z-[100] flex h-9 select-none bg-[var(--bg-titlebar)]">
       <button
         type="button"
-        aria-label="Minimize"
-        title="Minimize"
+        aria-label="最小化"
+        title="最小化"
         onClick={() => getCurrentWindow().minimize()}
-        className="flex h-9 w-[42px] items-center justify-center text-[#3f424a] transition-colors hover:bg-black/5"
+        className="flex h-9 w-[42px] items-center justify-center text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
       >
         <Minus className="h-3.5 w-3.5" strokeWidth={1.8} />
       </button>
       <button
         type="button"
-        aria-label="Maximize"
-        title="Maximize"
+        aria-label="最大化"
+        title="最大化"
         onClick={() => getCurrentWindow().toggleMaximize()}
-        className="flex h-9 w-[42px] items-center justify-center text-[#3f424a] transition-colors hover:bg-black/5"
+        className="flex h-9 w-[42px] items-center justify-center text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
       >
         <Square className="h-3 w-3" strokeWidth={1.8} />
       </button>
       <button
         type="button"
-        aria-label="Close"
-        title="Close"
+        aria-label="关闭"
+        title="关闭"
         onClick={() => getCurrentWindow().close()}
-        className="flex h-9 w-[42px] items-center justify-center text-[#3f424a] transition-colors hover:bg-[#e81123] hover:text-white"
+        className="flex h-9 w-[42px] items-center justify-center text-[var(--muted-foreground)] transition-colors hover:bg-[var(--destructive)] hover:text-[var(--destructive-foreground)]"
       >
         <X className="h-3.5 w-3.5" strokeWidth={1.8} />
       </button>

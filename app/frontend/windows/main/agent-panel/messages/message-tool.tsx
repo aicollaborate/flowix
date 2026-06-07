@@ -12,7 +12,6 @@ import {
   Folder,
   Loader2,
 } from "lucide-react";
-import "../../../../css/agent-message.css";
 
 interface ToolResult {
   success?: boolean;
@@ -54,18 +53,18 @@ function CompactCode({ value, maxLines = 8 }: { value: string; maxLines?: number
   const display = expanded ? value : lines.slice(0, maxLines).join("\n").slice(0, 1600);
 
   if (!value.trim()) {
-    return <span className="text-xs text-[var(--muted-foreground)]">No output</span>;
+    return <span className="text-xs text-[var(--muted-foreground)]">无输出</span>;
   }
 
   return (
     <div className="space-y-1.5">
-      <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-black/[0.035] px-2 py-1.5 text-xs font-mono text-[var(--agent-text-secondary)]">
+      <pre className="max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-md bg-[var(--muted)] px-2 py-1.5 text-xs font-mono text-[var(--muted-foreground)]">
         {display}{hasMore && !expanded ? "\n..." : ""}
       </pre>
       {hasMore && (
         <button
           type="button"
-          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--agent-text-primary)]"
+          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? "收起" : "展开"}
@@ -80,14 +79,14 @@ function FileList({ paths }: { paths: string[] }) {
   const visible = expanded ? paths : paths.slice(0, 8);
 
   if (paths.length === 0) {
-    return <span className="text-xs text-[var(--muted-foreground)]">No matches</span>;
+    return <span className="text-xs text-[var(--muted-foreground)]">无匹配项</span>;
   }
 
   return (
     <div className="space-y-1.5">
       <div className="flex flex-col gap-1">
         {visible.map((path) => (
-          <div key={path} className="flex items-center gap-1.5 text-xs text-[var(--agent-text-secondary)]">
+          <div key={path} className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
             <FileText className="h-3.5 w-3.5 shrink-0" />
             <span className="font-mono" title={path}>{truncateStart(path, 72)}</span>
           </div>
@@ -96,7 +95,7 @@ function FileList({ paths }: { paths: string[] }) {
       {paths.length > 8 && (
         <button
           type="button"
-          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--agent-text-primary)]"
+          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? "收起" : `展开 ${paths.length - 8} 项`}
@@ -111,7 +110,7 @@ function EntriesList({ entries }: { entries: any[] }) {
   const visible = expanded ? entries : entries.slice(0, 10);
 
   if (entries.length === 0) {
-    return <span className="text-xs text-[var(--muted-foreground)]">Empty directory</span>;
+    return <span className="text-xs text-[var(--muted-foreground)]">空目录</span>;
   }
 
   return (
@@ -122,7 +121,7 @@ function EntriesList({ entries }: { entries: any[] }) {
           const Icon = isDir ? Folder : FileText;
           const label = String(entry.name ?? entry.path ?? `item-${index}`);
           return (
-            <div key={`${label}-${index}`} className="flex items-center gap-1.5 text-xs text-[var(--agent-text-secondary)]">
+            <div key={`${label}-${index}`} className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
               <Icon className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate font-mono" title={String(entry.path ?? label)}>
                 {label}
@@ -137,7 +136,7 @@ function EntriesList({ entries }: { entries: any[] }) {
       {entries.length > 10 && (
         <button
           type="button"
-          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--agent-text-primary)]"
+          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? "收起" : `展开 ${entries.length - 10} 项`}
@@ -152,20 +151,20 @@ function GrepResult({ matches }: { matches: any[] }) {
   const visible = expanded ? matches : matches.slice(0, 6);
 
   if (matches.length === 0) {
-    return <span className="text-xs text-[var(--muted-foreground)]">No matches</span>;
+    return <span className="text-xs text-[var(--muted-foreground)]">无匹配项</span>;
   }
 
   return (
     <div className="space-y-1.5">
       {visible.map((match, index) => (
-        <div key={index} className="rounded-md bg-black/[0.025] px-2 py-1.5">
+        <div key={index} className="rounded-md bg-[var(--muted)] px-2 py-1.5">
           <div className="mb-1 flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
             <FileText className="h-3.5 w-3.5" />
             <span className="font-mono" title={String(match.path ?? "")}>
               {truncateStart(String(match.path ?? ""), 56)}:{match.line}
             </span>
           </div>
-          <div className="break-words font-mono text-xs text-[var(--agent-text-secondary)]">
+          <div className="break-words font-mono text-xs text-[var(--muted-foreground)]">
             {String(match.text ?? "")}
           </div>
         </div>
@@ -173,7 +172,7 @@ function GrepResult({ matches }: { matches: any[] }) {
       {matches.length > 6 && (
         <button
           type="button"
-          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--agent-text-primary)]"
+          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? "收起" : `展开 ${matches.length - 6} 条`}
@@ -194,9 +193,9 @@ function ToolBody({ toolName, result }: { toolName?: string; result: ToolResult 
   if (name === "read") {
     return (
       <div className="space-y-1.5">
-        {data?.path && <MetaLine label="File" value={String(data.path)} />}
+        {data?.path && <MetaLine label="文件" value={String(data.path)} />}
         <CompactCode value={String(data?.content ?? "")} />
-        {data?.truncated && <span className="text-xs text-[var(--muted-foreground)]">Content truncated</span>}
+        {data?.truncated && <span className="text-xs text-[var(--muted-foreground)]">内容已截断</span>}
       </div>
     );
   }
@@ -204,9 +203,9 @@ function ToolBody({ toolName, result }: { toolName?: string; result: ToolResult 
   if (name === "write") {
     return (
       <div className="space-y-1">
-        <MetaLine label="File" value={String(data?.path ?? "")} />
-        <MetaLine label="Bytes" value={String(data?.bytes_written ?? 0)} />
-        {data?.append && <MetaLine label="Mode" value="append" />}
+        <MetaLine label="文件" value={String(data?.path ?? "")} />
+        <MetaLine label="字节" value={String(data?.bytes_written ?? 0)} />
+        {data?.append && <MetaLine label="模式" value="追加" />}
       </div>
     );
   }
@@ -214,10 +213,10 @@ function ToolBody({ toolName, result }: { toolName?: string; result: ToolResult 
   if (name === "edit") {
     return (
       <div className="space-y-1">
-        <MetaLine label="File" value={String(data?.path ?? "")} />
-        <MetaLine label="Old" value={`${String(data?.old_bytes ?? 0)} B`} />
-        <MetaLine label="New" value={`${String(data?.new_bytes ?? 0)} B`} />
-        <MetaLine label="Bytes" value={String(data?.bytes_written ?? 0)} />
+        <MetaLine label="文件" value={String(data?.path ?? "")} />
+        <MetaLine label="原内容" value={`${String(data?.old_bytes ?? 0)} B`} />
+        <MetaLine label="新内容" value={`${String(data?.new_bytes ?? 0)} B`} />
+        <MetaLine label="字节" value={String(data?.bytes_written ?? 0)} />
       </div>
     );
   }
@@ -238,12 +237,12 @@ function ToolBody({ toolName, result }: { toolName?: string; result: ToolResult 
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--muted-foreground)]">
-          <span>exit: {data?.exit_code ?? "unknown"}</span>
-          {data?.truncated && <span>truncated</span>}
+          <span>退出码: {data?.exit_code ?? "未知"}</span>
+          {data?.truncated && <span>已截断</span>}
         </div>
         {data?.stdout && <CompactCode value={String(data.stdout)} />}
         {data?.stderr && <CompactCode value={String(data.stderr)} maxLines={5} />}
-        {!data?.stdout && !data?.stderr && <span className="text-xs text-[var(--muted-foreground)]">No output</span>}
+        {!data?.stdout && !data?.stderr && <span className="text-xs text-[var(--muted-foreground)]">无输出</span>}
       </div>
     );
   }
@@ -256,7 +255,7 @@ function MetaLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-2 text-xs">
       <span className="shrink-0 text-[var(--muted-foreground)]">{label}</span>
-      <span className="min-w-0 break-all font-mono text-[var(--agent-text-secondary)]" title={value}>
+      <span className="min-w-0 break-all font-mono text-[var(--muted-foreground)]" title={value}>
         {truncateStart(value, 84)}
       </span>
     </div>
@@ -276,11 +275,11 @@ function ToolInput({ input }: { input?: Record<string, unknown> }) {
     <div>
       <button
         type="button"
-        className="flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--agent-text-primary)]"
+        className="flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
         onClick={() => setExpanded((value) => !value)}
       >
         {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        Input
+        输入参数
       </button>
       {expanded && <CompactCode value={text} maxLines={6} />}
     </div>
@@ -301,9 +300,9 @@ export function MessageTool({ message }: { message: ChatMessage }) {
       <div className="w-full px-1 py-1.5">
         <div className="flex items-center gap-2">
           <ToolIcon className="h-3.5 w-3.5 shrink-0 text-[var(--muted-foreground)]" />
-          <span className="text-sm text-[var(--agent-text-primary)]">{formatToolName(message.toolName)}</span>
+          <span className="text-sm text-[var(--foreground)]">{formatToolName(message.toolName)}</span>
           {summary && (
-            <span className="min-w-0 truncate font-mono text-xs text-[var(--agent-text-secondary)]" title={summary}>
+            <span className="min-w-0 truncate font-mono text-xs text-[var(--muted-foreground)]" title={summary}>
               {summary}
             </span>
           )}
@@ -311,7 +310,7 @@ export function MessageTool({ message }: { message: ChatMessage }) {
         </div>
 
         {SHOW_TOOL_DETAILS && !isLoading && (
-          <div className={cn("mt-2 border-l border-[var(--agent-border)] pl-3")}>
+          <div className={cn("mt-2 border-l border-[var(--border)] pl-3")}>
             <div className="space-y-2">
               <ToolBody toolName={message.toolName} result={result} />
               <ToolInput input={message.toolInput} />

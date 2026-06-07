@@ -4,6 +4,7 @@ import { findChildren } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 
 import { getDecorations } from './shiki-decorations'
+import { getShiki } from './shiki-highlighter'
 
 export interface PluginShikiOptions {
   name: string
@@ -59,6 +60,32 @@ export function proseMirrorPluginShiki(options: PluginShikiOptions) {
     props: {
       decorations(state) {
         return shikiPlugin.getState(state)
+      }
+    },
+
+    // Self-healing: loadHighlighter() at module init is async, but state.init runs
+    // synchronously on first mount, so getDecorations() may return empty (no shiki
+    // yet). Poll via rAF and dispatch a force-redecorate as soon as it resolves.
+    // Self-terminating once getShiki() is truthy; also handles any future lazy
+    // theme load that lands after initial mount.
+    view(editorView) {
+      if (getShiki()) return {}
+      let cancelled = false
+      const check = () => {
+        if (cancelled) return
+        if (getShiki()) {
+          editorView.dispatch(
+            editorView.state.tr.setMeta('shikiPluginForceDecoration', true)
+          )
+        } else {
+          requestAnimationFrame(check)
+        }
+      }
+      requestAnimationFrame(check)
+      return {
+        destroy() {
+          cancelled = true
+        }
       }
     }
   })

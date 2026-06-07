@@ -57,15 +57,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 							/>
 						</svg>
 					</div>
-					<h2 className="text-lg font-semibold text-foreground mb-2">Something went wrong</h2>
+					<h2 className="text-lg font-semibold text-foreground mb-2">出错了</h2>
 					<p className="text-sm text-muted-foreground mb-4">
-						{this.state.error?.message || "An unexpected error occurred"}
+						{this.state.error?.message || "发生了意外错误"}
 					</p>
 					<button
 						onClick={this.handleRetry}
-						className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm font-medium"
+						className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-[color-mix(in_oklch,var(--primary)_90%,transparent)] transition-colors text-sm font-medium"
 					>
-						Try again
+						重试
 					</button>
 				</div>
 			);

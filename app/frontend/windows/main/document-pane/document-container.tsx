@@ -178,6 +178,9 @@ interface DocumentContainerProps {
   onCharCountChange?: (count: number) => void;
   isSrcView?: boolean;
   isExternalDocument?: boolean;
+  // 由父级 (main-layout) 控制的搜索面板开关 — 同一份状态被 titlebar 按钮与 Ctrl+F 共享
+  searchPanelOpen?: boolean;
+  onSearchPanelOpenChange?: (open: boolean) => void;
 }
 
 const initialState: DocumentContainerState = {
@@ -210,7 +213,7 @@ function resolveMemoDocumentPath(notebookPath: string | undefined, memo: MemoIte
   return joinPath(notebookPath, memo.path);
 }
 
-export function DocumentContainer({ filePath, onMetainfoData, onCharCountChange, isSrcView = false, isExternalDocument = false }: DocumentContainerProps) {
+export function DocumentContainer({ filePath, onMetainfoData, onCharCountChange, isSrcView = false, isExternalDocument = false, searchPanelOpen = false, onSearchPanelOpenChange }: DocumentContainerProps) {
   const [state, setState] = useState<DocumentContainerState>(initialState);
   const [isImportingExternal, setIsImportingExternal] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -598,14 +601,14 @@ export function DocumentContainer({ filePath, onMetainfoData, onCharCountChange,
     <div className="h-full w-full min-w-0 flex flex-col bg-transparent relative overflow-hidden">
       <div className="flex-1 h-full min-w-0 overflow-hidden flex flex-col">
         {isExternalDocument && (
-          <div className="shrink-0 flex items-center gap-3 border-b border-black/5 bg-white/85 px-6 py-2 text-xs text-[#4D4F5B]">
-            <span className="shrink-0 text-gray-400">外部文档</span>
+          <div className="shrink-0 flex items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-6 py-2 text-xs text-[var(--muted-foreground)]">
+            <span className="shrink-0 text-[var(--muted-foreground)]">外部文档</span>
             <span className="min-w-0 flex-1 truncate" title={filePath}>{filePath}</span>
             <button
               type="button"
               onClick={handleSaveExternalToMemo}
               disabled={isImportingExternal}
-              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 text-xs text-[#4D4F5B] hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] px-2.5 text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Save className="h-3.5 w-3.5" />
               {isImportingExternal ? '保存中...' : '保存到 Memo'}
@@ -637,6 +640,8 @@ export function DocumentContainer({ filePath, onMetainfoData, onCharCountChange,
               onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
               autoFocus={state.isNewlyCreated}
               editorStorageUpdatedAt={state.updatedAtDate ?? (selectedMemo?.updatedAt ? new Date(selectedMemo.updatedAt) : null)}
+              searchPanelOpen={searchPanelOpen}
+              onSearchPanelOpenChange={onSearchPanelOpenChange}
             />
           </>
         )}

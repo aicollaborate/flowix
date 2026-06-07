@@ -92,16 +92,16 @@ export function NotebookSwitcher({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="h-6 flex px-1 bg-[#4E62E5] items-center hover:bg-[#6B7CF0] gap-1"
+          className="h-6 flex px-1 bg-[var(--primary)] items-center hover:opacity-90 gap-1"
           aria-label="切换笔记本"
         >
-          <span className="pl-2 h-full py-0 text-white flex items-center overflow-hidden whitespace-nowrap">
+          <span className="pl-2 h-full py-0 text-[var(--primary-foreground)] flex items-center overflow-hidden whitespace-nowrap">
             笔记本
           </span>
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-white/10 text-[12px] font-semibold text-white">
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[color-mix(in_oklch,var(--primary-foreground)_10%,transparent)] text-[12px] font-semibold text-[var(--primary-foreground)]">
             {getNotebookIconLetter(selectedNotebook?.name)}
           </span>
-          <ChevronsUpDown className="text-white w-3 h-3 shrink-0" />
+          <ChevronsUpDown className="text-[var(--primary-foreground)] w-3 h-3 shrink-0" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -131,7 +131,7 @@ export function NotebookSwitcher({
                     isActive ? 'bg-[var(--accent)]' : 'hover:bg-[var(--muted)]'
                   )}
                 >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-base font-semibold bg-gray-200 text-gray-700">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-base font-semibold bg-[var(--muted)] text-[var(--secondary-foreground)]">
                     {getNotebookIconLetter(notebook.name)}
                   </div>
                   <div className="flex-1 min-w-0 pr-12">
@@ -173,7 +173,7 @@ export function NotebookSwitcher({
                           e.stopPropagation();
                           onDelete(notebook);
                         }}
-                        className="flex h-7 w-7 items-center justify-center rounded text-[var(--muted-foreground)] hover:text-red-500 cursor-pointer"
+                        className="flex h-7 w-7 items-center justify-center rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] cursor-pointer"
                         aria-label="删除笔记本"
                       >
                         <Trash2 className="h-3.5 w-3.5" />

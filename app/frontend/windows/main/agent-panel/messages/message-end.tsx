@@ -1,5 +1,4 @@
 import type { ChatMessage as ChatMessageType } from "../../../../types";
-import "../../../../css/agent-message.css";
 
 interface MessageEndProps {
   message: ChatMessageType;

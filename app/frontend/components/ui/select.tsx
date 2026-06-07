@@ -85,7 +85,7 @@ function SelectTrigger({ children, className, asChild }: SelectTriggerProps) {
 				data-state={open ? "open" : "closed"}
 			>
 				<span className={value ? "" : "text-[var(--muted-foreground)]"}>
-					{value || "Select..."}
+					{value || "请选择"}
 				</span>
 				<ChevronDown className={cn("w-4 h-4 transition-transform", open && "rotate-180")} />
 			</button>

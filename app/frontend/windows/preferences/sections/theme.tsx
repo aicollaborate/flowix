@@ -2,7 +2,7 @@
 
 import { Check, MonitorSmartphone } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
-import { DEFAULT_USER_SETTINGS, THEME_OPTIONS, type ThemeId } from '../../../lib/constants';
+import { DEFAULT_THEME_ID, THEME_OPTIONS, type ThemeId } from '../../../lib/theme';
 import { cn } from '../../../lib/utils';
 import { SectionHeader, FIELD_TITLE_CLASS, FIELD_DESC_CLASS } from './primitives';
 
@@ -33,9 +33,9 @@ function ThemeCard({
       onClick={onSelect}
       className={cn(
         'group relative w-full rounded-xl border bg-[var(--card)] p-3 text-left transition-all',
-        'hover:border-[var(--primary)]/60 hover:shadow-sm',
+        'hover:border-[color-mix(in_oklch,var(--primary)_60%,transparent)] hover:shadow-sm',
         active
-          ? 'border-[var(--primary)] ring-2 ring-[var(--primary)]/30'
+          ? 'border-[var(--primary)] ring-2 ring-[color-mix(in_oklch,var(--primary)_30%,transparent)]'
           : 'border-[var(--border)]'
       )}
     >
@@ -112,7 +112,7 @@ export function ThemeSection({ settings, updateSettings }: ThemeSectionProps) {
         title="主题"
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3">
         {THEME_OPTIONS.map((opt) => (
           <ThemeCard
             key={opt.id}
@@ -127,7 +127,7 @@ export function ThemeSection({ settings, updateSettings }: ThemeSectionProps) {
         <Button
           variant="outline"
           className="px-3"
-          onClick={() => updateSettings({ theme: DEFAULT_USER_SETTINGS.theme })}
+          onClick={() => updateSettings({ theme: DEFAULT_THEME_ID })}
         >
           恢复默认
         </Button>

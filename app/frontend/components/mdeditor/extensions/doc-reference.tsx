@@ -62,7 +62,7 @@ function DocRefCardView({ node: nodeProp, editor, getPos }: { node: ProseMirrorN
       as="div"
       contentEditable={false}
       style={{ display: 'inline' }}
-      className="doc-ref-card inline-flex items-center gap-0.5 px-1 py-0.5 mx-0.5 rounded text-xs cursor-pointer hover:bg-accent/50"
+      className="doc-ref-card inline-flex items-center gap-0.5 px-1 py-0.5 mx-0.5 rounded text-xs cursor-pointer hover:bg-[color-mix(in_oklch,var(--accent)_50%,transparent)]"
       data-title={node.attrs.title}
       data-doc-id={node.attrs.docId}
       data-notebook-id={node.attrs.notebookId}
@@ -71,7 +71,7 @@ function DocRefCardView({ node: nodeProp, editor, getPos }: { node: ProseMirrorN
     >
       <FileText size={12} className="text-muted-foreground shrink-0" />
       <span className="text-muted-foreground">[[</span>
-      <span className="text-primary font-medium">{node.attrs.notebookName}/{node.attrs.title || 'Untitled'}</span>
+      <span className="text-primary font-medium">{node.attrs.notebookName}/{node.attrs.title || '未命名'}</span>
       <span className="text-muted-foreground">]]</span>
     </NodeViewWrapper>
   )
@@ -263,9 +263,9 @@ export const DocReference = Node.create({
           'data-notebook-name': notebookName,
         }
       ),
-      ['span', { contenteditable: 'false', class: 'inline-block gap-0.5 py-0.5 mx-0.5 rounded text-xs cursor-pointer hover:bg-accent/50 text-muted-foreground' }, '[['],
-      ['span', { contenteditable: 'false', class: 'inline-block gap-0.5 py-0.5 mx-0.5 rounded text-xs cursor-pointer hover:bg-accent/50 text-primary font-medium' }, `${notebookName}/${title}`],
-      ['span', { contenteditable: 'false', class: 'inline-block gap-0.5 py-0.5 mx-0.5 rounded text-xs cursor-pointer hover:bg-accent/50 text-muted-foreground' }, ']]'],
+      ['span', { contenteditable: 'false', class: 'inline-block gap-0.5 py-0.5 mx-0.5 rounded text-xs cursor-pointer hover:bg-[color-mix(in_oklch,var(--accent)_50%,transparent)] text-muted-foreground' }, '[['],
+      ['span', { contenteditable: 'false', class: 'inline-block gap-0.5 py-0.5 mx-0.5 rounded text-xs cursor-pointer hover:bg-[color-mix(in_oklch,var(--accent)_50%,transparent)] text-primary font-medium' }, `${notebookName}/${title}`],
+      ['span', { contenteditable: 'false', class: 'inline-block gap-0.5 py-0.5 mx-0.5 rounded text-xs cursor-pointer hover:bg-[color-mix(in_oklch,var(--accent)_50%,transparent)] text-muted-foreground' }, ']]'],
     ]
   },
 

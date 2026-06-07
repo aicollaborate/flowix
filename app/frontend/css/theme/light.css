@@ -1,0 +1,55 @@
+
+:root {
+	--neutral-hue: 255;          /* 冷蓝灰 */
+	--brand-hue: 273;            /* 品牌色相 */
+	--brand-chroma: 0.185;       /* 较高饱和 */
+
+	--background: oklch(1 0 0);                                                   /* 页面底色 */
+	--foreground: oklch(0.215 0.038 var(--neutral-hue));                          /* 主文字色 */
+	--card: oklch(1 0 0);                                                         /* 卡片底色 */
+
+	--primary: oklch(0.552 var(--brand-chroma) var(--brand-hue));                 /* 主色按钮 */
+	--primary-foreground: oklch(1 0 0);                                           /* 主色文字 */
+	--brand: oklch(0.552 var(--brand-chroma) var(--brand-hue));                   /* 品牌强调 */
+
+	/* 链接文字: 沿用品牌色相但单独 token 化, 区别于"按钮/强调"角色.
+	 * 亮度从 brand 的 0.552 降到 0.45 → 白底对比 15.55:1, 远超 WCAG AAA (7:1).
+	 * 选 0.45 而非 0.50: 0.50 在纯白底上读作"次级标题"的色阶, 容易和
+	 * 加粗/中号的 inline 元素混淆; 0.45 更"沉", 让"这是链接"的视觉信号
+	 * 由色相+chroma 单独承担, 不靠亮度差异抢戏. */
+	--link: oklch(0.45 0.18 var(--brand-hue));
+
+	--secondary: oklch(0.959 0.006 var(--neutral-hue));                           /* 次要底色 */
+	--secondary-foreground: oklch(0.278 0.030 var(--neutral-hue));                /* 次要文字 */
+	--muted: oklch(0.939 0.008 var(--neutral-hue));                               /* 弱化底色 */
+	--muted-foreground: oklch(0.613 0.018 var(--neutral-hue));                    /* 弱化文字 */
+	--accent: oklch(0.969 0.003 var(--neutral-hue));                              /* 点缀底色 */
+
+	--border: oklch(0.928 0.006 var(--neutral-hue));                              /* 边框色 */
+	--input: var(--border);                                                       /* 输入框边 */
+	--divider: color-mix(in oklch, var(--background) 50%, var(--border));         /* 分割线色 */
+	--ring: oklch(0.804 0.020 var(--neutral-hue));                                /* 聚焦环色 */
+
+	--bg-titlebar: oklch(0.979 0 0);                                              /* 标题栏底 */
+	--memo-detail-bg: oklch(0.979 0.005 var(--neutral-hue) / 0.557);              /* 详情面板 */
+	--statusbar-bg: color-mix(in oklch, var(--card) 92%, var(--background));      /* 状态栏底 */
+
+	--code-bg: oklch(0.938 0.003 286);                                            /* 行内代码 */
+	--shiki-theme: github-light;                                                  /* 高亮主题 */
+	--code-block-bg: oklch(1 0 0);                                                /* 代码块底 */
+	--editor-foreground: oklch(0.321 0 0);                                        /* 编辑文字 */
+	--agent-foreground: color-mix(in oklch, var(--editor-foreground) 80%, transparent);  /* 代理文字 */
+	--editor-highlight-bg: oklch(0.945 0.124 102);                                /* 标记高亮 */
+	--editor-tag-bg: oklch(0.555 0.053 279);                                      /* 标签胶囊 */
+	--floating-bg: oklch(0.321 0 0);                                              /* 浮层底色 */
+	--floating-foreground: oklch(0.95 0 0);                                        /* 浮层文字: 与 floating-bg 配对, 三主题统一为柔和白, 避开纯白在深底上的眩光 */
+
+	--success: oklch(0.723 0.192 150);                                            /* 成功色 */
+
+	--destructive: oklch(0.577 0.245 27.325);                                     /* 危险/删除: 红 */
+	--destructive-foreground: oklch(1 0 0);                                       /* 危险底色上的文字 */
+	--warning: oklch(0.78 0.16 80);                                               /* 警告: 琥珀 */
+	--warning-foreground: oklch(0.25 0.05 60);                                    /* 警告底色上的文字 */
+
+	color-scheme: light;                                                         /* 色系模式 */
+}

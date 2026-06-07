@@ -48,12 +48,12 @@ export function PreferencesView({ initialTab }: PreferencesViewProps) {
 	}, [initialTab]);
 
 	return (
-		<div className="w-full h-full flex flex-col bg-[var(--background)]">
+		<div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--background)]">
 			<WindowsTitlebarControls />
 			{isWindowsPlatform() ? <PreferencesTitlebarWin /> : <PreferencesTitlebarMac />}
 			<div className="flex-1 flex min-h-0">
 				{/* Left sidebar */}
-				<div className="w-[204px] border-r border-[var(--divider)] bg-white shrink-0 px-2 pt-6 pb-2 space-y-1 flex flex-col">
+				<div className="w-[204px] border-r border-solid border-[var(--divider)] bg-[var(--card)] shrink-0 px-2 pt-6 pb-2 space-y-1 flex flex-col">
 					{TABS.map((tab) => (
 						<Button
 							key={tab.id}

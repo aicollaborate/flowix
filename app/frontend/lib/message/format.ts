@@ -1,16 +1,16 @@
 export function formatToolName(name: string | undefined): string {
-  if (!name) return "Unknown";
+  if (!name) return "未知";
 
   const labels: Record<string, string> = {
-    read: "Read",
-    write: "Write",
-    edit: "Edit",
-    ls: "List",
-    glob: "Glob",
-    grep: "Grep",
-    bash: "Bash",
-    list_notebooks: "List Notebooks",
-    get_notebook_detail: "Notebook Detail",
+    read: "读取",
+    write: "写入",
+    edit: "编辑",
+    ls: "列出目录",
+    glob: "通配匹配",
+    grep: "内容搜索",
+    bash: "执行命令",
+    list_notebooks: "列出笔记本",
+    get_notebook_detail: "笔记本详情",
   };
 
   if (labels[name]) return labels[name];

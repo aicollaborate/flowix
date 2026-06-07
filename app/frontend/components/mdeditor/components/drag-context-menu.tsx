@@ -281,13 +281,13 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
         e.stopPropagation()
         onClick?.()
       }}
-      className="relative flex items-center w-full px-3 py-1.5 text-sm cursor-pointer active:bg-[#e8ecf4] text-left rounded"
-      style={{ gap: 12, color: '#333' }}
-      onMouseEnter={(e) => (e.currentTarget.style.background = '#f0f0f0')}
+      className="relative flex items-center w-full px-3 py-1.5 text-sm cursor-pointer active:bg-[var(--accent)] text-left rounded"
+      style={{ gap: 12, color: 'var(--foreground)' }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--muted)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
     >
       {icon}
-      <span style={{ color: '#333' }}>{label}</span>
+      <span>{label}</span>
       {shortcut && <Kbd>{shortcut}</Kbd>}
     </button>
   )
@@ -307,8 +307,8 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
         justifyContent: 'center',
         pointerEvents: 'auto',
         zIndex: 1000,
-        background: showMenu ? '#5262DC' : (isHovered ? '#f0f0f0' : 'transparent'),
-        color: showMenu ? 'white' : '#5262DC',
+        background: showMenu ? 'var(--brand)' : (isHovered ? 'var(--muted)' : 'transparent'),
+        color: showMenu ? 'var(--primary-foreground)' : 'var(--brand)',
         borderRadius: '4px',
         cursor: 'pointer',
       }}
@@ -354,7 +354,7 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
       </svg>
       {showMenu && (
         <div
-          className="absolute z-50 bg-white border border-[rgba(0,0,0,0.08)] rounded-lg shadow-lg p-1"
+          className="absolute z-50 bg-[var(--card)] border border-[var(--border)] rounded-lg shadow-lg p-1"
           style={{
             left: '100%',
             top: menuPosition === 'bottom' ? 0 : 'auto',
@@ -371,11 +371,11 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
               () => 'level' in item ? handleTransform('heading', item.level) : handleTransform(item.type)
             )
           ))}
-          <hr className="my-1 border-t border-[rgba(0,0,0,0.06)]" />
+          <hr className="my-1 border-t border-[var(--divider)]" />
           {listItems.map(({ type, icon, label, shortcut }) => (
             renderMenuButton(icon, label, shortcut, () => handleTransform(type))
           ))}
-          <hr className="my-1 border-t border-[rgba(0,0,0,0.06)]" />
+          <hr className="my-1 border-t border-[var(--divider)]" />
           {renderMenuButton(
             <TrashSimpleIcon size={16} weight="bold" />,
             '删除',

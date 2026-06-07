@@ -128,7 +128,7 @@ export function AlertDialogAction({ children, onClick, className }: AlertDialogA
 				context?.onOpenChange(false);
 			}}
 			className={cn(
-				'inline-flex items-center justify-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 h-8 px-3 py-1 bg-[var(--foreground)] text-[var(--background)] hover:bg-[var(--foreground)]/90',
+				'inline-flex items-center justify-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 h-8 px-3 py-1 bg-[var(--foreground)] text-[var(--background)] hover:bg-[color-mix(in_oklch,var(--foreground)_90%,transparent)]',
 				className
 			)}
 		>
@@ -152,7 +152,7 @@ export function AlertDialogCancel({ children, onClick, className }: AlertDialogC
 				context?.onOpenChange(false);
 			}}
 			className={cn(
-				'inline-flex items-center justify-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 h-8 px-3 py-1 border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)]',
+				'inline-flex items-center justify-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 h-8 px-3 py-1 border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--accent)] hover:text-[var(--secondary-foreground)]',
 				className
 			)}
 		>

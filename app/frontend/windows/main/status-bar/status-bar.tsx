@@ -47,8 +47,8 @@ export function StatusBar({
   onOpenPreferences,
 }: StatusBarProps) {
   return (
-    <div className="h-6 shrink-0 flex items-center text-xs text-gray-500 border-t border-black/5 bg-white">
-      <div className="h-full flex items-center gap-1">
+    <div className="h-6 shrink-0 flex items-center text-xs text-[var(--muted-foreground)] border-t border-[var(--divider)] bg-[var(--statusbar-bg)]">
+      <div className="h-full flex items-center gap-1.5">
         <NotebookSwitcher
           open={notebookPopupOpen}
           onOpenChange={setNotebookPopupOpen}
@@ -60,30 +60,30 @@ export function StatusBar({
           onRefresh={onRefreshNotebooks}
           dropdownWidth={memoColWidth}
         />
+        <button
+          type="button"
+          className="h-full inline-flex items-center gap-1 px-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+          aria-label={`待办 ${todoCount}`}
+          onClick={onOpenTodos}
+        >
+          <ListTodo className="w-3.5 h-3.5 shrink-0" />
+          <span>待办</span>
+          <span>{todoCount}</span>
+        </button>
+        {charCount > 0 && <span className="text-[var(--muted-foreground)]">字 {charCount}</span>}
       </div>
-      <button
-        type="button"
-        className="h-full inline-flex items-center gap-1 px-1.5 text-gray-400 hover:bg-black/5 hover:text-gray-600"
-        aria-label={`待办 ${todoCount}`}
-        onClick={onOpenTodos}
-      >
-        <ListTodo className="w-3.5 h-3.5 shrink-0" />
-        <span>待办</span>
-        <span>{todoCount}</span>
-      </button>
-      {charCount > 0 && <span className="text-gray-400">字 {charCount}</span>}
       <div className="flex-1" />
       <button
         onClick={onToggleAgentPanel}
-        className="h-full flex items-center gap-1 px-1.5 py-0 hover:bg-black/5 mr-1"
+        className="h-full flex items-center gap-1 px-1.5 py-0 hover:bg-[var(--muted)] mr-1"
       >
         <Infinity className="w-3.5 h-3.5" />
-        <span>AI Chat</span>
+        <span>AI 对话</span>
       </button>
       <button
         type="button"
         onClick={onOpenPreferences}
-        className="h-full flex items-center justify-center px-1.5 py-0 hover:bg-black/5 mr-1 text-gray-500 hover:text-gray-700"
+        className="h-full flex items-center justify-center px-1.5 py-0 hover:bg-[var(--muted)] mr-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
         aria-label="偏好"
       >
         <SlidersHorizontal className="w-3.5 h-3.5" />

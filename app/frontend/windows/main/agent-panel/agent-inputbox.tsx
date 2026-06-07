@@ -1,5 +1,5 @@
 import React, { useState, useRef, forwardRef, useEffect, useMemo } from "react";
-import { Plus, X, FileText, Hash, Quote } from "lucide-react";
+import { Plus, X, FileText, Hash } from "lucide-react";
 import { PaperPlaneRight } from "@phosphor-icons/react";
 import { AITextarea } from "../../../components/ui/aitextarea";
 import { Button } from "../../../components/ui/button";
@@ -13,6 +13,7 @@ import {
 	DropdownMenuTrigger,
 } from "../../../components/ui/dropdown-menu";
 import { InputboxAdd } from "./inputbox-add";
+import { CitationCard } from "./citation-card";
 import { type MemoItem } from "../../../lib/store";
 import { useMemoStore } from "../../../lib/store";
 import { useChatStore } from "../../../lib/store/chat-store";
@@ -145,7 +146,7 @@ export const Inputbox = forwardRef<HTMLTextAreaElement, InputboxProps>((props, r
 
 	return (
 		<div className="px-4 pb-2.5 max-h-[45vh]">
-			<div className="relative rounded-2xl border border-[var(--agent-input-border)] bg-[var(--agent-input-bg)]">
+			<div className="relative rounded-2xl border border-[var(--ring)]">
 				<div className="px-3 pt-2 pb-1.5">
 					{selectedMemos.length > 0 && (
 						<div className="flex flex-wrap gap-1 mb-2">
@@ -167,18 +168,11 @@ export const Inputbox = forwardRef<HTMLTextAreaElement, InputboxProps>((props, r
 						</div>
 					)}
 					{pendingCitation && (
-						<div className="citation-card mb-2 w-full" title={pendingCitation}>
-							<Quote className="citation-card-icon" />
-							<span className="citation-card-text">{pendingCitation}</span>
-							<button
-								type="button"
-								aria-label="移除引用"
-								className="citation-card-close"
-								onClick={() => setPendingCitation(undefined)}
-							>
-								<X className="w-3 h-3" />
-							</button>
-						</div>
+						<CitationCard
+							text={pendingCitation}
+							extraClassName="mb-2"
+							onDismiss={() => setPendingCitation(undefined)}
+						/>
 					)}
 					<DropdownMenu open={shouldShowDropdown}>
 						<DropdownMenuTrigger asChild>
@@ -190,7 +184,7 @@ export const Inputbox = forwardRef<HTMLTextAreaElement, InputboxProps>((props, r
 									onKeyDown={handleKeyDown}
 									placeholder="问 AI 进行写作"
 									disabled={isLoading}
-									className="min-h-[44px] max-h-[180px] w-full overflow-auto resize-none border-0 p-0 bg-transparent placeholder:text-gray-600 placeholder:opacity-60 focus:outline-none focus:ring-0 text-[15px]"
+									className="min-h-[44px] max-h-[180px] w-full overflow-auto resize-none border-0 p-0 bg-transparent placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-0 text-[15px]"
 									style={{ fontFamily: 'var(--agent-font)' }}
 									rows={1}
 								/>
@@ -225,7 +219,7 @@ export const Inputbox = forwardRef<HTMLTextAreaElement, InputboxProps>((props, r
 							<PopoverTrigger asChild>
 								<button
 									type="button"
-									className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted-foreground)] hover:bg-white/10"
+									className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
 									aria-label="Add"
 								>
 									<Plus className="h-5 w-5" />
@@ -240,7 +234,7 @@ export const Inputbox = forwardRef<HTMLTextAreaElement, InputboxProps>((props, r
 							size="icon"
 							disabled={isLoading || !input || input.trim() === ""}
 							onClick={handleSubmit}
-							className="h-8 w-8 rounded-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white disabled:opacity-50 disabled:cursor-not-allowed"
+							className="h-8 w-8 rounded-full bg-[var(--primary)] hover:bg-[var(--primary)] text-[var(--primary-foreground)] disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							<PaperPlaneRight className="h-5 w-5" />
 						</Button>

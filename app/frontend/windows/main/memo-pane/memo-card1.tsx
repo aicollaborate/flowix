@@ -91,13 +91,13 @@ export function MemoCard({
           </div>
           <div className="flex w-full pt-2 items-center justify-between gap-2">
             <div className="flex items-center gap-2 flex-wrap">
-              {memo.favorited && <PushPin weight="fill" className="w-3.5 h-3.5 text-black" />}
+              {memo.favorited && <PushPin weight="fill" className="w-3.5 h-3.5 text-[var(--foreground)]" />}
               {memo.tags && memo.tags.length > 0 && (
                 <div className="flex items-center gap-1 flex-wrap">
                   {memo.tags.slice(0, 2).map((tagId) => (
                     <span
                       key={tagId}
-                      className="inline-flex items-center px-1 py-0 text-xs rounded-[6px] border border-gray-300 text-[var(--muted-foreground)]"
+                      className="inline-flex items-center px-1 py-0 text-xs rounded-[6px] border border-[var(--border)] text-[var(--muted-foreground)]"
                     >
                       #{tagMap[tagId] || tagId}
                     </span>
@@ -115,22 +115,30 @@ export function MemoCard({
         </div>
         <div className="absolute items-center gap-1 z-100 right-3 shrink-0">
           <DropdownMenu open={openDropdown === memo.id} onOpenChange={(open) => open ? onOpenDropdown(memo.id) : onOpenDropdown(null)}>
-            <DropdownMenuTrigger asChild>
+            <DropdownMenuTrigger
+              asChild
+              onClick={(e) => e.stopPropagation()}
+            >
               <button
                 className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--muted)] transition-opacity"
-                onClick={(e) => { e.stopPropagation(); }}
               >
                 <MoreHorizontal className="w-4 h-4 text-[var(--muted-foreground)]" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="p-1">
-              <DropdownMenuItem onClick={async () => {
-                onOpenDropdown(null);
-                onFavoriteToggle(memo);
-              }}>
+            <DropdownMenuContent align="end" className="w-[180px] px-1 py-1.5 space-y-1">
+              <DropdownMenuItem
+                onClick={async () => {
+                  onOpenDropdown(null);
+                  onFavoriteToggle(memo);
+                }}
+                className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
+              >
                 {memo.favorited ? <><BookmarkIcon weight="fill" className="w-4 h-4 mr-2" /> 取消收藏</> : <><BookmarkSimpleIcon className="w-4 h-4 mr-2" /> 收藏</>}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { onOpenDropdown(null); onDelete(memo); }}>
+              <DropdownMenuItem
+                onClick={() => { onOpenDropdown(null); onDelete(memo); }}
+                className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)] text-[var(--destructive)]"
+              >
                 <TrashIcon className="w-4 h-4 mr-2" /> 删除
               </DropdownMenuItem>
             </DropdownMenuContent>

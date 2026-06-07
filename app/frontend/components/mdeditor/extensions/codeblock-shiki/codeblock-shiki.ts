@@ -3,9 +3,19 @@ import { createCodeBlockShikiView } from './codeblock-shiki-view';
 import { proseMirrorPluginShiki } from '../shiki/shiki-plugin';
 import { loadHighlighter } from '../shiki/shiki-highlighter';
 
-const defaultTheme = 'rose-pine-dawn';
-const defaultLanguage = 'plaintext';
-const languageClassPrefix = 'language-';
+const defaultTheme = 'github-light'
+const defaultLanguage = 'plaintext'
+const languageClassPrefix = 'language-'
+
+/** Shiki 主题白名单 — 与 constants.ts 中 4 套 *_VARS 的 --shiki-theme 一一对应。
+ *  这里预加载全部 4 个, 切换主题时 getDecorations() 同步可用, 无 async lag / 无 flash。
+ *  4 × ~10KB JSON 远小于语言 grammar 的体量, 不构成性能负担。 */
+const PRELOADED_SHIKI_THEMES = [
+  'github-light',
+  'github-dark',
+  'one-light',
+  'catppuccin-latte',
+] as const;
 
 function getLanguageFromElement(element: HTMLElement): string | null {
   const codeElement = element.matches('code') ? element : element.querySelector('code');
@@ -15,9 +25,9 @@ function getLanguageFromElement(element: HTMLElement): string | null {
   return languageClass?.replace(languageClassPrefix, '') || null;
 }
 
-// Initialize highlighter immediately with default languages/themes
+// Initialize highlighter immediately with all theme variants + default languages
 loadHighlighter({
-  themes: [defaultTheme],
+  themes: [...PRELOADED_SHIKI_THEMES],
   langs: [defaultLanguage, 'typescript', 'python', 'rust', 'go'],
 });
 

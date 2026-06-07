@@ -18,7 +18,7 @@ export interface NoteMeta {
 
 export function extractNoteMeta(content: string): NoteMeta {
   if (!content || !content.trim()) {
-    return { title: 'Untitled', description: '', tags: [], todos: [], previewImage: null }
+    return { title: '未命名', description: '', tags: [], todos: [], previewImage: null }
   }
 
   // Strip frontmatter if present, then find first non-empty line in body

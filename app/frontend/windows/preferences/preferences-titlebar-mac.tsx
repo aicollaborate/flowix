@@ -19,7 +19,7 @@ export function PreferencesTitlebarMac() {
   return (
     <div
       data-tauri-drag-region
-      className="h-12 shrink-0 pr-4 flex items-center justify-center bg-[#f7f7f7] border-b border-[var(--divider)] select-none"
+      className="h-12 shrink-0 pr-4 flex items-center justify-center bg-[var(--bg-titlebar)] border-b border-solid border-[var(--divider)] select-none"
     >
       <span
         className="text-base font-semibold tracking-tight text-center text-[var(--foreground)] pointer-events-none"

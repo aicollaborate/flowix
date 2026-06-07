@@ -2,114 +2,59 @@
 @import './tiptap.css';
 @import './monaco.css';
 
+/* 主题色板单一真源在 css/theme, JS 只通过 data-theme 切换;
+ * 3 个主题 import 在 @layer base 之外, 保证 [data-theme="..."]
+ * 选择器特异性优先于 tailwind base。 */
+@import './theme/light.css';
+@import './theme/dark.css';
+@import './theme/rock.css';
+
 @import "shadcn/tailwind.css";
 
 
-/* shadcn/ui defines standard variable names in format:
---[role]-[property]
-Roles: background, foreground, primary, secondary, muted, accent, border, ring */
+/* shadcn/ui variable convention: --[role]-[property]
+ * Roles: background, foreground, primary, secondary, muted, accent, border, ring */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+	/* 颜色 token 全部由 css/theme/*.css 提供, 这里只放不参与主题的非颜色 token
+	 * (radius / font-* / app-font-*)。
+	 *
+	 * 注意: 绝不能在这里定义 --destructive / --warning 等会被 [data-theme="..."]
+	 * 覆盖的色 token —— 因为 Vite/esbuild 的 CSS 压缩会剥掉 @layer 包装,
+	 * 编译后所有规则都变成 unlayered, 同样 (0,1,0) 特异性下 :root 反而会因源码
+	 * 顺序在 [data-theme="..."] 之后而永远胜出. 主题色 token 一律进各自主题文件. */
 	:root {
-		/* shadcn/ui compatible variable names - single source of truth */
-		--background: oklch(1 0 0);
-		--foreground: oklch(0.148 0.004 228.8);
-
-		--card: oklch(1 0 0);
-		--card-foreground: oklch(0.148 0.004 228.8);
-
-		--popover: oklch(1 0 0);
-		--popover-foreground: oklch(0.148 0.004 228.8);
-
-		--primary: #09244B;
-		--primary-foreground: #ffffff;
-
-		--secondary: #5f7ba0;
-		--secondary-foreground: oklch(0.21 0.006 285.885);
-
-		--muted: oklch(91.174% 0.00166 148.475);
-		--muted-foreground: #979797;
-
-		--accent: #f3f5f6;
-		--accent-foreground: oklch(0.218 0.008 223.9);
-		--bg-titlebar: #F8F8F8;
-
-		--destructive: oklch(0.577 0.245 27.325);
-		--destructive-foreground: #ffffff;
-
-		--border: oklch(0.925 0.005 214.3);
-		--input: oklch(0.925 0.005 214.3);
-		--ring: oklch(0.723 0.014 214.4);
-		--outline-ring: oklch(0.723 0.014 214.4);
-
-		/* Lighter than --border. Reserved for non-interactive separators
-		 * (title bar bottom, sidebar right, section header underline).
-		 * Keep distinct from --border so input/select affordance is
-		 * preserved when dividers are tuned down. */
-		--divider: oklch(0.955 0.003 214.3);
-
 		--radius: 0.625rem;
-
-		/* Chart colors */
-		--chart-1: oklch(0.872 0.007 219.6);
-		--chart-2: oklch(0.56 0.021 213.5);
-		--chart-3: oklch(0.45 0.017 213.2);
-		--chart-4: oklch(0.378 0.015 216);
-		--chart-5: oklch(0.275 0.011 216.9);
 
 		--font-heading: var(--font-sans);
 		--font-sans: 'Nunito Sans', 'Inter', -apple-system, 'Segoe UI', sans-serif, BlinkMacSystemFont;
 		--font-nav: 'SF Mono';
 
-		/* ---------- User-configurable typography (Preferences → Format) ----------
-		 * These are overwritten at runtime by useApplyFontSettings.
-		 * Keep the defaults in sync with DEFAULT_USER_SETTINGS in constants/index.ts.
-		 */
+		/* User-configurable typography (Preferences → Format).
+		 * 由 useApplyFontSettings 运行时覆盖, 默认值需与
+		 * constants/index.ts 的 DEFAULT_USER_SETTINGS 保持同步。 */
 		--app-font-family: var(--font-sans);
 		--app-font-size: 15px;
 		--app-line-height: 1.6;
 
-		/* Custom - Agent Section*/
-		--agent-bg: #FFFFFF;
-		--agent-input-bg: #f8f8f8;
-
-		--agent-text-primary: #323232;
-		--agent-text-secondary: #323232AA;
-		--agent-text-bold: #1D1D32;
-		--agent-text-accent: #2828a1;
-		--agent-bg-user: #efeff0;
-		--agent-bg-code: #eaeaec;
-		--agent-border: #e7e6e6;
-
-		--agent-input-border: #d8d8d8;
+		/* Agent 面板等宽字体 — 非颜色, 不参与主题 */
 		--agent-font: 'Anonymous Pro', 'PingFang SC', 'Microsoft YaHei', 'Inter', -apple-system, monospace;
-
-		/* Custom - Canva Section*/
-		--canva-bg: #ffffff;
-		/* Custom - Canva Section*/
-		--memo-detail-bg: #f6f8fb8e;
-		/* Custom - Status Section*/
-		--statusbar-bg: #e8e8e8;
 	}
 
-	/* Markdown viewer background override */
+	/* Markdown viewer & Tiptap 编辑器: 跟随主题背景色,
+	 * 否则 dark/rock 下会出现白底与背景不同步。 */
 	.markdown-body {
-		background: #ffffff !important;
+		background: var(--card) !important;
+		--bgColor-default: var(--card);
+		--bgColor-muted: var(--muted);
 	}
 
-	/* Override github-markdown-css variables */
-	.markdown-body {
-		--bgColor-default: #ffffff;
-		--bgColor-muted: #F5F3F0;
-	}
-
-	/* Tiptap editor background override */
 	.tiptap {
-		background: #ffffff !important;
+		background: var(--background) !important;
 		overflow: hidden;
 	}
 
@@ -139,48 +84,13 @@ Roles: background, foreground, primary, secondary, muted, accent, border, ring *
 
 @layer components {
 
-	/* Selection */
 	::selection {
 		background: rgba(0, 145, 255, 0.3) !important;
 		color: inherit !important;
 	}
 
-	/* Animations */
-	@keyframes fadeIn {
-		from {
-			opacity: 0;
-			transform: translateY(10px);
-		}
-
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	.animate-fade-in {
-		animation: fadeIn 0.3s ease-out;
-	}
-
-	@keyframes slideUp {
-		from {
-			opacity: 0;
-			transform: translateY(10px);
-		}
-
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
-	}
-
-	.animate-slide-up {
-		animation: slideUp 0.3s ease-out;
-	}
-
-	/* Dialog enter/leave — pop + slide-up + fade, smooth ease-out
-	 * (replaces the broken tw-animate-css v4 plugin which doesn't generate
-	 * any classes under Tailwind v3). */
+	/* Dialog pop + slide-up + fade (替代了 tw-animate-css v4 插件,
+	 * 该插件在 Tailwind v3 下不生成任何 class)。 */
 	@keyframes woop-dialog-in {
 		from {
 			opacity: 0;
@@ -229,7 +139,6 @@ Roles: background, foreground, primary, secondary, muted, accent, border, ring *
 		animation: woop-fade-out 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
 	}
 
-	/* Icon button with feedback */
 	.icon-btn {
 		transition: background-color 150ms ease, transform 150ms ease;
 	}
@@ -246,7 +155,6 @@ Roles: background, foreground, primary, secondary, muted, accent, border, ring *
 
 @layer utilities {
 
-	/* Hide scrollbar but allow scrolling */
 	.scrollbar-hide {
 		-ms-overflow-style: none;
 		scrollbar-width: none;
@@ -256,23 +164,13 @@ Roles: background, foreground, primary, secondary, muted, accent, border, ring *
 		display: none;
 	}
 
-	.electrobun-webkit-app-region-drag {
-		-webkit-app-region: drag;
-		cursor: default;
-	}
-
-	/* Tauri 2 drag region */
 	[data-tauri-drag-region] {
 		-webkit-app-region: drag;
 		cursor: default;
 	}
 
-	.electrobun-webkit-app-region-no-drag {
-		-webkit-app-region: no-drag;
-	}
-
-	/* 兜底:任何直接调用 toast.custom() 的未样式化 toast 也保持水平居中,
-	 * 配合 lib/toast.tsx 的居中修复一起防止再次出现 toast 偏左问题。 */
+	/* 兜底: 任何直接调用 toast.custom() 的未样式化 toast 保持水平居中,
+	 * 配合 lib/toast.tsx 的居中修复, 防止再次出现 toast 偏左问题。 */
 	[data-sonner-toast][data-styled="false"] {
 		width: var(--width);
 		display: flex;
@@ -280,201 +178,33 @@ Roles: background, foreground, primary, secondary, muted, accent, border, ring *
 	}
 }
 
-/* ---------- Agent 消息区域 Markdown 样式 (agent-message) ---------- */
+/* agent-* 元素的样式已合并到组件 className (Tailwind 工具类);
+ * 关键帧由 animate-[<name>_<duration>_<timing>] arbitrary value 引用,
+ * 必须保留 CSS。 */
 
-/* 强制换行，避免长地址超出 */
-.agent-message {
-	word-break: break-word;
-	overflow-wrap: break-word;
-}
-
-
-/* 首个元素不设置上 margin */
-.agent-message > *:first-child {
-	margin-top: 0 !important;
-}
-
-/* 标题 */
-.agent-message h1 {
-	font-size: 1.2rem;
-	font-weight: 400;
-	margin-top: 0.5rem;
-}
-.agent-message h2 {
-	font-size: 1rem;
-	font-weight: 400;
-	margin-top: 0.5rem;
-}
-.agent-message h3 {
-	font-size: 0.9rem;
-	font-weight: 400;
-	margin-top: 0.5rem;
+@keyframes agentThinkingDot {
+	0%, 100% {
+		opacity: 0.55;
+		transform: scale(0.86);
+	}
+	50% {
+		opacity: 1;
+		transform: scale(1);
+	}
 }
 
-.agent-message h4 {
-	font-size: 0.82rem;
-	font-weight: 400;
-	margin-top: 0.4rem;
-}
-
-/* 段落 */
-.agent-message p {
-	font-size: 0.82rem;
-	font-weight: 400;
-	margin-top: 0.4rem;
-}
-
-.agent-message p:last-child {
-	margin-bottom: 0;
-}
-
-/* 列表 */
-.agent-message ul {
-	list-style-type: disc;
-	list-style-position: inside;
-	margin-top: 0.5rem;
-}
-.agent-message ol {
-	list-style-type: decimal;
-	list-style-position: inside;
-	margin-top: 0.5rem;
-}
-.agent-message li {
-
-}
-
-/* 加粗 - 仅颜色强调 */
-.agent-message strong {
-	font-weight: 500;
-}
-
-/* 链接 */
-.agent-message a {
-	color: var(--agent-text-accent);
-	text-decoration: none;
-}
-.agent-message a:hover {
-	text-decoration: underline;
-}
-
-/* 引用 */
-.agent-message blockquote {
-	border-left: 4px solid var(--agent-text-accent);
-	padding-left: 1rem;
-	font-style: italic;
-	color: var(--agent-text-secondary);
-	margin-bottom: 0.5rem;
-}
-
-/* 分割线 */
-.agent-message hr {
-	border: none;
-	border-top: 1px solid color-mix(in srgb, var(--agent-text-secondary) 10%, transparent);
-	margin: 1rem 0;
-}
-
-/* 内联代码（不在 pre 下的） */
-.agent-message code:not(pre code) {
-	background: var(--agent-bg-code) !important;
-	padding: 0.125rem 0.375rem;
-	border-radius: 0.375rem;
-	border: 1px solid var(--agent-border);
-	font-size: 0.82rem;
-	color: var(--agent-text-primary);
-	font-family: var(--font-sans);
-}
-
-/* pre 下的代码块保持原样式 */
-.agent-message pre code {
-	background: transparent !important;
-	font-size: 0.82rem;
-	color: var(--agent-text-secondary);
-	font-family: var(--font-sans);
-}
-
-/* 代码块容器 */
-.agent-message .code-block {
-	position: relative;
-	margin: 0.75rem 0;
-	border-radius: 0.5rem;
-	overflow: hidden;
-}
-
-/* 代码块内容 */
-.agent-message pre {
-	margin: 0;
-	font-size: 0.86rem;
-	line-height: 1.6;
-	overflow-x: auto;
-	font-family: var(--font-sans);
-}
-
-/* 表格容器 */
-.agent-message .table-wrapper {
-	overflow-x: auto;
-	margin: 0.75rem 0;
-	border: 1px solid var(--agent-border);
-	border-radius: 0.5rem;
-	background: none;
-}
-
-/* 表格 */
-.agent-message table {
-	min-width: 100%;
-	border-collapse: collapse;
-}
-
-/* 表头 */
-.agent-message thead {
-	background: transparent;
-}
-
-/* 行 */
-.agent-message tr {
-	border-bottom: 1px solid var(--agent-border);
-}
-.agent-message tr:last-child {
-	border-bottom: none;
-}
-
-/* 单元格 */
-.agent-message th {
-	border-bottom: 1px solid var(--agent-border);
-	padding: 0.5rem 0.75rem;
-	text-align: left;
-	font-size: 0.875rem;
-	font-weight: 400;
-	color: var(--agent-text-primary);
-}
-
-.agent-message td {
-	border-bottom: 1px solid var(--agent-border);
-	padding: 0.5rem 0.75rem;
-	font-size: 0.875rem;
-	color: var(--agent-text-primary);
-}
-
-/* ---------- Agent Welcome 引导页样式 ---------- */
-.agent-welcome {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	padding: 1rem 2rem;
-	padding-top: 10%;
-	animation: fadeIn 0.3s ease-out;
-	height: 100%;
-	width: 100%;
-}
-
-.agent-welcome-logo {
-	width: 64px;
-	height: 64px;
-	margin-bottom: 1.5rem;
-}
-
-.agent-welcome-logo img {
-	width: 100%;
-	height: 100%;
+@keyframes agentThinkingShine {
+	0% {
+		left: -45%;
+		opacity: 0;
+	}
+	35% {
+		opacity: 0.9;
+	}
+	70%, 100% {
+		left: 115%;
+		opacity: 0;
+	}
 }
 
 @keyframes fadeIn {
@@ -488,50 +218,7 @@ Roles: background, foreground, primary, secondary, muted, accent, border, ring *
 	}
 }
 
-.agent-welcome-grid {
-	display: flex;
-	flex-wrap: wrap;
-	justify-content: center;
-	gap: 0;
-	padding: 0 1rem;
-}
-
-.agent-welcome-card {
-	display: inline-flex;
-	padding: 0.5rem 1rem;
-	background: rgba(255, 255, 255, 0.06);
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	border-radius: 9999px;
-	transition: all 0.15s ease;
-	cursor: pointer;
-	margin: 0.25rem 0.25rem;
-}
-
-.agent-welcome-card:hover {
-	background: rgba(255, 255, 255, 0.12);
-	border-color: rgba(246, 173, 85, 0.5);
-	transform: translateY(-1px);
-}
-
-.agent-welcome-prompt {
-	font-size: 0.95rem;
-	font-weight: 400;
-	color: rgba(168, 164, 164, 0.9);
-	line-height: 1.5;
-}
-
-.agent-welcome-category {
-	font-size: 0.7rem;
-	color: rgba(205, 201, 201, 0.5);
-	margin-top: 0.375rem;
-	padding: 0.125rem 0.5rem;
-	border-radius: 9999px;
-	display: inline-block;
-	width: fit-content;
-	background: rgba(255, 255, 255, 0.08);
-}
-
-/* 全局滚动条样式 - 浅色 */
+/* 全局滚动条样式 — 颜色用 --muted-foreground 派生, 3 套主题下都保持可见 */
 ::-webkit-scrollbar {
 	width: 6px;
 	height: 6px;
@@ -542,25 +229,15 @@ Roles: background, foreground, primary, secondary, muted, accent, border, ring *
 }
 
 ::-webkit-scrollbar-thumb {
-	background: rgba(220, 220, 220, 0.25);
+	background: color-mix(in oklch, var(--muted-foreground) 25%, transparent);
 	border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background: rgba(210, 210, 210, 0.35);
+	background: color-mix(in oklch, var(--muted-foreground) 40%, transparent);
 }
 
-/* Firefox */
 * {
 	scrollbar-width: thin;
-	scrollbar-color: rgba(148, 163, 184, 0.1) transparent;
-}
-
-/* Disable macOS scroll bounce */
-.no-bounce {
-	overflow: auto !important;
-	-webkit-overflow-scrolling: auto !important;
-	overscroll-behavior: none !important;
-	overscroll-behavior-x: none !important;
-	overscroll-behavior-y: none !important;
+	scrollbar-color: color-mix(in oklch, var(--muted-foreground) 30%, transparent) transparent;
 }

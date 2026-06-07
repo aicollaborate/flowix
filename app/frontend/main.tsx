@@ -4,7 +4,6 @@ import "./css/tiptap.css";
 import "./css/monaco.css";
 import "./css/srceditor.css";
 import "./css/fonts.css";
-import "./css/agent-message.css";
 import App from "./App";
 
 // Initialize Tauri RPC

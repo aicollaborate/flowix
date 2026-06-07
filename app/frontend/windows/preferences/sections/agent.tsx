@@ -135,7 +135,7 @@ export function AgentSection() {
     return (
       <div className="space-y-3">
         <SectionHeader title="智能体配置" />
-        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+        <div className="rounded-md border border-[color-mix(in_oklch,var(--destructive)_40%,transparent)] bg-[color-mix(in_oklch,var(--destructive)_10%,transparent)] px-4 py-3 text-sm text-[var(--destructive)]">
           加载配置失败: {loadError}
         </div>
         <div className="text-xs text-[var(--muted-foreground)]">
@@ -232,7 +232,7 @@ export function AgentSection() {
           )}
         </Button>
         {saveStatus === 'saved' && (
-          <span className="flex items-center gap-1 text-xs text-green-600">
+          <span className="flex items-center gap-1 text-xs text-[var(--success)]">
             <Check className="w-3.5 h-3.5" />
             已保存
           </span>

@@ -210,7 +210,7 @@ export const useChatStore = create<ChatStore>()(
             set({
               threadId,
               messages,
-              currentThreadTitle: threadInfo?.title ?? 'Untitled Chat',
+              currentThreadTitle: threadInfo?.title ?? '未命名对话',
             });
           } catch (err) {
             console.error('Failed to load thread:', err);

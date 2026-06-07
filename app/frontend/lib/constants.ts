@@ -1,8 +1,12 @@
 /**
  * 全局常量定义
+ *
+ * 主题相关 (ThemeId / THEME_OPTIONS / 颜色 vars / sanitize) 已迁到 lib/theme,
+ * 实际色板在 css/theme/*.css; 本文件保留非颜色 / 通用 / 偏好设置结构。
  */
 
 import { SUPPORTED_TEXT_EXTENSIONS } from '../types';
+import { DEFAULT_THEME_ID, type ThemeId } from './theme';
 
 // 文件类型
 export const BINARY_EXTENSIONS = [
@@ -56,178 +60,9 @@ export interface FormatConfig {
 export interface UserSettings {
   personalize: PersonalizeConfig;
   format: FormatConfig;
-  /** 主题 id, 见 THEME_OPTIONS (顶层字段, 不分组) */
+  /** 主题 id, 顶层字段; 合法值与兜底逻辑见 lib/theme。 */
   theme: ThemeId;
 }
-
-/* ============================================================
- * 主题 (Theme)
- * ----------------------------------------------------------------
- * 每个主题就是一组 CSS 变量覆写, 由 useApplyTheme 写入 :root。
- * - 'system' 是特殊主题: 跟随 prefers-color-scheme 在 light / dark 间切换
- * - 其余主题为静态色板
- *
- * preview.swatches 仅用于设置面板里的预览卡片, 与实际生效的 vars 解耦,
- * 这样卡片可以挑最具代表性的 3-4 个色块呈现, 而不必暴露全部 token。
- * ============================================================ */
-
-export type ThemeId = 'system' | 'light' | 'dark' | 'rock' | 'mist';
-
-export interface ThemeOption {
-  id: ThemeId;
-  label: string;
-  description: string;
-  /** 预览卡片用的色板: [背景, 表面, 主色, 文字/边框] */
-  preview: {
-    background: string;
-    surface: string;
-    primary: string;
-    accent: string;
-  };
-  /** 写入 :root 的 CSS 变量; 'system' 为空, 由 hook 在运行时挑 light/dark */
-  vars: Record<string, string>;
-}
-
-const LIGHT_VARS: Record<string, string> = {
-  '--background': '#ffffff',
-  '--foreground': '#0d1a2b',
-  '--card': '#ffffff',
-  '--card-foreground': '#0d1a2b',
-  '--popover': '#ffffff',
-  '--popover-foreground': '#0d1a2b',
-  '--primary': '#09244B',
-  '--primary-foreground': '#ffffff',
-  '--secondary': '#eef2f5',
-  '--secondary-foreground': '#1f2937',
-  '--muted': '#f5f7fa',
-  '--muted-foreground': '#979797',
-  '--accent': '#f3f5f6',
-  '--accent-foreground': '#1f2937',
-  '--border': '#e5e7eb',
-  '--input': '#e5e7eb',
-  '--divider': '#eef0f2',
-  '--ring': '#b6c0cc',
-  '--bg-titlebar': '#F8F8F8',
-  '--memo-detail-bg': '#f6f8fb8e',
-  '--statusbar-bg': '#e8e8e8',
-};
-
-const DARK_VARS: Record<string, string> = {
-  '--background': '#0e1014',
-  '--foreground': '#e6e8eb',
-  '--card': '#16191f',
-  '--card-foreground': '#e6e8eb',
-  '--popover': '#16191f',
-  '--popover-foreground': '#e6e8eb',
-  '--primary': '#7aa2ff',
-  '--primary-foreground': '#0e1014',
-  '--secondary': '#1d2027',
-  '--secondary-foreground': '#cfd3d8',
-  '--muted': '#1a1d23',
-  '--muted-foreground': '#8a8f97',
-  '--accent': '#222732',
-  '--accent-foreground': '#e6e8eb',
-  '--border': '#262a31',
-  '--input': '#262a31',
-  '--divider': '#1c2028',
-  '--ring': '#3a4150',
-  '--bg-titlebar': '#0e1014',
-  '--memo-detail-bg': '#13161c',
-  '--statusbar-bg': '#16191f',
-};
-
-const ROCK_VARS: Record<string, string> = {
-  '--background': '#ecebe6',
-  '--foreground': '#2e2c28',
-  '--card': '#f3f2ed',
-  '--card-foreground': '#2e2c28',
-  '--popover': '#f3f2ed',
-  '--popover-foreground': '#2e2c28',
-  '--primary': '#4a4744',
-  '--primary-foreground': '#f3f2ed',
-  '--secondary': '#dcd9d1',
-  '--secondary-foreground': '#3a3733',
-  '--muted': '#e6e4dd',
-  '--muted-foreground': '#8a857c',
-  '--accent': '#dcd9d1',
-  '--accent-foreground': '#3a3733',
-  '--border': '#cfccc4',
-  '--input': '#cfccc4',
-  '--divider': '#dad7d0',
-  '--ring': '#b1aea4',
-  '--bg-titlebar': '#e6e4dd',
-  '--memo-detail-bg': '#f0eee8',
-  '--statusbar-bg': '#dcd9d1',
-};
-
-const MIST_VARS: Record<string, string> = {
-  '--background': '#f6f3fb',
-  '--foreground': '#2a2440',
-  '--card': '#fbf9ff',
-  '--card-foreground': '#2a2440',
-  '--popover': '#fbf9ff',
-  '--popover-foreground': '#2a2440',
-  '--primary': '#6b5bd6',
-  '--primary-foreground': '#ffffff',
-  '--secondary': '#e8dcf5',
-  '--secondary-foreground': '#3b3160',
-  '--muted': '#efeaf8',
-  '--muted-foreground': '#857ba0',
-  '--accent': '#e4dbf7',
-  '--accent-foreground': '#3b3160',
-  '--border': '#dccff1',
-  '--input': '#dccff1',
-  '--divider': '#ebe2f5',
-  '--ring': '#b6a6e5',
-  '--bg-titlebar': '#eee7fa',
-  '--memo-detail-bg': '#f3eefc',
-  '--statusbar-bg': '#e4dbf7',
-};
-
-export const THEME_VARS_BY_ID: Record<Exclude<ThemeId, 'system'>, Record<string, string>> = {
-  light: LIGHT_VARS,
-  dark: DARK_VARS,
-  rock: ROCK_VARS,
-  mist: MIST_VARS,
-};
-
-export const THEME_OPTIONS: ThemeOption[] = [
-  {
-    id: 'system',
-    label: '跟随系统',
-    description: '随系统外观自动切换浅色 / 深色',
-    preview: { background: '#ffffff', surface: '#0e1014', primary: '#09244B', accent: '#7aa2ff' },
-    vars: {},
-  },
-  {
-    id: 'light',
-    label: '浅色',
-    description: '明亮、清爽,适合白天',
-    preview: { background: '#ffffff', surface: '#f5f7fa', primary: '#09244B', accent: '#e5e7eb' },
-    vars: LIGHT_VARS,
-  },
-  {
-    id: 'dark',
-    label: '深色',
-    description: '低光、护眼,适合夜间',
-    preview: { background: '#0e1014', surface: '#16191f', primary: '#7aa2ff', accent: '#262a31' },
-    vars: DARK_VARS,
-  },
-  {
-    id: 'rock',
-    label: '岩灰',
-    description: '温润的暖灰,稳重低饱和',
-    preview: { background: '#ecebe6', surface: '#f3f2ed', primary: '#4a4744', accent: '#cfccc4' },
-    vars: ROCK_VARS,
-  },
-  {
-    id: 'mist',
-    label: '雾紫',
-    description: '柔和的紫色调,文艺感',
-    preview: { background: '#f6f3fb', surface: '#ece5fa', primary: '#6b5bd6', accent: '#dccff1' },
-    vars: MIST_VARS,
-  },
-];
 
 /**
  * 可选字体列表 - 与 menu-board.tsx 中 Font 下拉选项保持同步。
@@ -235,7 +70,7 @@ export const THEME_OPTIONS: ThemeOption[] = [
  */
 export const FONT_FAMILY_OPTIONS: { label: string; value: string }[] = [
   {
-    label: 'Nunito Sans (默认)',
+    label: 'Nunito Sans',
     value: "'Nunito Sans', 'Inter', -apple-system, 'Segoe UI', sans-serif, BlinkMacSystemFont",
   },
   {
@@ -288,7 +123,8 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     fontSize: 15,
     lineHeight: 1.6,
   },
-  theme: 'system',
+  // 默认值收敛到 lib/theme/DEFAULT_THEME_ID — 改默认值改一处即可。
+  theme: DEFAULT_THEME_ID,
 };
 
 // UI 常量

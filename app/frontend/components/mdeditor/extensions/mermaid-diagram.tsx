@@ -27,7 +27,7 @@ async function renderMermaidDiagram(code: string, theme: 'dark' | 'light'): Prom
 
     return { svg };
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to render diagram';
+    const message = err instanceof Error ? err.message : '图表渲染失败';
     return { error: message };
   }
 }
@@ -103,7 +103,7 @@ const MermaidDiagramView = memo(({ node }: { node: any }) => {
               className="mermaid-edit-btn"
               onClick={handleEditClick}
               type="button"
-              title="Edit diagram"
+              title="编辑图表"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -112,7 +112,7 @@ const MermaidDiagramView = memo(({ node }: { node: any }) => {
             </button>
           </div>
           {state.isRendering && (
-            <div className="mermaid-loading">Rendering diagram...</div>
+            <div className="mermaid-loading">正在渲染图表…</div>
           )}
           {state.error && (
             <div className="mermaid-error">
@@ -140,7 +140,7 @@ const MermaidDiagramView = memo(({ node }: { node: any }) => {
             className="mermaid-view-btn"
             onClick={handleViewClick}
             type="button"
-            title="View diagram"
+            title="查看图表"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />

@@ -88,6 +88,7 @@ export function MainLayout() {
   const [isDraggingListDivider, setIsDraggingListDivider] = useState(false);
   const [isDraggingAgentDivider, setIsDraggingAgentDivider] = useState(false);
   const [isSrcView, setIsSrcView] = useState(false);
+  const [isSearchPanelOpen, setIsSearchPanelOpen] = useState(false);
   const [charCount, setCharCount] = useState(0);
   const [todoCount, setTodoCount] = useState(0);
   const [currentDocumentContent, setCurrentDocumentContent] = useState('');
@@ -183,6 +184,12 @@ export function MainLayout() {
 
   useEffect(() => {
     setCurrentDocumentContent('');
+  }, [currentDocumentPath]);
+
+  // 切换 memo 时关闭搜索面板 — 搜索/替换的 matches 是基于当前 editor state,
+  // 切到新 memo 后旧结果毫无意义, 应当随切换重置。
+  useEffect(() => {
+    setIsSearchPanelOpen(false);
   }, [currentDocumentPath]);
 
   const writeClipboardText = useCallback(async (text: string) => {
@@ -504,7 +511,7 @@ export function MainLayout() {
             aria-hidden={isMemoListHidden}
           >
             <div
-              className={`flex flex-col overflow-hidden h-full bg-white border-black/5 border-r border-black/5 transition-transform duration-150 ease-out will-change-transform ${
+              className={`flex flex-col overflow-hidden h-full bg-[var(--card)] border-[var(--border)] border-r transition-transform duration-150 ease-out will-change-transform ${
                 isMemoListHidden ? '-translate-x-full' : 'translate-x-0'
               }`}
               style={{ width: memoColWidth }}
@@ -543,6 +550,7 @@ export function MainLayout() {
                 isSrcView={isSrcView}
                 onToggleSidebar={toggleMemoListVisible}
                 onToggleSrcView={() => setIsSrcView(v => !v)}
+                onOpenSearch={() => setIsSearchPanelOpen(true)}
                 onCopyLink={handleCopyLink}
                 onCopyFullText={handleCopyFullText}
                 onTogglePin={handleTogglePin}
@@ -557,6 +565,7 @@ export function MainLayout() {
                 isSrcView={isSrcView}
                 onToggleSidebar={toggleMemoListVisible}
                 onToggleSrcView={() => setIsSrcView(v => !v)}
+                onOpenSearch={() => setIsSearchPanelOpen(true)}
                 onCopyLink={handleCopyLink}
                 onCopyFullText={handleCopyFullText}
                 onTogglePin={handleTogglePin}
@@ -574,6 +583,8 @@ export function MainLayout() {
                   filePath={currentDocumentPath}
                   isExternalDocument={isExternalDocument}
                   isSrcView={isSrcView}
+                  searchPanelOpen={isSearchPanelOpen}
+                  onSearchPanelOpenChange={setIsSearchPanelOpen}
                   onMetainfoData={(data) => setCurrentDocumentContent(data.memoContent)}
                   onCharCountChange={setCharCount}
                 />
@@ -606,7 +617,7 @@ export function MainLayout() {
               aria-hidden={!agentPanelVisible}
             >
               <div
-                className={`h-full overflow-hidden bg-[#f7f7f7]/95 border-black/5 border-l border-[var(--border)] transition-transform duration-150 ease-out will-change-transform ${
+                className={`h-full overflow-hidden bg-[var(--bg-titlebar)] border-[var(--border)] border-l transition-transform duration-150 ease-out will-change-transform ${
                   agentPanelVisible ? 'translate-x-0' : 'translate-x-full'
                 }`}
                 style={{ width: agentPanelDraftWidth }}

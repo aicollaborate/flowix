@@ -134,7 +134,7 @@ export function ComnTiptapToolbar({ editor, visible = true }: ComnTiptapToolbarP
                 onClick={() => editor.chain().focus().toggleHeading({ level }).run()}
               >
                 {icon}
-                <span className="text-[#9ca3af]">{symbol}</span>
+                <span className="text-[var(--muted-foreground)]">{symbol}</span>
               </DropdownMenuItem>
             ))}
             <DropdownMenuItem
@@ -142,7 +142,7 @@ export function ComnTiptapToolbar({ editor, visible = true }: ComnTiptapToolbarP
               onClick={() => editor.chain().focus().setParagraph().run()}
             >
               {paragraphIcon}
-              <span className="text-[#9ca3af]">正文</span>
+              <span className="text-[var(--muted-foreground)]">正文</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -176,16 +176,6 @@ export function ComnTiptapToolbar({ editor, visible = true }: ComnTiptapToolbarP
         >
           <TextItalicIcon size={18} weight="bold" />
         </button>
-        <button
-          className={`toolbar-button ${state.link ? 'active' : ''}`}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => openLinkBubbleMenu(editor, () => undefined)}
-          type="button"
-          style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          title="添加链接"
-        >
-          <LinkSimpleIcon size={18} weight="bold" />
-        </button>
 
         <div className="toolbar-divider" />
 
@@ -208,6 +198,16 @@ export function ComnTiptapToolbar({ editor, visible = true }: ComnTiptapToolbarP
           title="待办列表"
         >
           <CheckSquareIcon size={18} weight="bold" />
+        </button>
+        <button
+          className={`toolbar-button ${state.link ? 'active' : ''}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => openLinkBubbleMenu(editor, () => undefined)}
+          type="button"
+          style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          title="添加链接"
+        >
+          <LinkSimpleIcon size={18} weight="bold" />
         </button>
 
         <button

@@ -40,7 +40,7 @@ export function InputboxAdd({ items, onNewChat, onAgentChange, onContextFileChan
 	const defaultItems: InputboxAddItem[] = [
 		{
 			id: "new-chat",
-			label: "New Chat",
+			label: "新建对话",
 			icon: <MessageCirclePlus className="h-4 w-4" />,
 			onClick: () => {
 				if (onNewChat) {
@@ -100,7 +100,7 @@ export function InputboxAdd({ items, onNewChat, onAgentChange, onContextFileChan
 									: "border-[var(--muted-foreground)]"
 							)}
 						>
-							{contextFileEnabled && <Check className="h-3 w-3 text-white" />}
+							{contextFileEnabled && <Check className="h-3 w-3 text-[var(--primary-foreground)]" />}
 						</div>
 					</button>
 				</div>
@@ -108,7 +108,7 @@ export function InputboxAdd({ items, onNewChat, onAgentChange, onContextFileChan
 		},
 		{
 			id: "instructions",
-			label: "Instructions",
+			label: "指令",
 			icon: <Scroll className="h-4 w-4" />,
 			onClick: () => {},
 		},
@@ -132,7 +132,7 @@ export function InputboxAdd({ items, onNewChat, onAgentChange, onContextFileChan
 						<button
 							type="button"
 							onClick={() => item.onClick?.()}
-							className="w-full flex items-center gap-2 px-1 py-1.5 rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)] transition-colors"
+							className="w-full flex items-center gap-2 px-1 py-1.5 rounded-md text-sm text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--secondary-foreground)] transition-colors"
 						>
 							<span className="text-[var(--muted-foreground)]">{item.icon}</span>
 							<span>{item.label}</span>

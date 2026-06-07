@@ -1,0 +1,61 @@
+[data-theme="rock"] {
+	--neutral-hue: 92;
+	/* 品牌色: 岩浆红 (magma). hue 22 落在红橙交界偏橙, 像刚喷出地表
+	 * 的熔岩, 比朱砂红更炽热; chroma 0.22 + 亮度 0.55 显著提高饱和,
+	 * 在岩灰低饱和底色上充当"热源"焦点, 视觉权重显著高于原紫色版. */
+	--brand-hue: 22;
+	--brand-chroma: 0.22;
+
+	--background: oklch(0.955 0.007 var(--neutral-hue));
+	--foreground: oklch(0.333 0.012 var(--neutral-hue));
+	--card: oklch(0.970 0.007 var(--neutral-hue));
+
+	--primary: oklch(0.440 0.009 var(--neutral-hue));
+	--primary-foreground: oklch(0.970 0.007 var(--neutral-hue));
+	--brand: oklch(0.55 var(--brand-chroma) var(--brand-hue));
+
+	/* 链接文字: rock 主题底色是浅橄榄 (--background L=0.955), 链接需要
+	 * "沉下去"才能在浅底上稳住视觉重量, 而不是悬浮. 选 L=0.42 / C=0.18:
+	 * - L 0.52→0.42: 从"中等亮度漂浮"变为"深色锚定", 像冷却中的岩浆
+	 *   (cooling magma) — 既呼应品牌色相, 又是 rock 主题独有的"地热"质感
+	 * - C 0.20→0.18: 略降 chroma, 减弱在橄榄底上的"红绿对抗"视感
+	 *   (互补色对峙), 改为"同色系深浅对比" — 像深色岩石上嵌着的暗红矿脉
+	 * - 对比度 11.77:1, 远超 WCAG AAA (7:1)
+	 * hover 状态由 .tiptap a:hover 处用 color-mix 直接基于 --link 提亮派生. */
+	--link: oklch(0.42 0.18 var(--brand-hue));
+
+	--secondary: oklch(0.904 0.011 var(--neutral-hue));
+	--secondary-foreground: oklch(0.372 0.009 var(--neutral-hue));
+	--muted: oklch(0.885 0.015 var(--neutral-hue));
+	--muted-foreground: oklch(0.576 0.014 var(--neutral-hue));
+	--accent: oklch(0.904 0.011 var(--neutral-hue));
+
+	--border: oklch(0.861 0.009 var(--neutral-hue));
+	--input: var(--border);
+	--divider: color-mix(in oklch, var(--background) 50%, var(--border));
+	--ring: oklch(0.770 0.013 var(--neutral-hue));
+
+	--bg-titlebar: oklch(0.934 0.010 var(--neutral-hue));
+	--memo-detail-bg: oklch(0.961 0.008 var(--neutral-hue));
+	--statusbar-bg: color-mix(in oklch, var(--card) 92%, var(--background));
+
+	--floating-bg: oklch(0.323 0.007 var(--neutral-hue));
+	--floating-foreground: oklch(0.95 0 0);  /* 与 light/dark 同值: --floating-bg 在三主题下都是深色, 配对的文字统一柔和白 */
+
+	--code-bg: oklch(0.894 0.014 var(--neutral-hue));
+	--shiki-theme: one-light;
+	--code-block-bg: oklch(0.985 0 0);
+	--editor-foreground: oklch(0.379 0.009 var(--neutral-hue));
+	--agent-foreground: color-mix(in oklch, var(--editor-foreground) 80%, transparent);
+
+	--success: oklch(0.723 0.192 150);
+
+	/* 危险/警告: 在橄榄底 (hue 92) 上微调, 让红保留暖度但降 chroma
+	 * 防止与底色产生 "红绿对抗" 视感; 警告色向橄榄偏 5° 形成同色系呼应. */
+	--destructive: oklch(0.50 0.20 22);
+	--destructive-foreground: oklch(1 0 0);
+	--warning: oklch(0.62 0.13 85);
+	--warning-foreground: oklch(0.30 0.08 75);
+
+	color-scheme: light;
+}

@@ -36,7 +36,7 @@ const HIDDEN_TAGS_SETTING_PREFIX = 'hidden_tags:';
 
 const HEADER_ICON_BTN_CLASS =
   'h-8 w-8 justify-center rounded-full p-0 border border-[var(--border)] ' +
-  'hover:bg-[var(--muted)] hover:text-[var(--primary)] text-[var(--agent-text-primary)]';
+  'hover:bg-[var(--muted)] hover:text-[var(--primary)] text-[var(--foreground)]';
 
 function getTagOrderSettingKey(notebookId: string): string {
   return `${TAG_ORDER_SETTING_PREFIX}${notebookId}`;
@@ -80,7 +80,7 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center h-full gap-2 text-[var(--muted-foreground)]">
       <MessageSquareDashed className="w-12 h-12 opacity-30" />
-      <span className="text-sm">No Memo Found</span>
+      <span className="text-sm">未找到备忘录</span>
     </div>
   );
 }
@@ -729,7 +729,7 @@ export function MemoList() {
   const currentNotebook = selectedNotebook;
 
   return (
-    <div className="flex flex-col h-full bg-[var(--agent-bg)] relative">
+    <div className="flex flex-col h-full bg-[var(--card)] relative">
       {/* Memo Tab */}
       <div className="flex items-center justify-between px-4 py-2 gap-2">
         <DropdownMenu open={notebookDropdownOpen} onOpenChange={setNotebookDropdownOpen}>
@@ -738,7 +738,7 @@ export function MemoList() {
               className="flex items-center gap-1 pr-2 py-0.5 rounded-md hover:bg-[var(--muted)] transition-colors"
             >
               <span className="text-[15px] font-medium">{currentNotebook?.name || '选择笔记本'}</span>
-              <ChevronDown className="w-[14px] h-[14px] text-gray-500" strokeWidth={2.5} />
+              <ChevronDown className="w-[14px] h-[14px] text-[var(--muted-foreground)]" strokeWidth={2.5} />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="bottom" className="w-[200px] px-1 py-1.5 space-y-1">
@@ -798,18 +798,20 @@ export function MemoList() {
           <Button
             size="icon"
             variant="outline"
-            className={cn(HEADER_ICON_BTN_CLASS, 'bg-white')}
+            className={cn(HEADER_ICON_BTN_CLASS, 'bg-[var(--card)]')}
             onClick={() => { /* TODO: open search */ }}
+            title="全文搜索"
             aria-label="搜索"
           >
             <Search className="w-4 h-4" />
           </Button>
           <Button
             size="icon"
-            className="h-8 w-8 justify-center bg-black text-white hover:opacity-90 rounded-full p-0 border border-transparent"
+            className="h-8 w-8 justify-center bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 rounded-full p-0 border border-transparent"
+            title="新建笔记"
             onClick={handleCreateMemo}
           >
-            <SquarePen className="w-4 h-4 text-white" />
+            <SquarePen className="w-4 h-4 text-[var(--primary-foreground)]" />
           </Button>
         </div>
       </div>
@@ -832,10 +834,10 @@ export function MemoList() {
                 onClick={() => handleTagSelect(tag.id)}
                 className={cn(
                   "h-7 max-w-[140px] shrink-0 rounded-lg border px-1.5 text-xs font-medium leading-none transition-colors",
-                  "bg-white/70 hover:border-[var(--primary)] hover:text-[var(--primary)]",
+                  "bg-[color-mix(in_oklch,var(--card)_70%,transparent)] hover:border-[var(--primary)] hover:text-[var(--primary)]",
                   selectedTagId === tag.id
                     ? "border-[var(--primary)] bg-[var(--accent)] text-[var(--primary)]"
-                    : "border-[var(--border)] text-[var(--agent-text-primary)]"
+                    : "border-[var(--border)] text-[var(--foreground)]"
                 )}
                 title={tag.name}
               >
@@ -848,7 +850,7 @@ export function MemoList() {
             </div>
 
             {tagOptions.length >= 5 && (
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-end bg-gradient-to-r from-transparent via-[var(--agent-bg)] to-[var(--agent-bg)] pl-6">
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-end bg-gradient-to-r from-transparent via-[var(--card)] to-[var(--card)] pl-6">
                 <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
                 <PopoverTrigger asChild>
                   <button
@@ -869,7 +871,7 @@ export function MemoList() {
                   side="right"
                   align="start"
                   sideOffset={8}
-                  className="w-[240px] max-h-[480px] overflow-hidden rounded-lg bg-white p-0 shadow-xl"
+                  className="w-[240px] max-h-[480px] overflow-hidden rounded-lg bg-[var(--card)] p-0 shadow-xl"
                 >
                   <div className="max-h-[480px] space-y-1 overflow-y-auto p-1.5">
                     {tagOptions.map((tag) => {
@@ -903,7 +905,7 @@ export function MemoList() {
                             "group relative flex h-8 w-full cursor-grab select-none items-center gap-2 rounded-md pl-1.5 pr-1 text-left text-sm transition-colors active:cursor-grabbing",
                             isSelected && !isDragging
                               ? "bg-[var(--accent)] text-[var(--primary)]"
-                              : "text-[var(--agent-text-primary)] hover:bg-[var(--muted)]",
+                              : "text-[var(--foreground)] hover:bg-[var(--muted)]",
                             isDragging && "opacity-50",
                             isHidden && !isDragging && "opacity-70"
                           )}
@@ -978,7 +980,7 @@ export function MemoList() {
                   {dragGhost && (
                     <div
                       aria-hidden
-                      className="pointer-events-none fixed z-[1100] flex items-center gap-2 rounded-md border border-[var(--primary)] bg-white px-2 text-sm opacity-50 shadow-lg"
+                      className="pointer-events-none fixed z-[1100] flex items-center gap-2 rounded-md border border-[var(--primary)] bg-[var(--card)] px-2 text-sm opacity-50 shadow-lg"
                       style={{
                         left: dragGhost.rect.left,
                         top: dragGhost.currentY - dragGhost.offsetY,

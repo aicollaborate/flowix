@@ -25,7 +25,7 @@ const AITextarea = React.forwardRef<
       data-slot="textarea"
       ref={ref}
       className={cn(
-        "border-[var(--border)] placeholder:text-[var(--muted-foreground)] focus-visible:border-[var(--primary)] aria-invalid:border-[var(--destructive)] flex field-sizing-content min-h-16 w-full rounded-lg border bg-transparent px-2.5 py-2 text-base transition-colors outline-none disabled:cursor-not-allowed disabled:bg-[var(--border)]/50 disabled:opacity-50",
+        "border-[var(--border)] placeholder:text-[var(--muted-foreground)] focus-visible:border-[var(--primary)] aria-invalid:border-[var(--destructive)] flex field-sizing-content min-h-16 w-full rounded-lg border bg-transparent px-2.5 py-2 text-base transition-colors outline-none disabled:cursor-not-allowed disabled:bg-[color-mix(in_oklch,var(--border)_50%,transparent)] disabled:opacity-50",
         className
       )}
       {...props}

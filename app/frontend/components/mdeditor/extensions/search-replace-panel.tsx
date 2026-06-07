@@ -17,6 +17,7 @@ interface SearchReplacePanelProps {
 export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePanelProps) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [replaceTerm, setReplaceTerm] = useState('');
   const [matchCount, setMatchCount] = useState(0);
@@ -107,17 +108,34 @@ export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePa
     };
   }, [editor, visible]);
 
+  // 点外面 (编辑器正文 / 其它区域) 关闭面板 — 仅在 visible=true 时挂监听, 关闭后立即卸载,
+  // 避免对编辑器内正常点击造成干扰。
+  // 用 mousedown 而非 click: mousedown 在 focus/blur 之前触发, 行为更可预测。
+  useEffect(() => {
+    if (!visible) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (target && panelRef.current && !panelRef.current.contains(target)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+    };
+  }, [visible, onClose]);
+
   if (!visible) return null;
 
   return (
-    <div className="absolute top-0 left-1/2 -translate-x-1/2 z-[200] bg-background border border-[rgba(0,0,0,0.08)] rounded-xl shadow-lg p-2 flex flex-col gap-1.5 min-w-[320px] max-w-[480px] animate-in slide-in-from-top-2 fade-in duration-200">
+    <div ref={panelRef} className="absolute top-0 left-1/2 -translate-x-1/2 z-[200] bg-[var(--card)] border border-[var(--border)] rounded-xl shadow-lg p-2 flex flex-col gap-1.5 min-w-[320px] max-w-[480px] animate-in slide-in-from-top-2 fade-in duration-200">
       {/* Search row */}
       <div className="flex items-center gap-1.5">
         <Button
           variant="ghost"
           size="icon-xs"
           onClick={() => setShowReplace(!showReplace)}
-          title="Toggle replace"
+          title="切换替换"
         >
           {showReplace ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
         </Button>
@@ -127,7 +145,7 @@ export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePa
             ref={searchInputRef}
             value={searchTerm}
             onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder="Search..."
+            placeholder="搜索..."
             className="pr-9 h-8 text-sm"
           />
           {matchCount > 0 && (
@@ -137,13 +155,13 @@ export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePa
           )}
         </div>
 
-        <Button variant="ghost" size="icon-xs" onClick={handlePrev} disabled={matchCount === 0} title="Previous match">
+        <Button variant="ghost" size="icon-xs" onClick={handlePrev} disabled={matchCount === 0} title="上一处">
           <ArrowUp className="size-3.5" />
         </Button>
-        <Button variant="ghost" size="icon-xs" onClick={handleNext} disabled={matchCount === 0} title="Next match">
+        <Button variant="ghost" size="icon-xs" onClick={handleNext} disabled={matchCount === 0} title="下一处">
           <ArrowDown className="size-3.5" />
         </Button>
-        <Button variant="ghost" size="icon-xs" onClick={handleClose} title="Close" className="hover:bg-destructive/10 hover:text-destructive">
+        <Button variant="ghost" size="icon-xs" onClick={handleClose} title="关闭" className="hover:bg-[color-mix(in_oklch,var(--destructive)_10%,transparent)] hover:text-destructive">
           <X className="size-3.5" />
         </Button>
       </div>
@@ -156,14 +174,14 @@ export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePa
             ref={replaceInputRef}
             value={replaceTerm}
             onChange={(e) => handleReplaceChange(e.target.value)}
-            placeholder="Replace..."
+            placeholder="替换为..."
             className="h-8 text-sm pr-9"
           />
         </div>
-        <Button variant="ghost" size="icon-xs" onClick={handleReplace} disabled={matchCount === 0} title="Replace" className="hover:bg-primary/10 hover:text-primary">
+        <Button variant="ghost" size="icon-xs" onClick={handleReplace} disabled={matchCount === 0} title="替换" className="hover:bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] hover:text-[var(--primary)]">
           <Replace className="size-3.5" />
         </Button>
-        <Button variant="ghost" size="icon-xs" onClick={handleReplaceAll} disabled={matchCount === 0} title="Replace all" className="hover:bg-emerald-500/10 hover:text-emerald-600">
+        <Button variant="ghost" size="icon-xs" onClick={handleReplaceAll} disabled={matchCount === 0} title="全部替换" className="hover:bg-[color-mix(in_oklch,var(--success)_10%,transparent)] hover:text-[var(--success)]">
           <ReplaceAll className="size-3.5" />
         </Button>
       </div>

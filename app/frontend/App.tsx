@@ -6,7 +6,7 @@ import { Toaster } from "sonner";
 import { useUserSettings } from "./lib/hooks/useUserSettings";
 import { useUserSettingsStore } from "./lib/store/user-settings-store";
 import { useApplyFontSettings } from "./lib/hooks/useApplyFontSettings";
-import { useApplyTheme } from "./lib/hooks/useApplyTheme";
+import { ThemeProvider } from "./lib/theme";
 import { listenToUserConfigChanges, stopListeningToUserConfigChanges } from "./lib/tauri/client";
 
 const MainLayout = lazy(() =>
@@ -29,7 +29,6 @@ function App() {
   const loadInitial = useUserSettingsStore((s) => s.loadInitial);
   const flushPending = useUserSettingsStore((s) => s.flushPending);
   useApplyFontSettings(settings.format);
-  useApplyTheme(settings.theme);
 
   // 启动加载一次, 卸载前 flush 防止拖动滑块过程中关窗丢改动
   useEffect(() => {
@@ -74,9 +73,11 @@ function App() {
     return (
       <ErrorBoundary>
         <AppToaster />
-        <Suspense fallback={null}>
-          <PreferencesView initialTab={tab} />
-        </Suspense>
+        <ThemeProvider>
+          <Suspense fallback={null}>
+            <PreferencesView initialTab={tab} />
+          </Suspense>
+        </ThemeProvider>
       </ErrorBoundary>
     );
   }
@@ -84,9 +85,11 @@ function App() {
   return (
     <ErrorBoundary>
       <AppToaster />
-      <Suspense fallback={null}>
-        <MainLayout />
-      </Suspense>
+      <ThemeProvider>
+        <Suspense fallback={null}>
+          <MainLayout />
+        </Suspense>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

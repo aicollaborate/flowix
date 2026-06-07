@@ -138,12 +138,12 @@ export function attachLinkHoverTooltip(editor: Editor, root: HTMLElement): () =>
     const actions = document.createElement('span');
     actions.className = 'tiptap-link-hover-tooltip-actions';
     actions.append(
-      createIconButton('Edit link', EDIT_ICON, (event) => {
+      createIconButton('编辑链接', EDIT_ICON, (event) => {
         event.preventDefault();
         event.stopPropagation();
         editActiveLink();
       }),
-      createIconButton('Remove link', REMOVE_ICON, (event) => {
+      createIconButton('移除链接', REMOVE_ICON, (event) => {
         event.preventDefault();
         event.stopPropagation();
         removeActiveLink();

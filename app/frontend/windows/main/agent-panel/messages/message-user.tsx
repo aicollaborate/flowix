@@ -1,9 +1,8 @@
 import type { ChatMessage as ChatMessageType } from "../../../../types";
 import { parseYamlMeta } from "../../../../lib/message/parse";
 import { truncateStart } from "../../../../lib/message/format";
-import { Quote } from "lucide-react";
 import { MarkdownRenderer } from "./markdown-renderer";
-import "../../../../css/agent-message.css";
+import { CitationCard } from "../citation-card";
 
 interface MessageUserProps {
   message: ChatMessageType;
@@ -20,22 +19,14 @@ export function MessageUser({ message }: MessageUserProps) {
       <div className="flex flex-col gap-1 w-fit items-end max-w-full">
         {meta.selecteditem && (
           <div
-            className="flex items-center gap-1 text-xs text-[var(--agent-text-primary)] bg-[var(--popover)] px-2 py-1 rounded border border-[var(--border)] max-w-[300px]"
+            className="flex items-center gap-1 text-xs text-[var(--foreground)] bg-[var(--card)] px-2 py-1 rounded border border-[var(--border)] max-w-[300px]"
             title={meta.selecteditem}
           >
-            <span className="">{truncateStart(meta.selecteditem)}</span>
+            <span>{truncateStart(meta.selecteditem)}</span>
           </div>
         )}
-        {citation && (
-          <div
-            className="citation-card w-full"
-            title={citation}
-          >
-            <Quote className="citation-card-icon" />
-            <span className="citation-card-text">{citation}</span>
-          </div>
-        )}
-        <div className="bg-[var(--agent-bg-user)] rounded-lg p-3 text-sm text-[var(--agent-text-primary)] agent-message w-fit max-w-full">
+        {citation && <CitationCard text={citation} />}
+        <div className="bg-[var(--muted)] rounded-tl-lg rounded-tr-2xl rounded-bl-lg rounded-br-lg py-2 px-3 text-sm text-[var(--foreground)] w-fit max-w-full">
           <MarkdownRenderer content={content} />
         </div>
       </div>

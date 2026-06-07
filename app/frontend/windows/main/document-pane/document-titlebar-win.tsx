@@ -1,6 +1,5 @@
 'use client';
 
-import { useRef, useState } from 'react';
 import { Ellipsis, Search, Code } from 'lucide-react';
 import { LinkSimpleIcon, CopyIcon, PushPinIcon, PushPinSlashIcon, FileMdIcon, FileDocIcon, ClockIcon, TrashIcon } from '@phosphor-icons/react';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../../../components/ui/dropdown-menu';
@@ -14,6 +13,7 @@ interface DocumentTitlebarWinProps {
   isSrcView: boolean;
   onToggleSidebar: () => void;
   onToggleSrcView: () => void;
+  onOpenSearch: () => void;
   onCopyLink: () => void;
   onCopyFullText: () => void;
   onTogglePin: () => void;
@@ -29,6 +29,7 @@ export function DocumentTitlebarWin({
   isSrcView,
   onToggleSidebar,
   onToggleSrcView,
+  onOpenSearch,
   onCopyLink,
   onCopyFullText,
   onTogglePin,
@@ -36,63 +37,44 @@ export function DocumentTitlebarWin({
   onExportWord,
   onRequestDeleteMemo,
 }: DocumentTitlebarWinProps) {
-  const [isSearchActive, setIsSearchActive] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  const handleSearchClick = () => {
-    setIsSearchActive(true);
-    setTimeout(() => searchInputRef.current?.focus(), 0);
-  };
-
-  const handleSearchBlur = () => {
-    setIsSearchActive(false);
-  };
-
   const isPinned = !!currentMemo?.favorited;
 
   return (
     <div
       data-tauri-drag-region
-      className={`h-9 shrink-0 pl-2 z-[50] flex items-center bg-gradient-to-b from-white/100 to-transparent ${isAgentPanelVisible ? 'pr-0' : 'pr-[126px]'}`}
+      className={`h-9 shrink-0 pl-2 z-[50] flex items-center ${isAgentPanelVisible ? 'pr-0' : 'pr-[126px]'}`}
+      style={{ backgroundImage: 'linear-gradient(to bottom, var(--bg-titlebar), transparent)' }}
     >
       {isSidebarHidden && (
         <button
           type="button"
           onClick={onToggleSidebar}
-          aria-label="显示 memo 列表"
-          className="w-7 h-7 flex items-center justify-center text-[#4D4F5B] hover:bg-black/5 rounded-lg transition-[opacity,transform,background-color] duration-[400ms] animate-in fade-in zoom-in-95"
+          aria-label="显示备忘录列表"
+          className="w-7 h-7 flex items-center justify-center text-[var(--muted-foreground)] hover:bg-[var(--muted)] rounded-lg transition-[opacity,transform,background-color] duration-[400ms] animate-in fade-in zoom-in-95"
         >
           <SidebarToggleIcon className="w-4 h-4" variant="collapsed" />
         </button>
       )}
       <div className="flex-1" />
       <div className="ml-auto flex items-center gap-2 pr-2">
-        {isSearchActive ? (
-          <input
-            ref={searchInputRef}
-            type="text"
-            onBlur={handleSearchBlur}
-            placeholder="搜索..."
-            className="w-48 h-7 px-3 text-sm border border-black/5 rounded-lg outline-none bg-white border border-black/5 focus:border-[#4D4F5B] transition-all"
-          />
-        ) : (
-          <button
-            onClick={handleSearchClick}
-            className="w-7 h-7 flex items-center justify-center text-[#4D4F5B] hover:bg-black/5 rounded-lg transition-colors"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-        )}
+        <button
+          onClick={onOpenSearch}
+          title="文档搜索"
+          className="w-7 h-7 flex items-center justify-center text-[var(--muted-foreground)] hover:bg-[var(--muted)] rounded-lg transition-colors"
+        >
+          <Search className="w-4 h-4" />
+        </button>
         <button
           onClick={onToggleSrcView}
-          className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${isSrcView ? 'text-[#5262DC]' : 'text-[#4D4F5B]'} hover:bg-black/5`}
+          title="代码模式"
+          className={`w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${isSrcView ? 'text-[var(--primary)]' : 'text-[var(--muted-foreground)]'} hover:bg-[var(--muted)]`}
         >
           <Code className="w-4 h-4" />
         </button>
         {currentMemo && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="w-7 h-7 flex items-center justify-center text-[#4D4F5B] hover:bg-black/5 rounded-lg transition-colors">
+              <button title="更多" className="w-7 h-7 flex items-center justify-center text-[var(--muted-foreground)] hover:bg-[var(--muted)] rounded-lg transition-colors">
                 <Ellipsis className="w-4 h-4" />
               </button>
             </DropdownMenuTrigger>
@@ -138,7 +120,7 @@ export function DocumentTitlebarWin({
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={onRequestDeleteMemo}
-                className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)] text-red-500"
+                className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)] text-[var(--destructive)]"
               >
                 <TrashIcon className="w-4 h-4 mr-2" /> 删除
               </DropdownMenuItem>

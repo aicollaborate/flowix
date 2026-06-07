@@ -1,6 +1,5 @@
-/* ---------- Monaco Editor 全局样式 ---------- */
+/* Monaco Editor — 全局样式 */
 
-/* 编辑器背景 */
 .canva-monaco-editor,
 .canva-shiki-editor,
 .canva-monaco-editor-loading,
@@ -8,12 +7,12 @@
   background: #ffffff;
 }
 
-/* Memo detail editor - 使用主题背景 */
+/* Memo detail editor — 背景仍为白底, 滚动条走 Bear 风格 */
 .memo-detail-editor .monaco-editor-background {
   background: #ffffff !important;
 }
 
-/* 滚动条样式 - 隐藏直到 hover (Bear-style) */
+/* Bear-style: 滚动条默认隐藏, hover 时显示 */
 .memo-detail-editor .monaco-scrollable-element > .scrollbar > .slider {
   opacity: 0;
   transition: opacity 0.2s;
@@ -23,22 +22,21 @@
   opacity: 1;
 }
 
-/* Bear-style: 更柔和的光标 */
+/* Bear-style: 柔和光标 */
 .memo-detail-editor .monaco-editor .cursor {
   background-color: #333 !important;
 }
 
-/* Bear-style: 移除标题行之间的额外空白 */
+/* Bear-style: 标题行收紧到 32px, 其它行 28px */
 .memo-detail-editor .monaco-editor .view-line {
   line-height: 28px !important;
 }
 
-/* Bear-style: 标题行获得额外间距 */
 .memo-detail-editor .monaco-editor .view-line[data-line-numbers=""] {
   line-height: 32px !important;
 }
 
-/* Monaco Editor 背景覆盖 */
+/* 强制 Monaco 编辑器白底, 覆盖各组件默认主题 */
 .monaco-editor,
 .monaco-editor .margin,
 .monaco-editor .monaco-editor-background,
@@ -48,17 +46,14 @@
   background: #ffffff !important;
 }
 
-/* ---------- 统一滚动条样式 ---------- */
 .monaco-scrollable-element > .scrollbar {
   background: transparent;
 }
 
-/* 垂直滚动条宽度 */
 .monaco-scrollable-element > .scrollbar > .vertical > .slider {
   width: 3px !important;
 }
 
-/* 水平滚动条高度 */
 .monaco-scrollable-element > .scrollbar > .horizontal > .slider {
   height: 3px !important;
 }
@@ -73,14 +68,12 @@
   background: rgba(210, 210, 210, 0.35);
 }
 
-/* ---------- Notebook Document Editor 内边距 ---------- */
-/* 外层容器添加 padding，滚动条保持在边缘 */
+/* Notebook Document Editor — 容器加左右内边距, 滚动条保持在视口边缘 */
 .notebook-document-editor {
   padding-left: 16px;
   padding-right: 16px;
 }
 
-/* 滚动条左移，抵销容器 padding 的影响 */
 .notebook-document-editor .monaco-scrollable-element > .scrollbar {
 
 }
