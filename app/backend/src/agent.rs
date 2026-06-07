@@ -2,31 +2,147 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
+use crate::memo_file::MemoFile;
+use crate::memo_events::{self, MemoChangeSource, MemoEvent};
 use crate::prompt::{build_system_prompt, SystemPromptConfig};
-use crate::providers::{execute_tool, get_all_tools, OpenAIConfig, OpenAIProvider};
-use crate::threads::ChatMessage as ThreadChatMessage;
-use crate::user_config::AiModelConfig;
-use rllm::chat::{ChatMessage as LlmChatMessage, ChatProvider, ChatRole, StreamChunk, Tool};
+use crate::providers::{
+    execute_tool, get_all_tools, OpenAICompatibleConfig, OpenAICompatibleProvider,
+    OpenAICompatibleStreamItem,
+};
+use crate::threads::{ChatMessage as ThreadChatMessage, ThreadManager};
+use crate::user_config::{AiModelConfig, UserConfigStore};
+use rllm::chat::{ChatMessage as LlmChatMessage, ChatRole, MessageType, Tool};
+use rllm::{FunctionCall, ToolCall as LlmToolCall};
+use uuid::Uuid;
 
-/// 线程表 `agent_id` 列的固定占位值。
+/// 智能体 ID newtype ── 替代裸 `&str` / `String`, 防止把任意字符串当成 agent_id
+/// 传进 [`crate::threads::ThreadManager::create_thread`]。当前应用同一时刻只有
+/// "当前 ai_config 描述的那一个 agent", schema 仍保留 `agent_id` 列以兼容历史
+/// 数据, 全部写入 [`default_agent_id`]`()`。
 ///
-/// 重构后前端不再传 agent_id ─ 整个应用同一时刻只有"当前 ai_config 描述的那一个
-/// agent"。 schema 仍保留 agent_id 列以兼容历史数据, 全部写入此常量。
-pub const DEFAULT_AGENT_ID: &str = "default";
+/// `#[serde(transparent)]` 让 wire 形状就是 `String` (例如 `"default"`), 与
+/// 历史上 `ThreadInfo.agent_id: String` **二进制兼容** ── 旧 SQLite 行 / 旧
+/// IPC payload 不用迁移。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AgentId(pub String);
+
+impl AgentId {
+    pub fn new(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl std::fmt::Display for AgentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<String> for AgentId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for AgentId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+/// 线程表 `agent_id` 列的固定占位值。重构后前端不再传 agent_id, 但 schema
+/// 仍保留该列以兼容历史数据, 所有新建 thread 全部写入此值。
+///
+/// 用函数而非 `pub const` 是因为 `String` 不能在 const 上下文构造; 调用方
+/// 应缓存返回值, 不要每处都重新分配。
+pub fn default_agent_id() -> AgentId {
+    AgentId::new("default")
+}
 
 /// AgentManager 现在只维护"当前生效的 provider 实例", 真正的配置真源是
-/// `~/.woop/ai_config.json` (经 `UserConfigStore` 暴露)。每次 chat 调用前
+/// `~/.flowix/ai_config.json` (经 `UserConfigStore` 暴露)。每次 chat 调用前
 /// 读最新配置, 与构建缓存的配置对比, 不一致则重建 provider。
 ///
 /// 这样 ai_config 变更 (例如用户在偏好里换了模型 / API key) 不再依赖前端重新
 /// "init agent", 后端自己感知并热替换。
+///
+/// 三个 `Arc<...>` 依赖从 `lib.rs` 注入, 与 `AppState` 共享同一份引用 (refcount=2):
+/// - `user_config`: 读 ai_config.json
+/// - `thread_manager`: 落盘 chat 历史
+/// - `memo_file`: 工具读写的真实笔记
+///
+/// 这三个字段之前是 `chat_stream` 等方法的 `app_state: &crate::commands::AppState`
+/// 参数 ── 模块反向依赖 commands。注入后 agent 不再依赖 commands 模块, 可以
+/// 单独测试 (见 `for_tests` 构造器)。
 pub struct AgentManager {
     instance: tokio::sync::RwLock<Option<CachedInstance>>,
     /// 每个 thread 的 read 工具快照。edit 工具需要 read 后的内容做漂移检测。
     read_snapshots: tokio::sync::RwLock<HashMap<String, HashMap<String, String>>>,
+    /// 每个 thread 的 (tool_name, args_hash) → 累计调用次数。
+    /// 超过 STUCK_THRESHOLD 视为 LLM 卡在循环里, 熔断。LLM 给最终回答
+    /// (无 tool call) 或 chat 异常退出时由 chat_stream 入口清空。
+    tool_call_attempts: tokio::sync::RwLock<HashMap<String, HashMap<CallKey, u32>>>,
+    /// 每个 thread 当前正在跑的 chat_stream 取消标志 ──
+    /// chat_stream 入口 insert 一个新的 Arc<AtomicBool>, 退出 (任何路径)
+    /// remove; stop_chat 通过 thread_id 查 Arc, set true, 然后立刻 remove
+    /// (单次信号, 不重复触发)。拆 mutex + remove 一步完成避免
+    /// "查到有但 remove 之前 chat_stream 已退出" 的竞态。
+    cancel_flags: tokio::sync::Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// ai_config 真源 (`~/.flowix/ai_config.json`)
+    user_config: Arc<UserConfigStore>,
+    /// 线程表 (chat 历史的持久化)
+    thread_manager: Arc<tokio::sync::RwLock<ThreadManager>>,
+    /// 笔记本文件 (工具读写的对象)
+    memo_file: Arc<std::sync::RwLock<MemoFile>>,
+}
+
+/// 在 `AgentManager` drop 时清掉与每个 thread 关联的 in-memory 状态 ──
+/// 解决 #3.5: Tauri 进程退出时 `instance: tokio::sync::RwLock<Option<CachedInstance>>`
+/// 里的 `CachedInstance` (含 rllm client / reqwest HTTP client) 不
+/// graceful shutdown, 可能造成:
+/// - 在飞请求被截断 (用户看到一半的响应)
+/// - 连接池未 flush (操作系统层面 close, 但我们没法等)
+///
+/// 不在 drop 里 spawn 额外 task 强 cancel 活跃 stream ── 留给 reqwest 自销毁。
+/// `instance` / `read_snapshots` / `tool_call_attempts` / `cancel_flags` 都是
+/// `Arc<...>`, 单个 owner drop 时 refcount 减一, 不阻塞真正的 I/O 关停。
+/// 只负责把"我们维护的"状态显式打 log, 便于排障时区分"我 drop 了" vs
+/// "进程被 SIGKILL"。
+impl Drop for AgentManager {
+    fn drop(&mut self) {
+        tracing::info!("[AgentManager] dropping; flushing in-memory state");
+        // 锁取不到不阻塞 ── 锁中毒或活跃写锁都不会让 Drop 失败, 这条
+        // 路径是进程退出最后的清理, 不该 panic。
+        if let Ok(snapshots) = self.read_snapshots.try_read() {
+            if !snapshots.is_empty() {
+                tracing::info!(
+                    "[AgentManager] dropping with {} read_snapshots entries",
+                    snapshots.len()
+                );
+            }
+        }
+        if let Ok(attempts) = self.tool_call_attempts.try_read() {
+            if !attempts.is_empty() {
+                tracing::info!(
+                    "[AgentManager] dropping with {} tool_call_attempts entries",
+                    attempts.len()
+                );
+            }
+        }
+        if let Ok(flags) = self.cancel_flags.try_lock() {
+            if !flags.is_empty() {
+                tracing::info!(
+                    "[AgentManager] dropping with {} active cancel flags",
+                    flags.len()
+                );
+            }
+        }
+    }
 }
 
 struct CachedInstance {
@@ -36,14 +152,8 @@ struct CachedInstance {
 
 #[derive(Clone)]
 pub struct AgentInstance {
-    provider: Arc<dyn ChatProvider>,
+    provider: Arc<OpenAICompatibleProvider>,
     tools: Vec<Tool>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -55,8 +165,182 @@ pub struct AgentUserMessage {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentChatResponse {
     pub response: String,
+}
+
+/// agent 流式协议 — emit 到 `agent-chunk` 事件, 前端 `client.ts:listenToAgentStream`
+/// 用 `listen<AgentChunk>` 接收。前端 TypeScript 镜像见
+/// `app/frontend/types/agent.ts` 的同名类型。
+///
+/// 用 `#[serde(tag = "kind")]` 内部标签, 前端 `switch (chunk.kind)` 判别;
+/// 替换之前 `[REASONING]:` / `[TOOL_CALL]:` / `[TOOL_RESULT]:` / `[ERROR]:`
+/// 字符串前缀协议 ── 那种协议下 [ERROR] chunk 会被前端 fallthrough 当成普通文本
+/// 拼到 assistant 正文, 这里是结构化错误事件。
+#[derive(Serialize, Clone, Debug)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentChunk {
+    /// 助手流式回答 (普通 content)
+    Text { text: String },
+    /// 推理模型的思考过程 (reasoning_content)
+    Reasoning { text: String },
+    /// LLM 发出的工具调用
+    ToolCall {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    /// 工具执行结果
+    ToolResult {
+        id: String,
+        name: String,
+        result: serde_json::Value,
+    },
+    /// 错误事件 (卡死 / 超 cycle / stream error / not configured 等)
+    // TODO: evolve into a structured variant ({ kind: "stuck" | "max_cycles" |
+    // "stream" | "not_configured", ... }) when the frontend needs to discriminate
+    // error sources. v1 keeps the message as opaque String ── the wire shape
+    // crosses the IPC boundary as JSON and is parsed by `chat-store.ts:switch`.
+    Error { message: String },
+}
+
+/// 同一 (tool_name, args) 累计调用次数超过该阈值就判定 LLM 卡在循环里, 熔断。
+/// 阈值语义: 计数 > STUCK_THRESHOLD 时返回 true (即第 6 次同调用触发)。
+const STUCK_THRESHOLD: u32 = 5;
+
+/// LLM 网关返回 400 "invalid function arguments json string" 时, 先 sanitize
+/// 上轮落盘的 `tool_calls[*].function.arguments`, 再重发。该上限控制 sanitize
+/// 失败时的重试次数 ── 超过就当普通 LLM 错误处理, 走 synthesize 出口。
+const MAX_LLM_RECOVERY_RETRIES: u32 = 2;
+
+/// True if the LLM gateway's error message indicates a recoverable
+/// tool-arguments problem (typically: 400 with concatenated/garbled JSON
+/// from a prior turn). The recovery loop's sanitize-and-retry path is
+/// only entered when this returns true; for other 4xx/5xx (auth, rate
+/// limit, server) we synthesize and end immediately.
+fn is_recoverable_args_error(reason: &str) -> bool {
+    reason.contains("invalid function arguments") || reason.contains("tool_call_id")
+}
+
+/// agent 层错误。`Thread` / `UserConfig` 透传 `#[from]`, 让 agent 内部
+/// `?` 一步到位 (例如 `manager.get_thread(...)?`)。语义错误 (stuck / max cycles /
+/// not configured) 显式构造, 配合 Tauri IPC 边界 `.map_err(|e| e.to_string())`
+/// 转字符串给前端。
+///
+/// 复合变体 `Thread(ThreadError::Sqlite(rusqlite::Error))` 显示为
+/// `"agent error: thread error: thread database error: <rusqlite>"` ── 三层前缀。
+/// 嫌长可改 `#[error(transparent)]` on the wrapper, 但 v1 保持显式便于排查。
+#[derive(Debug, thiserror::Error)]
+pub enum AgentError {
+    #[error("thread error: {0}")]
+    Thread(#[from] crate::threads::ThreadError),
+    #[error("user config error: {0}")]
+    UserConfig(#[from] crate::user_config::UserConfigError),
+    #[error("ai model not configured; open Preferences → Agent to set model and api key")]
+    NotConfigured,
+    #[error("agent stuck: tool '{tool}' called {count} times with identical arguments")]
+    Stuck { tool: String, count: u32 },
+    /// 单次 `chat_stream` 跨所有 cycle 累计的 `total_tokens` 超出 ai_config 里
+    /// 的 `max_total_tokens` 上限 ── 配合 `finalize_with_synthesized_message` 走
+    /// "assistant 正常收口 + emit Error chunk" 路径, 与 `Stuck` 同形, UI 不弹
+    /// 错误 toast。`used` / `budget` 一并带回便于前端展示用量。
+    #[error("token budget exceeded: used {used} of {budget} total tokens")]
+    TokenBudget { used: u32, budget: u32 },
+}
+
+/// (tool_name, args_hash) 元组作为 HashMap key, 用于检测"同一工具同一参数"
+/// 重复调用的循环模式。args_hash 用 DefaultHasher 计算, 在同一进程内稳定
+/// (跨进程不必稳定, 我们不需要比较重启前后的快照)。
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct CallKey {
+    tool_name: String,
+    args_hash: u64,
+}
+
+fn compute_call_key(tool_name: &str, arguments: &str) -> CallKey {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    arguments.hash(&mut hasher);
+    CallKey {
+        tool_name: tool_name.to_string(),
+        args_hash: hasher.finish(),
+    }
+}
+
+/// Build the user-facing message for an LLM-side failure. Pure function —
+/// extracted from `synthesize_llm_unavailable` so it can be unit-tested
+/// without a Tauri `AppHandle`. The reason is taken verbatim (callers
+/// strip any wrapper prefix before calling).
+fn format_llm_unavailable_message(reason: &str) -> String {
+    format!("(LLM 暂时不可用, 原因: {})", reason)
+}
+
+/// Emit an `agent-chunk` event to the frontend, logging a warning on failure
+/// instead of silently swallowing the error.
+///
+/// 替换历史 8 处 `let _ = app_handle.emit(...)` ── 之前错误被吞, 前端
+/// `listen<AgentChunk>` 断了后整个 agent 流静默失败: 用户看不到 LLM 响应,
+/// 但后端 stream 继续跑、token 照花 (issue #3.3)。helper 不返回错误, 仍然
+/// fire-and-forget ── emit 失败不应阻塞 chat 主路径, 但留下可见痕迹便于
+/// 排障 ("前端 webview 死了 / IPC 通道断了" 这类问题从无声变成有迹)。
+fn emit_chunk(app_handle: &tauri::AppHandle, chunk: &AgentChunk) {
+    if let Err(e) = app_handle.emit("agent-chunk", chunk) {
+        tracing::warn!(
+            error = %e,
+            chunk_kind = ?std::mem::discriminant(chunk),
+            "[Agent] emit agent-chunk failed; frontend may be disconnected"
+        );
+    }
+}
+
+/// RAII guard ── 在 `persist_tool_call` (写 `is_loading = true`) 之后,
+/// `persist_tool_result` (写 `is_loading = 0`) 之前的任何 panic / early
+/// return / 新增错误路径都会触发 drop, fire-and-forget 一个
+/// `clear_tool_loading` 把对应行解锁, 避免前端工具调用行永远转圈。
+///
+/// 解决 #3.1: 历史上 `execute_tool_for_thread` panic 或新增错误路径导致
+/// `persist_tool_result` 不到时, loading 状态卡死。Success 路径下
+/// `persist_tool_result` 已经把 is_loading 归零, guard 的 drop UPDATE 命中
+/// 同一行再写 0 ── 幂等, 不算浪费。Guard 自身不持锁 (不持 thread_manager
+/// 的 read guard), 避免与外层 RwLock 锁顺序冲突。
+struct IsLoadingGuard {
+    thread_manager: Arc<tokio::sync::RwLock<ThreadManager>>,
+    thread_id: String,
+    tool_call_id: String,
+}
+
+impl IsLoadingGuard {
+    fn new(
+        thread_manager: Arc<tokio::sync::RwLock<ThreadManager>>,
+        thread_id: &str,
+        tool_call_id: &str,
+    ) -> Self {
+        Self {
+            thread_manager,
+            thread_id: thread_id.to_string(),
+            tool_call_id: tool_call_id.to_string(),
+        }
+    }
+}
+
+impl Drop for IsLoadingGuard {
+    fn drop(&mut self) {
+        // drop 是同步的, 不能 .await ── 但能 spawn 一个新 task。task 拿
+        // `thread_manager` 的 Arc, 即使 AgentManager 后续被 drop 引用计数
+        // 仍能撑住这个 UPDATE 完成。
+        let tm = self.thread_manager.clone();
+        let tid = std::mem::take(&mut self.thread_id);
+        let tcid = std::mem::take(&mut self.tool_call_id);
+        tokio::spawn(async move {
+            let manager = tm.read().await;
+            if let Err(e) = manager.clear_tool_loading(&tid, &tcid).await {
+                tracing::warn!(
+                    "[Agent] IsLoadingGuard reset failed for tool_call {tcid}: {e}"
+                );
+            }
+        });
+    }
 }
 
 fn tool_path_key(arguments: &str) -> Option<String> {
@@ -76,21 +360,112 @@ fn tool_path_key(arguments: &str) -> Option<String> {
     Some(normalized.display().to_string())
 }
 
+/// 把持久化行转回 rllm 的 ChatMessage。返回 None 表示该行不进 LLM 上下文
+/// (reasoning / system / 残缺 tool 等待)。
+///
+/// 转换规则:
+/// - user → User, content = llm_content ?? content, Text
+/// - assistant 带 tool_calls → Assistant, content, ToolUse(反序列化的 Vec<ToolCall>)
+/// - assistant 不带 tool_calls → Assistant, content, Text
+/// - tool 带 tool_data → User(content = tool_data), ToolResult(vec![ToolCall{ id, function{name: "tool_result", arguments: tool_data }}])
+/// - tool 不带 tool_data → None (避免给 LLM 看空 tool result)
+/// - reasoning / system / 其它 → None
+///
+/// 工具结果用 `role: User` 包一层是 rllm 的约定 (它的 ChatRole 只有 User/Assistant),
+/// provider 看 MessageType 而不是 role 决定发什么, 跟 rllm 自带参考实现 (llm crate 的
+/// `providers/openai_compatible.rs`) 一致。
+fn persisted_to_llm(m: crate::threads::ChatMessage) -> Option<LlmChatMessage> {
+    match m.role.as_str() {
+        "user" => Some(LlmChatMessage {
+            role: ChatRole::User,
+            content: m.llm_content.unwrap_or(m.content),
+            message_type: MessageType::Text,
+        }),
+        "assistant" => {
+            let message_type = match m.tool_calls {
+                Some(serde_json::Value::Array(arr)) => {
+                    let calls: Vec<LlmToolCall> = arr
+                        .into_iter()
+                        .filter_map(|v| serde_json::from_value::<LlmToolCall>(v).ok())
+                        .collect();
+                    if calls.is_empty() {
+                        MessageType::Text
+                    } else {
+                        MessageType::ToolUse(calls)
+                    }
+                }
+                Some(serde_json::Value::Null) | None => MessageType::Text,
+                // tool_calls 形状不预期 (非数组) — 当作普通文本, 不喂垃圾给 LLM
+                _ => MessageType::Text,
+            };
+            Some(LlmChatMessage {
+                role: ChatRole::Assistant,
+                content: m.content,
+                message_type,
+            })
+        }
+        "tool" => {
+            let data = m.tool_data?;
+            let call_id = m.tool_call_id?;
+            Some(LlmChatMessage {
+                role: ChatRole::User,
+                content: data.clone(),
+                message_type: MessageType::ToolResult(vec![LlmToolCall {
+                    id: call_id,
+                    call_type: "function".to_string(),
+                    function: FunctionCall {
+                        name: "tool_result".to_string(),
+                        arguments: data,
+                    },
+                }]),
+            })
+        }
+        _ => None, // reasoning / system / end / 其它
+    }
+}
+
 impl AgentManager {
-    pub fn new() -> Self {
+    /// 构造时必须传入 3 个共享依赖 ── 与 `AppState` 持有同一份 Arc 引用。
+    /// 这样 `agent` 模块不再依赖 `commands::AppState` (历史 P2-#2 反向依赖)。
+    pub fn new(
+        user_config: Arc<UserConfigStore>,
+        thread_manager: Arc<tokio::sync::RwLock<ThreadManager>>,
+        memo_file: Arc<std::sync::RwLock<MemoFile>>,
+    ) -> Self {
         Self {
             instance: tokio::sync::RwLock::new(None),
             read_snapshots: tokio::sync::RwLock::new(HashMap::new()),
+            tool_call_attempts: tokio::sync::RwLock::new(HashMap::new()),
+            cancel_flags: tokio::sync::Mutex::new(HashMap::new()),
+            user_config,
+            thread_manager,
+            memo_file,
         }
+    }
+
+    /// 测试用 fixture ── 用空 / 临时路径构造 3 个依赖, 不真正读写磁盘。
+    /// 现存的单元测试只验证 `record_tool_call` / `clear_tool_call_attempts` /
+    /// `cleanup_thread` 的 HashMap 状态, 不触碰 `user_config` / `thread_manager` /
+    /// `memo_file` (参见 `cleanup_thread_removes_read_snapshot` 注释: "can't call
+    /// `execute_tool_for_thread` because it lacks `memo_file`")。
+    #[cfg(test)]
+    pub fn for_tests() -> Self {
+        Self::new(
+            Arc::new(UserConfigStore::new(std::env::temp_dir())),
+            Arc::new(tokio::sync::RwLock::new(
+                crate::threads::ThreadManager::for_tests(),
+            )),
+            Arc::new(std::sync::RwLock::new(MemoFile::default())),
+        )
     }
 
     /// 拿到与当前 ai_config 对应的 provider 实例; 配置缺 model 则报错。
     ///
     /// 走双读锁: 先 read 尝试命中缓存, 不命中再升级到 write 重建。这样并发 chat
     /// 不会互相阻塞 — 只有真正发生配置变更时才有写锁竞争。
-    async fn ensure_instance(&self, config: &AiModelConfig) -> Result<AgentInstance, String> {
+    async fn ensure_instance(&self, config: &AiModelConfig) -> Result<AgentInstance, AgentError> {
         if config.model.trim().is_empty() {
-            return Err("尚未配置模型, 请到偏好设置 → 智能体 填写 ai_config".to_string());
+            return Err(AgentError::NotConfigured);
         }
         {
             let guard = self.instance.read().await;
@@ -117,8 +492,8 @@ impl AgentManager {
             tools_enabled: true,
         });
 
-        let provider = OpenAIProvider::new(
-            OpenAIConfig::new(&config.api_key, &config.model, &config.api_url)
+        let provider = OpenAICompatibleProvider::new(
+            OpenAICompatibleConfig::new(&config.api_key, &config.model, &config.api_url)
                 .with_system(system_prompt)
                 .with_reasoning_split(reasoning_split),
         );
@@ -129,207 +504,458 @@ impl AgentManager {
         }
     }
 
-    pub async fn chat(
+    /// 记录本轮 (tool, args) 调用, 返回是否达到熔断阈值。
+    /// 调用次数 > STUCK_THRESHOLD 时返回 true, 第 6 次同调用即触发。
+    async fn record_tool_call(
         &self,
         thread_id: &str,
-        message: AgentUserMessage,
-        app_state: &crate::commands::AppState,
-        app_handle: &tauri::AppHandle,
-    ) -> Result<String, String> {
-        let ai_config = app_state.user_config.get_ai_config().model;
-        let instance = self.ensure_instance(&ai_config).await?;
-
-        self.persist_user_message(thread_id, &message, app_state)
-            .await?;
-        let messages = self.load_thread_llm_messages(thread_id, app_state).await?;
-
-        // Convert messages to rllm format
-        let mut llm_messages: Vec<LlmChatMessage> = messages
-            .iter()
-            .map(|m| {
-                let role = match m.role.as_str() {
-                    "assistant" => ChatRole::Assistant,
-                    _ => ChatRole::User,
-                };
-                LlmChatMessage {
-                    role,
-                    content: m.content.clone(),
-                    message_type: Default::default(),
-                }
-            })
-            .collect();
-
-        // React loop: keep calling until no tool calls
-        let max_cycles = 10;
-        let mut text_response = String::new();
-
-        for _cycle in 0..max_cycles {
-            let response = instance
-                .provider
-                .chat_with_tools(&llm_messages, Some(&instance.tools))
-                .await
-                .map_err(|e| format!("Chat failed: {}", e))?;
-
-            // Get text response
-            if let Some(text) = response.text() {
-                text_response = text;
-            }
-
-            // Check for tool calls
-            let tool_calls = response.tool_calls();
-            if tool_calls.is_none() || tool_calls.as_ref().map(|c| c.is_empty()).unwrap_or(true) {
-                // No tool calls, return the text response
-                break;
-            }
-
-            let calls = tool_calls.unwrap();
-
-            // Execute each tool call and add results to messages
-            for call in calls {
-                let tool_result = self
-                    .execute_tool_for_thread(
-                        thread_id,
-                        &call.function.name,
-                        &call.function.arguments,
-                        app_state,
-                        Some(app_handle),
-                    )
-                    .await;
-
-                // Add assistant tool call message
-                llm_messages.push(LlmChatMessage {
-                    role: ChatRole::Assistant,
-                    content: String::new(),
-                    message_type: rllm::chat::MessageType::ToolUse(vec![call]),
-                });
-
-                // Add user tool result message
-                let result_json = serde_json::to_string(&tool_result)
-                    .unwrap_or_else(|_| r#"{"error":"serialization failed"}"#.to_string());
-                llm_messages.push(LlmChatMessage {
-                    role: ChatRole::User,
-                    content: result_json.clone(),
-                    message_type: rllm::chat::MessageType::ToolResult(vec![rllm::ToolCall {
-                        id: format!("call_{}", chrono::Utc::now().timestamp_millis()),
-                        call_type: "function".to_string(),
-                        function: rllm::FunctionCall {
-                            name: "tool_result".to_string(),
-                            arguments: result_json,
-                        },
-                    }]),
-                });
-            }
-        }
-
-        self.flush_assistant_message(thread_id, &text_response, app_state)
-            .await?;
-        Ok(text_response)
+        tool_name: &str,
+        arguments: &str,
+    ) -> bool {
+        let key = compute_call_key(tool_name, arguments);
+        let mut attempts = self.tool_call_attempts.write().await;
+        let thread_attempts = attempts.entry(thread_id.to_string()).or_default();
+        let count = thread_attempts.entry(key).or_insert(0);
+        *count += 1;
+        *count > STUCK_THRESHOLD
     }
 
+    /// 清空该 thread 的累计计数。下次 chat_stream 入口会兜底再调一次,
+    /// 这里主要给"LLM 给最终回答"的清空信号使用。
+    async fn clear_tool_call_attempts(&self, thread_id: &str) {
+        let mut attempts = self.tool_call_attempts.write().await;
+        attempts.remove(thread_id);
+    }
+
+    /// 删除 thread 时清理 AgentManager 内与该 thread 关联的所有 in-memory 状态。
+    /// 解决 "thread_delete 走 ThreadManager 但不通知 AgentManager" 造成的
+    /// read_snapshots / tool_call_attempts HashMap 长期泄露。
+    /// 多次调用幂等, 不存在的 thread_id 静默 no-op。
+    pub async fn cleanup_thread(&self, thread_id: &str) {
+        let mut snapshots = self.read_snapshots.write().await;
+        snapshots.remove(thread_id);
+        let mut attempts = self.tool_call_attempts.write().await;
+        attempts.remove(thread_id);
+    }
+
+    /// Find the most recent `assistant` message with `tool_calls` and
+    /// replace any unparseable `function.arguments` string with `"{}"`.
+    /// Returns `Ok(true)` if any row was rewritten, `Ok(false)` otherwise.
+    ///
+    /// Recovery for the LLM-side 400 "invalid function arguments" rejection.
+    /// The root cause is the parallel-call parser collision in
+    /// `openai_compatible.rs` — fixed separately — but this is the safety
+    /// net: degrade gracefully (LLM sees empty args on the next round) rather
+    /// than abort the user's session.
+    ///
+    /// Touches `tool_calls[*].function.arguments` (the wire-format string
+    /// the gateway validates), NOT `tool_input` (a UI cache).
+    async fn sanitize_persisted_tool_calls(
+        &self,
+        thread_id: &str,
+    ) -> Result<bool, AgentError> {
+        let manager = self.thread_manager.read().await;
+        let mut thread = match manager.get_thread(thread_id).await? {
+            Some(t) => t,
+            None => return Ok(false),
+        };
+        // Walk from the end — the most recent assistant(tool_calls) is
+        // the one the gateway is choking on.
+        let target = thread
+            .messages
+            .iter_mut()
+            .rev()
+            .find(|m| m.role == "assistant" && m.tool_calls.is_some());
+        let Some(target) = target else {
+            return Ok(false);
+        };
+        let Some(serde_json::Value::Array(arr)) = target.tool_calls.as_mut() else {
+            return Ok(false);
+        };
+        let mut dirty = false;
+        let mut sanitized_count = 0usize;
+        for call in arr.iter_mut() {
+            let args_str = call
+                .get_mut("function")
+                .and_then(|f| f.get_mut("arguments"))
+                .and_then(|a| a.as_str())
+                .map(|s| s.to_string());
+            if let Some(args_str) = args_str {
+                if serde_json::from_str::<serde_json::Value>(&args_str).is_err() {
+                    tracing::warn!(
+                        "[Agent] sanitizing invalid tool_call arguments in message {}",
+                        target.id
+                    );
+                    call["function"]["arguments"] = serde_json::Value::String("{}".to_string());
+                    dirty = true;
+                    sanitized_count += 1;
+                }
+            }
+        }
+        if dirty {
+            manager
+                .update_message_tool_calls(thread_id, &target.id, &target.tool_calls.clone().unwrap_or(serde_json::Value::Null))
+                .await?;
+            tracing::info!(
+                "[Agent] sanitized {} tool_call(s) in message {}",
+                sanitized_count,
+                target.id
+            );
+        }
+        Ok(dirty)
+    }
+
+    /// Common end-of-cycle exit. Emits the message as a `Text` chunk
+    /// (so the frontend appends it to / creates the assistant message via
+    /// the `text` case at chat-store.ts:280), persists the same text as
+    /// a `role: assistant` row, clears the stuck-detection counter, and
+    /// returns `Ok(msg)`. Used by `synthesize_llm_unavailable`, the
+    /// `Stuck` abort site, and the `MaxCycles` abort site — all three
+    /// were doing the same shape before this helper existed.
+    async fn finalize_with_synthesized_message(
+        &self,
+        thread_id: &str,
+        msg: String,
+        app_handle: &tauri::AppHandle,
+    ) -> Result<String, AgentError> {
+        emit_chunk(app_handle, &AgentChunk::Text { text: msg.clone() });
+        self.flush_assistant_message(thread_id, &msg).await?;
+        self.clear_tool_call_attempts(thread_id).await;
+        Ok(msg)
+    }
+
+    /// Graceful exit for LLM-side failures. Builds the user-facing
+    /// message, logs a warn, and delegates to
+    /// `finalize_with_synthesized_message`. Use this for any
+    /// `chat_stream_tagged` / mid-stream error path so the chat doesn't
+    /// end in a hard error toast.
+    async fn synthesize_llm_unavailable(
+        &self,
+        thread_id: &str,
+        reason: &str,
+        app_handle: &tauri::AppHandle,
+    ) -> Result<String, AgentError> {
+        let synth_msg = format_llm_unavailable_message(reason);
+        tracing::warn!("[Agent] LLM unavailable, synthesizing assistant message: {synth_msg}");
+        self.finalize_with_synthesized_message(thread_id, synth_msg, app_handle)
+            .await
+    }
+
+    /// Outer entry — registers a per-thread cancel flag, calls the inner
+    /// implementation, and unregisters the flag in every exit path (Ok /
+    /// Err / panic via drop semantics on the mutex guard). The cancel
+    /// flag is shared with `stop_chat` so the frontend can abort an
+    /// in-flight chat: dropping `stream` on the next checkpoint closes
+    /// the in-flight HTTP connection (reqwest's `bytes_stream` aborts the
+    /// response body when the stream is dropped).
+    ///
+    /// Returns `Ok(partial_response)` on cancel rather than introducing a
+    /// new `Err(Cancelled)` variant, so the frontend's existing `finally
+    /// { isLoading: false }` path handles UI state uniformly.
     pub async fn chat_stream(
         &self,
         thread_id: &str,
         message: AgentUserMessage,
-        app_state: &crate::commands::AppState,
         app_handle: &tauri::AppHandle,
-    ) -> Result<String, String> {
-        let ai_config = app_state.user_config.get_ai_config().model;
+    ) -> Result<String, AgentError> {
+        let cancel = Arc::new(AtomicBool::new(false));
+        {
+            let mut flags = self.cancel_flags.lock().await;
+            flags.insert(thread_id.to_string(), cancel.clone());
+        }
+
+        let result = self
+            .chat_stream_inner(thread_id, message, app_handle, &cancel)
+            .await;
+
+        // 任何路径退出都要 unregister, 避免 token 长期泄露 (例如用户
+        // 在 stream poll 的 await 上 park 时 stop_chat 已经查到了 flag,
+        // 我们退出时再 remove 一次, 双重保险)
+        {
+            let mut flags = self.cancel_flags.lock().await;
+            flags.remove(thread_id);
+        }
+        result
+    }
+
+    /// Inner implementation — the actual ReAct loop with three cancel
+    /// checkpoints. Does NOT touch `cancel_flags` directly; the outer
+    /// `chat_stream` owns registration lifecycle.
+    ///
+    /// Cancel checkpoints:
+    ///   #1. Top of `for _cycle` — between cycles, before reload. Catches
+    ///       "user clicked stop right after a tool-call cycle's flush".
+    ///   #2. Top of `while let Some(item) = stream.next().await` — mid-
+    ///       stream. Returning here drops `stream` and aborts the HTTP
+    ///       connection.
+    ///   #3. After the inner while loop — after stream is exhausted,
+    ///       before the final-return or next-cycle decision. Catches
+    ///       "user clicked stop right after the last chunk arrived".
+    ///
+    /// All three sites funnel into `flush_cancel`, which mirrors the
+    /// existing `finalize_with_synthesized_message` shape (flush partial
+    /// buffers, emit a final chunk, clear tool-call attempts) but with
+    /// the user-cancellation message instead of an LLM-unavailable one.
+    async fn chat_stream_inner(
+        &self,
+        thread_id: &str,
+        message: AgentUserMessage,
+        app_handle: &tauri::AppHandle,
+        cancel: &Arc<AtomicBool>,
+    ) -> Result<String, AgentError> {
+        let ai_config = self.user_config.get_ai_config().model;
         let instance = self.ensure_instance(&ai_config).await?;
 
-        self.persist_user_message(thread_id, &message, app_state)
-            .await?;
-        let messages = self.load_thread_llm_messages(thread_id, app_state).await?;
-
-        // Convert messages to rllm format
-        let mut llm_messages: Vec<LlmChatMessage> = messages
-            .iter()
-            .map(|m| {
-                let role = match m.role.as_str() {
-                    "assistant" => ChatRole::Assistant,
-                    _ => ChatRole::User,
-                };
-                LlmChatMessage {
-                    role,
-                    content: m.content.clone(),
-                    message_type: Default::default(),
-                }
-            })
-            .collect();
+        self.persist_user_message(thread_id, &message).await?;
+        // 兜底清空该 thread 的卡死检测计数。LLM 给最终回答的正常路径也会清,
+        // 这里只兜异常退出 (stuck / 100 cycle 上限 / stream error) 后用户重发
+        // 同一 thread 的场景, 避免上次的计数污染新一轮。
+        self.clear_tool_call_attempts(thread_id).await;
+        // 用户消息已落盘, 下面的 ReAct 循环第一轮 reload 会读到。
+        // load_thread_llm_messages 现在直接返回 rllm 的 ChatMessage 序列, 包含
+        // tool_use / tool_result。每轮 cycle 顶部再 reload 一次拿到最新落盘状态。
+        #[allow(unused_assignments)]
+        let mut llm_messages: Vec<LlmChatMessage> = Vec::new();
 
         // React loop with streaming
-        let max_cycles = 10;
+        let max_cycles = 100;
         let mut full_response = String::new();
         let mut reasoning_buffer = String::new();
         let mut assistant_buffer = String::new();
+        // Tracked across cycles so the MaxCycles error message can name
+        // the last tool the LLM was stuck on.
+        let mut last_tool_name: Option<String> = None;
+
+        // ── Token 预算: 跨 cycle 累计 total_tokens, 超过配置上限立刻熔断。──
+        // budget=0 表示不限 (旧 config 行为, 也方便单测)。Usage chunk 由
+        // provider 在每个流末尾单独 push 一次, 不会重复计数 ── 这是把
+        // 之前 "Usage 解析后完全没用" 的死字段从 provider 层穿透出来的目的。
+        // 注意: OpenAI 的 `prompt_tokens` 在 stream+include_usage 模式下是
+        // **累计**的 (整个 thread 的输入), 不是单轮 ── 我们的累计是有意为之。
+        let token_budget = self.user_config.get_ai_config().model.max_total_tokens;
+        let mut tokens_used: u32 = 0;
 
         tracing::debug!("[Agent] Starting chat_stream for thread_id: {}", thread_id);
 
         for _cycle in 0..max_cycles {
+            // ── Checkpoint #1: between cycles, before reload. ──
+            if cancel.load(Ordering::Acquire) {
+                return self
+                    .flush_cancel(
+                        thread_id,
+                        reasoning_buffer,
+                        assistant_buffer,
+                        full_response,
+                        app_handle,
+                    )
+                    .await;
+            }
+
+            // 每轮从盘上 reload, 拿到本轮 (含上轮) 新落盘的 assistant(tool_calls) +
+            // tool(result) 行, 作为下轮 LLM 调用的真实上下文。这样 disk 是唯一真源,
+            // 不需要再在循环里手动 push ToolUse/ToolResult 到 llm_messages。
+            llm_messages = self.load_thread_llm_messages(thread_id).await?;
             reasoning_buffer.clear();
             assistant_buffer.clear();
             let mut hit_tool_call = false;
-            let mut stream = instance
-                .provider
-                .chat_stream_with_tools(&llm_messages, Some(&instance.tools))
-                .await
-                .map_err(|e| format!("Stream failed: {}", e))?;
+            // Bounded retry loop for LLM-side 400 rejections. When the
+            // provider returns "invalid function arguments json string" it
+            // means a previous round's persisted `tool_calls[*].function.arguments`
+            // is unparseable JSON (root cause: the parallel-call parser
+            // collision — see `openai_compatible.rs`; the recovery exists
+            // as a safety net in case a future parser bug or a corrupted
+            // thread DB lands us in the same place). We sanitize the
+            // affected message in place and retry, up to N times.
+            let mut recovery_attempts: u32 = 0;
+            let mut stream = loop {
+                match instance
+                    .provider
+                    .chat_stream_tagged(&llm_messages, Some(&instance.tools))
+                    .await
+                {
+                    Ok(s) => break s,
+                    Err(e) => {
+                        let reason = e.to_string();
+                        // Two reasons to bail: (a) the error isn't a
+                        // recoverable tool-args error, or (b) we've
+                        // already retried the maximum number of times.
+                        let can_retry = recovery_attempts < MAX_LLM_RECOVERY_RETRIES
+                            && is_recoverable_args_error(&reason);
+                        if !can_retry {
+                            return self
+                                .synthesize_llm_unavailable(
+                                    thread_id,
+                                    &format!("Stream failed: {}", e),
+                                    app_handle,
+                                )
+                                .await;
+                        }
+                        // Sanitize the corrupted row and retry once.
+                        match self.sanitize_persisted_tool_calls(thread_id).await {
+                            Ok(true) => {
+                                recovery_attempts += 1;
+                                let progress = format!(
+                                    "LLM rejected turn due to malformed tool_calls; \
+                                     sanitized and retrying ({recovery_attempts}/{MAX_LLM_RECOVERY_RETRIES})"
+                                );
+                                tracing::warn!("[Agent] {progress}");
+                                emit_chunk(app_handle, &AgentChunk::Error { message: progress });
+                                llm_messages =
+                                    self.load_thread_llm_messages(thread_id).await?;
+                                continue;
+                            }
+                            // Nothing to sanitize, or the sanitize itself
+                            // failed — either way the gateway's complaint
+                            // isn't fixable from the agent side.
+                            Ok(false) | Err(_) => {
+                                return self
+                                    .synthesize_llm_unavailable(
+                                        thread_id,
+                                        &format!("Stream failed: {}", e),
+                                        app_handle,
+                                    )
+                                    .await;
+                            }
+                        }
+                    }
+                }
+            };
 
-            // Process stream chunks
-            while let Some(chunk_result) = stream.next().await {
-                match chunk_result {
-                    Ok(chunk) => {
-                        match chunk {
-                            StreamChunk::Text(text) => {
-                                tracing::debug!("[Agent] Emitting text chunk: {}", text);
-                                // Emit chunk event for frontend
-                                let _ = app_handle.emit("agent-chunk", &text);
-                                if !text.starts_with("[REASONING]: ") {
-                                    assistant_buffer.push_str(&text);
-                                    full_response.push_str(&text);
-                                } else {
-                                    reasoning_buffer
-                                        .push_str(text.trim_start_matches("[REASONING]: "));
+            // Process stream items — OpenAICompatibleStreamItem 区分 reasoning vs text,
+            // 直接发结构化 AgentChunk 给前端, 走 switch 路径而非 startsWith。
+            while let Some(item_result) = stream.next().await {
+                // ── Checkpoint #2: mid-stream, before each poll. ──
+                // Returning here drops `stream`, which aborts the in-flight
+                // HTTP connection (reqwest's `bytes_stream` semantics).
+                if cancel.load(Ordering::Acquire) {
+                    return self
+                        .flush_cancel(
+                            thread_id,
+                            reasoning_buffer,
+                            assistant_buffer,
+                            full_response,
+                            app_handle,
+                        )
+                        .await;
+                }
+                match item_result {
+                    Ok(item) => {
+                        match item {
+                            OpenAICompatibleStreamItem::Usage {
+                                total_tokens,
+                                ..
+                            } => {
+                                // saturating_add 防御性: 单次 Usage 字段极端大时
+                                // 也只是卡在 u32::MAX, 不会 panic / wrap 成小数。
+                                tokens_used = tokens_used.saturating_add(total_tokens);
+                                if token_budget > 0 && tokens_used > token_budget {
+                                    let err = AgentError::TokenBudget {
+                                        used: tokens_used,
+                                        budget: token_budget,
+                                    };
+                                    let err_msg = err.to_string();
+                                    tracing::warn!("[Agent] {err_msg}");
+                                    // 与 Stuck 用同一条 finalize 路径: emit Error
+                                    // chunk (前端 switch 走 error case), 写一行
+                                    // 助手文本 (UI 看起来正常收口而非崩溃 toast),
+                                    // 然后清掉 stuck-detect 计数。
+                                    emit_chunk(
+                                        app_handle,
+                                        &AgentChunk::Error { message: err_msg.clone() },
+                                    );
+                                    return self
+                                        .finalize_with_synthesized_message(
+                                            thread_id,
+                                            format!(
+                                                "(agent aborted — {err_msg}). \
+                                                 Split the request into smaller pieces \
+                                                 or raise `max_total_tokens` in \
+                                                 Preferences → Agent."
+                                            ),
+                                            app_handle,
+                                        )
+                                        .await;
                                 }
                             }
-                            StreamChunk::ToolUseComplete { tool_call, .. } => {
-                                self.flush_reasoning_message(
-                                    thread_id,
-                                    &reasoning_buffer,
-                                    app_state,
-                                )
-                                .await?;
+                            OpenAICompatibleStreamItem::Text(text) => {
+                                tracing::debug!("[Agent] Emitting text chunk: {}", text);
+                                emit_chunk(app_handle, &AgentChunk::Text { text: text.clone() });
+                                assistant_buffer.push_str(&text);
+                                full_response.push_str(&text);
+                            }
+                            OpenAICompatibleStreamItem::Reasoning(text) => {
+                                tracing::debug!("[Agent] Emitting reasoning chunk: {}", text);
+                                emit_chunk(
+                                    app_handle,
+                                    &AgentChunk::Reasoning { text: text.clone() },
+                                );
+                                reasoning_buffer.push_str(&text);
+                            }
+                            OpenAICompatibleStreamItem::ToolUseComplete { tool_call } => {
+                                self.flush_reasoning_message(thread_id, &reasoning_buffer)
+                                    .await?;
                                 reasoning_buffer.clear();
-                                self.flush_assistant_message(
+                                // 把 assistant_buffer 里的前导文本与本轮 tool_call 合并
+                                // 到同一行 (OpenAI 协议本来就是一条 message 带 content +
+                                // tool_calls)。不调 flush_assistant_message 是为了避免
+                                // 紧接着再写一条空的 assistant 行。
+                                self.flush_assistant_message_with_tool_calls(
                                     thread_id,
                                     &assistant_buffer,
-                                    app_state,
+                                    std::slice::from_ref(&tool_call),
                                 )
                                 .await?;
                                 assistant_buffer.clear();
 
-                                let tool_input = serde_json::from_str::<serde_json::Value>(
-                                    &tool_call.function.arguments,
-                                )
-                                .unwrap_or_else(|_| {
-                                    serde_json::Value::String(tool_call.function.arguments.clone())
-                                });
-                                let tool_call_event = serde_json::json!({
-                                    "id": tool_call.id,
-                                    "name": tool_call.function.name,
-                                    "input": tool_input,
-                                });
-                                let _ = app_handle.emit(
-                                    "agent-chunk",
-                                    format!("[TOOL_CALL]: {}", tool_call_event),
+                                // Parse the LLM-supplied JSON arguments. If they
+                                // are unparseable we still must ship valid JSON
+                                // to the LLM on the next round-trip; falling back
+                                // to the literal string would persist a
+                                // `Value::String(...)` and the gateway rejects
+                                // the next turn with 400 "invalid function
+                                // arguments". An empty `{}` is the safest
+                                // alternative: the LLM sees a tool call happened
+                                // with no args and can react to the synthesized
+                                // tool_result the recovery loop injects.
+                                let tool_input =
+                                    match serde_json::from_str::<serde_json::Value>(
+                                        &tool_call.function.arguments,
+                                    ) {
+                                        Ok(v) => v,
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "[Agent] tool_call {} ({}): arguments not valid JSON ({e}); falling back to {{}}",
+                                                tool_call.id,
+                                                tool_call.function.name
+                                            );
+                                            serde_json::Value::Object(serde_json::Map::new())
+                                        }
+                                    };
+                                emit_chunk(
+                                    app_handle,
+                                    &AgentChunk::ToolCall {
+                                        id: tool_call.id.clone(),
+                                        name: tool_call.function.name.clone(),
+                                        input: tool_input.clone(),
+                                    },
                                 );
                                 self.persist_tool_call(
                                     thread_id,
                                     &tool_call.id,
                                     &tool_call.function.name,
                                     tool_input,
-                                    app_state,
                                 )
                                 .await?;
+
+                                // Drop guard: 包住 execute_tool + emit + persist
+                                // 这段。任一步 panic / 提前 return / 新错误路径
+                                // 触发 drop ── 自动把对应 tool 行的 is_loading
+                                // 归零, 不让 UI 转圈卡死。
+                                let _loading_guard = IsLoadingGuard::new(
+                                    self.thread_manager.clone(),
+                                    thread_id,
+                                    &tool_call.id,
+                                );
 
                                 // Execute tool call
                                 let tool_result = self
@@ -337,18 +963,17 @@ impl AgentManager {
                                         thread_id,
                                         &tool_call.function.name,
                                         &tool_call.function.arguments,
-                                        app_state,
                                         Some(app_handle),
                                     )
                                     .await;
-                                let tool_result_event = serde_json::json!({
-                                    "id": tool_call.id,
-                                    "name": tool_call.function.name,
-                                    "result": tool_result,
-                                });
-                                let _ = app_handle.emit(
-                                    "agent-chunk",
-                                    format!("[TOOL_RESULT]: {}", tool_result_event),
+                                emit_chunk(
+                                    app_handle,
+                                    &AgentChunk::ToolResult {
+                                        id: tool_call.id.clone(),
+                                        name: tool_call.function.name.clone(),
+                                        result: serde_json::to_value(&tool_result)
+                                            .unwrap_or(serde_json::Value::Null),
+                                    },
                                 );
                                 let result_json = serde_json::to_string_pretty(&tool_result)
                                     .unwrap_or_else(|_| {
@@ -359,77 +984,207 @@ impl AgentManager {
                                     &tool_call.id,
                                     &tool_call.function.name,
                                     &result_json,
-                                    app_state,
                                 )
                                 .await?;
 
-                                // Add messages for tool use
-                                llm_messages.push(LlmChatMessage {
-                                    role: ChatRole::Assistant,
-                                    content: String::new(),
-                                    message_type: rllm::chat::MessageType::ToolUse(vec![tool_call]),
-                                });
+                                // Track for MaxCycles error message
+                                // (named when the loop bails).
+                                last_tool_name = Some(tool_call.function.name.clone());
 
-                                let result_json = serde_json::to_string(&tool_result)
-                                    .unwrap_or_else(|_| {
-                                        r#"{"error":"serialization failed"}"#.to_string()
-                                    });
-                                llm_messages.push(LlmChatMessage {
-                                    role: ChatRole::User,
-                                    content: result_json.clone(),
-                                    message_type: rllm::chat::MessageType::ToolResult(vec![
-                                        rllm::ToolCall {
-                                            id: format!(
-                                                "call_{}",
-                                                chrono::Utc::now().timestamp_millis()
-                                            ),
-                                            call_type: "function".to_string(),
-                                            function: rllm::FunctionCall {
-                                                name: "tool_result".to_string(),
-                                                arguments: result_json,
-                                            },
-                                        },
-                                    ]),
-                                });
+                                // 同一 (tool, args) 连续调用 STUCK_THRESHOLD 次就熔断。
+                                // 计数 + 比较放一起避免竞态。触发时给前端发个 Error 块,
+                                // 让用户看到中断原因, 再 return Err 走前端 catch 路径。
+                                let stuck = self
+                                    .record_tool_call(
+                                        thread_id,
+                                        &tool_call.function.name,
+                                        &tool_call.function.arguments,
+                                    )
+                                    .await;
+                                if stuck {
+                                    let err = AgentError::Stuck {
+                                        tool: tool_call.function.name.clone(),
+                                        count: STUCK_THRESHOLD + 1,
+                                    };
+                                    let err_msg = err.to_string();
+                                    tracing::warn!("[Agent] {}", err_msg);
+                                    // Flush a synthesized final assistant
+                                    // message to disk and return Ok so the
+                                    // user sees a normal-looking completion
+                                    // in the UI rather than an "Agent
+                                    // crashed" toast. The user can
+                                    // immediately send a new prompt.
+                                    let synth_msg = format!(
+                                        "(agent aborted — {}). Try rephrasing the request \
+                                         or check that the file path is correct.",
+                                        err_msg
+                                    );
+                                    return self
+                                        .finalize_with_synthesized_message(
+                                            thread_id,
+                                            synth_msg,
+                                            app_handle,
+                                        )
+                                        .await;
+                                }
+
+                                // tool_use / tool_result 已通过 flush_assistant_message_with_tool_calls
+                                // + persist_tool_call / persist_tool_result 落盘, 下轮 cycle
+                                // 顶部的 reload_thread_llm_messages 会读到, 这里不再手动 push。
 
                                 // Continue to next iteration to get final response
                                 hit_tool_call = true;
                                 break;
                             }
-                            StreamChunk::Done { .. } => {
-                                // Stream ended
+                            OpenAICompatibleStreamItem::Done { .. } => {
+                                // Stream ended — no-op, 循环自然退出
                             }
-                            _ => {}
                         }
                     }
                     Err(e) => {
-                        return Err(format!("Stream error: {}", e));
+                        // Mid-stream failure (network blip, provider 5xx,
+                        // socket close, etc.). The tool_use/tool_result
+                        // for this cycle are already persisted (see the
+                        // ToolUseComplete arm), so the thread state is
+                        // consistent; we just need to end the cycle.
+                        // Synthesize an assistant message and return Ok.
+                        return self
+                            .synthesize_llm_unavailable(
+                                thread_id,
+                                &format!("Stream error: {}", e),
+                                app_handle,
+                            )
+                            .await;
                     }
                 }
+            }
+
+            // ── Checkpoint #3: after stream exhausted, before the
+            //    final-return vs. next-cycle decision. ── Returning
+            //    here drops `stream` cleanly (no more items, but the
+            //    connection is still alive at the provider).
+            if cancel.load(Ordering::Acquire) {
+                return self
+                    .flush_cancel(
+                        thread_id,
+                        reasoning_buffer,
+                        assistant_buffer,
+                        full_response,
+                        app_handle,
+                    )
+                    .await;
             }
 
             // Continue only when this cycle actually executed a tool. A cycle without
             // tool calls is the completion signal for the current ReAct task.
             if !hit_tool_call {
-                self.flush_reasoning_message(thread_id, &reasoning_buffer, app_state)
+                // LLM 给出最终回答, 视为完成一次完整任务, 清空卡死检测计数。
+                self.clear_tool_call_attempts(thread_id).await;
+                self.flush_reasoning_message(thread_id, &reasoning_buffer)
                     .await?;
-                self.flush_assistant_message(thread_id, &assistant_buffer, app_state)
+                self.flush_assistant_message(thread_id, &assistant_buffer)
                     .await?;
-                break;
+                return Ok(full_response);
             }
         }
 
-        Ok(full_response)
+        // 循环跑满 max_cycles 还没 return, 说明 LLM 一直在调工具没给最终回答。
+        // 合成一条最终的 assistant 消息落盘并 emit, 让用户看到正常结束而不是
+        // "agent crashed" 弹窗, 然后返回 Ok。
+        let last_tool = last_tool_name
+            .as_deref()
+            .map(|n| format!(" Last tool: `{}`.", n))
+            .unwrap_or_default();
+        let synth_msg = format!(
+            "(agent aborted after {max_cycles} tool-call cycles without a final answer).{last_tool} \
+             Try a more specific prompt."
+        );
+        tracing::warn!("[Agent] agent exceeded max cycles ({max_cycles})");
+        return self
+            .finalize_with_synthesized_message(thread_id, synth_msg, app_handle)
+            .await;
+    }
+
+    /// 取消 helper — `chat_stream_inner` 三个 cancel 站点共用的退出形状。
+    /// 与 `finalize_with_synthesized_message` 对称, 但用「用户主动停止」的
+    /// 文案 (`_(已停止生成)_`), 不用 LLM 不可用的模板。
+    ///
+    /// 把 suffix 拼到 `assistant_buffer` 末尾再 `flush_assistant_message`
+    /// 落盘, 同时 emit 一个独立的 `Text` chunk 给前端 (UI 把它当普通 text
+    /// 追加, 跟用户看到的实时流体验一致 ── 不再需要新事件类型)。
+    async fn flush_cancel(
+        &self,
+        thread_id: &str,
+        reasoning_buffer: String,
+        assistant_buffer: String,
+        full_response: String,
+        app_handle: &tauri::AppHandle,
+    ) -> Result<String, AgentError> {
+        const STOPPED_SUFFIX: &str = "_(已停止生成)_";
+        tracing::info!(
+            "[Agent] chat cancelled by user for thread_id: {}",
+            thread_id
+        );
+        // 推理模型会先 reasoning 再 text, 中断时要保留思考痕迹。
+        if !reasoning_buffer.is_empty() {
+            self.flush_reasoning_message(thread_id, &reasoning_buffer)
+                .await?;
+        }
+        // 落盘最终 assistant 行 = 原流式累积 + 停止标记; 同一行 emit 给 UI。
+        let final_assistant = format!("{assistant_buffer}{STOPPED_SUFFIX}");
+        emit_chunk(
+            app_handle,
+            &AgentChunk::Text {
+                text: STOPPED_SUFFIX.to_string(),
+            },
+        );
+        // 始终落一条 (哪怕 assistant_buffer 为空), 让 thread 里有明确的
+        // 助手结束标记; `flush_assistant_message` 自身有 is_empty 短路,
+        // 但我们这里传的是带 suffix 的非空串, 一定落盘。
+        self.flush_assistant_message(thread_id, &final_assistant)
+            .await?;
+        self.clear_tool_call_attempts(thread_id).await;
+        Ok(format!("{full_response}{STOPPED_SUFFIX}"))
+    }
+
+    /// Frontend-initiated abort. Looks up the cancel flag for `thread_id`
+    /// and sets it to `true`; the in-flight `chat_stream_inner` picks it
+    /// up on the next checkpoint and exits via `flush_cancel`. The flag
+    /// itself is owned by `chat_stream` (registered on entry, removed
+    /// after exit), so the worst case here is "no chat running for this
+    /// thread_id" — we return `false` to signal the no-op.
+    ///
+    /// Single-shot semantics: we `remove` immediately after `set`, so a
+    /// second `stop_chat` call for the same thread_id returns `false`
+    /// even if the chat hasn't exited yet. This avoids racing with
+    /// `chat_stream`'s own remove-on-exit (both want to remove the same
+    /// key; whichever loses the race sees an empty HashMap entry — which
+    /// is a no-op for both).
+    pub async fn stop_chat(&self, thread_id: &str) -> bool {
+        let cancel = {
+            let mut flags = self.cancel_flags.lock().await;
+            flags.remove(thread_id)
+        };
+        match cancel {
+            Some(flag) => {
+                flag.store(true, Ordering::Release);
+                tracing::info!(
+                    "[Agent] stop_chat signalled cancel for thread_id: {}",
+                    thread_id
+                );
+                true
+            }
+            None => false,
+        }
     }
 
     async fn persist_user_message(
         &self,
         thread_id: &str,
         message: &AgentUserMessage,
-        app_state: &crate::commands::AppState,
-    ) -> Result<(), String> {
+    ) -> Result<(), AgentError> {
         let thread_message = ThreadChatMessage {
-            id: format!("user_{}", chrono::Utc::now().timestamp_millis()),
+            id: format!("user_{}", Uuid::new_v4()),
             role: "user".to_string(),
             content: message.content.clone(),
             llm_content: message.llm_content.clone(),
@@ -440,32 +1195,27 @@ impl AgentManager {
             tool_name: None,
             tool_data: None,
             tool_input: None,
+            tool_calls: None,
             reasoning: None,
             is_completed: None,
             is_collapsed: None,
         };
-        self.add_thread_message(thread_id, thread_message, app_state)
-            .await
+        self.add_thread_message(thread_id, thread_message).await
     }
 
     async fn load_thread_llm_messages(
         &self,
         thread_id: &str,
-        app_state: &crate::commands::AppState,
-    ) -> Result<Vec<ChatMessage>, String> {
-        let manager = app_state.thread_manager.read().await;
+    ) -> Result<Vec<LlmChatMessage>, AgentError> {
+        let manager = self.thread_manager.read().await;
         let thread = manager
             .get_thread(thread_id)
             .await?
-            .ok_or_else(|| format!("Thread not found: {}", thread_id))?;
+            .ok_or_else(|| crate::threads::ThreadError::NotFound(thread_id.to_string()))?;
         Ok(thread
             .messages
             .into_iter()
-            .filter(|message| message.role == "user" || message.role == "assistant")
-            .map(|message| ChatMessage {
-                role: message.role,
-                content: message.llm_content.unwrap_or(message.content),
-            })
+            .filter_map(persisted_to_llm)
             .collect())
     }
 
@@ -473,10 +1223,10 @@ impl AgentManager {
         &self,
         thread_id: &str,
         message: ThreadChatMessage,
-        app_state: &crate::commands::AppState,
-    ) -> Result<(), String> {
-        let manager = app_state.thread_manager.read().await;
-        manager.add_message(thread_id, message).await
+    ) -> Result<(), AgentError> {
+        let manager = self.thread_manager.read().await;
+        manager.add_message(thread_id, message).await?;
+        Ok(())
     }
 
     async fn execute_tool_for_thread(
@@ -484,7 +1234,6 @@ impl AgentManager {
         thread_id: &str,
         tool_name: &str,
         arguments: &str,
-        app_state: &crate::commands::AppState,
         app_handle: Option<&tauri::AppHandle>,
     ) -> crate::providers::tools::ToolResult {
         let path_key = tool_path_key(arguments);
@@ -503,10 +1252,48 @@ impl AgentManager {
             None
         };
 
+        // write 工具: 文件在 execute_tool 调用之前是否存在 (决定 emit Created vs Updated)
+        let path_existed_before = match (tool_name, path_key.as_ref()) {
+            ("write", Some(p)) => std::path::Path::new(p).exists(),
+            _ => true, // edit 总是对既有文件操作; 其它工具不关心
+        };
+
+        // 自写抑制提前到工具执行前 — 跟 `add_document` / `import_*` 同形,
+        // 关掉 "notify 事件先于 mark 到达" 的 race window。文件不存在时
+        // `mark_self_write` 走 "canonicalize 父目录 + join 文件名" 回退,
+        // 父目录一定存在, 这一步必然成功。in_notebook 算一次复用两次
+        // (mark + 后续 register/reload/emit 都需要)。
+        let in_notebook = path_key.as_ref().map(|pk| {
+            let path = std::path::Path::new(pk);
+            self.memo_file
+                .read()
+                .unwrap()
+                .registered_notebook_paths()
+                .iter()
+                .any(|base| path.starts_with(base))
+        });
+        // path_key 非空且落在某个 notebook 根下时, 把目标路径塞 watcher 抑制
+        // 表。注意 `in_notebook` 是 `Option<bool>`, 它为 `Some` 当且仅当
+        // `path_key` 也是 `Some` — 用 `matches!` 一行就够, 不必三个 Some 配
+        // 对的 if-let 模板。
+        if matches!(in_notebook, Some(true)) {
+            if let (Some(pk), Some(app)) = (path_key.as_ref(), app_handle) {
+                if let Some(watcher) = app.try_state::<std::sync::Arc<
+                    std::sync::RwLock<crate::fs_watcher::MemoWatcher>,
+                >>() {
+                    if let Ok(g) = watcher.read() {
+                        g.mark_self_write(std::path::Path::new(pk));
+                    }
+                }
+            }
+        }
+
+        // `self.memo_file` 是 `Arc<RwLock<MemoFile>>`, 解引用后调用 `.read()`
+        // 自动得到 `&RwLock<MemoFile>`, 喂给 `execute_tool` 的形参类型。
         let result = execute_tool(
             tool_name,
             arguments,
-            &app_state.memo_file,
+            &self.memo_file,
             read_snapshot.as_deref(),
         )
         .await;
@@ -526,20 +1313,85 @@ impl AgentManager {
                 }
                 "write" | "edit" => {
                     if let Some(path_key) = path_key {
+                        // 清掉 read 快照: 文件可能变了, 旧快照失效
                         let mut snapshots = self.read_snapshots.write().await;
                         if let Some(files) = snapshots.get_mut(thread_id) {
                             files.remove(&path_key);
                         }
-                        if tool_name == "edit" {
-                            if let Some(app_handle) = app_handle {
-                                let _ = app_handle.emit(
-                                    "agent-document-updated",
-                                    serde_json::json!({
-                                        "path": path_key,
-                                        "tool": "edit",
-                                    }),
-                                );
+                        drop(snapshots);
+
+                        // 走 MemoFile 同步 list.json + emit `memo-event`。
+                        // 之前是只对 `edit` 发 `agent-document-updated`, 新
+                        // 协议统一到 `memo-event` 的 Created/Updated 变体。
+                        // in_notebook 已在工具执行前算过, 这里直接复用,
+                        // 避免路径在两次检查之间漂移 (理论上不会, 但写代码
+                        // 时不假设)。
+                        let path = std::path::Path::new(&path_key);
+
+                        if in_notebook.unwrap_or(false) {
+                            // 调 MemoFile 同步 list.json, 拿回最新的 Memo (含正确 path/id)
+                            let memo_after = if !path_existed_before {
+                                // 新文件 — 注册到 list.json
+                                self.memo_file
+                                    .read()
+                                    .unwrap()
+                                    .register_existing_file(path)
+                                    .ok()
+                            } else if let Some(id) =
+                                MemoFile::extract_memo_id_from_abs_path(path)
+                            {
+                                // 既有文件 — 重派生 preview/tags/todos
+                                self.memo_file
+                                    .read()
+                                    .unwrap()
+                                    .reload_memo_from_disk(&id)
+                                    .ok()
+                            } else {
+                                None
+                            };
+
+                            // emit `memo-event`: Created (新文件) 或 Updated (既有)
+                            if let (Some(app), Some(memo)) = (app_handle, memo_after) {
+                                let source = if tool_name == "write" {
+                                    MemoChangeSource::AgentWrite
+                                } else {
+                                    MemoChangeSource::AgentEdit
+                                };
+                                if !path_existed_before {
+                                    memo_events::emit(
+                                        app,
+                                        MemoEvent::Created { memo, source },
+                                    );
+                                } else {
+                                    memo_events::emit(
+                                        app,
+                                        MemoEvent::Updated {
+                                            id: memo.id,
+                                            path: path_key,
+                                            source,
+                                        },
+                                    );
+                                }
                             }
+                        } else if let Some(app) = app_handle {
+                            // 路径在 notebook 之外 — 只 emit Updated 路径事件,
+                            // 前端编辑器按 path 匹配刷新, 不动 list.json
+                            // (list.json 不归本 notebook 管)。
+                            let id = MemoFile::extract_memo_id_from_abs_path(path)
+                                .unwrap_or_default();
+                            let source = if tool_name == "write" {
+                                MemoChangeSource::AgentWrite
+                            } else {
+                                MemoChangeSource::AgentEdit
+                            };
+                            memo_events::emit(
+                                app,
+                                MemoEvent::Updated {
+                                    id,
+                                    path: path_key,
+                                    source,
+                                },
+                            );
                         }
                     }
                 }
@@ -554,15 +1406,14 @@ impl AgentManager {
         &self,
         thread_id: &str,
         content: &str,
-        app_state: &crate::commands::AppState,
-    ) -> Result<(), String> {
+    ) -> Result<(), AgentError> {
         if content.is_empty() {
             return Ok(());
         }
         self.add_thread_message(
             thread_id,
             ThreadChatMessage {
-                id: format!("reasoning_{}", chrono::Utc::now().timestamp_millis()),
+                id: format!("reasoning_{}", Uuid::new_v4()),
                 role: "reasoning".to_string(),
                 content: content.to_string(),
                 llm_content: None,
@@ -573,11 +1424,11 @@ impl AgentManager {
                 tool_name: None,
                 tool_data: None,
                 tool_input: None,
+                tool_calls: None,
                 reasoning: None,
                 is_completed: Some(true),
                 is_collapsed: None,
             },
-            app_state,
         )
         .await
     }
@@ -586,15 +1437,14 @@ impl AgentManager {
         &self,
         thread_id: &str,
         content: &str,
-        app_state: &crate::commands::AppState,
-    ) -> Result<(), String> {
+    ) -> Result<(), AgentError> {
         if content.is_empty() {
             return Ok(());
         }
         self.add_thread_message(
             thread_id,
             ThreadChatMessage {
-                id: format!("assistant_{}", chrono::Utc::now().timestamp_millis()),
+                id: format!("assistant_{}", Uuid::new_v4()),
                 role: "assistant".to_string(),
                 content: content.to_string(),
                 llm_content: None,
@@ -605,11 +1455,65 @@ impl AgentManager {
                 tool_name: None,
                 tool_data: None,
                 tool_input: None,
+                tool_calls: None,
                 reasoning: None,
                 is_completed: None,
                 is_collapsed: None,
             },
-            app_state,
+        )
+        .await
+    }
+
+    /// 助手既输出了文本又发出了 tool_call 的合并落盘。OpenAI 协议里这两者本就是
+    /// 同一条 assistant 消息 (content + tool_calls 字段), 不该拆成两行。
+    /// text 可为空 (LLM 纯发 tool call, 不带前导文本), calls 至少一个。
+    async fn flush_assistant_message_with_tool_calls(
+        &self,
+        thread_id: &str,
+        content: &str,
+        calls: &[LlmToolCall],
+    ) -> Result<(), AgentError> {
+        // 序列化为 OpenAI 格式的 JSON 数组, 持久化层与 rllm 解耦。
+        let serialized_calls: Vec<serde_json::Value> = calls
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "id": c.id,
+                    "type": c.call_type,
+                    "function": {
+                        "name": c.function.name,
+                        "arguments": c.function.arguments,
+                    }
+                })
+            })
+            .collect();
+        let tool_calls_json = serde_json::Value::Array(serialized_calls);
+        // 借用首个 call.id 作行 id, 保持同 tool_call 的多 row 共享前缀便于排查。
+        let id_seed = calls
+            .first()
+            .map(|c| c.id.clone())
+            // LLM 整轮都没给 id (极少见) ── 用 UUID 兜底, 避免同毫秒内的多
+            // 个 call 拿到同一 id_seed 撞 PRIMARY KEY (issue #3.2)。
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        self.add_thread_message(
+            thread_id,
+            ThreadChatMessage {
+                id: format!("assistant_tool_{}", id_seed),
+                role: "assistant".to_string(),
+                content: content.to_string(),
+                llm_content: None,
+                system_reminder_directory: None,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                is_loading: None,
+                tool_call_id: None,
+                tool_name: None,
+                tool_data: None,
+                tool_input: None,
+                tool_calls: Some(tool_calls_json),
+                reasoning: None,
+                is_completed: None,
+                is_collapsed: None,
+            },
         )
         .await
     }
@@ -620,8 +1524,7 @@ impl AgentManager {
         tool_call_id: &str,
         tool_name: &str,
         tool_input: serde_json::Value,
-        app_state: &crate::commands::AppState,
-    ) -> Result<(), String> {
+    ) -> Result<(), AgentError> {
         self.add_thread_message(
             thread_id,
             ThreadChatMessage {
@@ -636,11 +1539,11 @@ impl AgentManager {
                 tool_name: Some(tool_name.to_string()),
                 tool_data: None,
                 tool_input: Some(tool_input),
+                tool_calls: None,
                 reasoning: None,
                 is_completed: None,
                 is_collapsed: None,
             },
-            app_state,
         )
         .await
     }
@@ -651,17 +1554,278 @@ impl AgentManager {
         tool_call_id: &str,
         tool_name: &str,
         result_content: &str,
-        app_state: &crate::commands::AppState,
-    ) -> Result<(), String> {
-        let manager = app_state.thread_manager.read().await;
+    ) -> Result<(), AgentError> {
+        let manager = self.thread_manager.read().await;
         manager
             .update_tool_result(thread_id, tool_call_id, tool_name, result_content)
-            .await
+            .await?;
+        Ok(())
     }
 }
 
-impl Default for AgentManager {
-    fn default() -> Self {
-        Self::new()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn call_key_stable_for_same_inputs() {
+        let k1 = compute_call_key("read", r#"{"path":"/a.md"}"#);
+        let k2 = compute_call_key("read", r#"{"path":"/a.md"}"#);
+        assert_eq!(k1, k2);
+    }
+
+    #[test]
+    fn call_key_distinguishes_different_args() {
+        let k1 = compute_call_key("read", r#"{"path":"/a.md"}"#);
+        let k2 = compute_call_key("read", r#"{"path":"/b.md"}"#);
+        assert_ne!(k1.args_hash, k2.args_hash);
+    }
+
+    #[test]
+    fn call_key_distinguishes_different_tools() {
+        let k1 = compute_call_key("read", r#"{"path":"/a.md"}"#);
+        let k2 = compute_call_key("write", r#"{"path":"/a.md"}"#);
+        assert_ne!(k1.tool_name, k2.tool_name);
+    }
+
+    #[test]
+    fn llm_unavailable_message_wraps_raw_reason() {
+        // The plain inner-error path (e.g. mid-stream `Stream error: ...`).
+        let msg = format_llm_unavailable_message("Stream error: connection reset by peer");
+        assert_eq!(msg, "(LLM 暂时不可用, 原因: Stream error: connection reset by peer)");
+    }
+
+    #[test]
+    fn llm_unavailable_message_takes_reason_verbatim() {
+        // Reason strings are constructed by callers in the recovery loop
+        // (e.g. `format!("Stream failed: {}", e)`); the formatter must
+        // not strip or re-wrap anything. This guards against accidental
+        // re-introduction of a prefix-strip step that would silently
+        // drop caller context.
+        let inputs = [
+            "Stream failed: API error 401: {\"type\":\"error\"}",
+            "Stream error: connection reset by peer",
+            "any reason",
+        ];
+        for input in inputs {
+            let msg = format_llm_unavailable_message(input);
+            assert!(msg.ends_with(&format!("原因: {})", input)), "input={input}, got={msg}");
+        }
+    }
+
+    #[test]
+    fn llm_unavailable_message_preserves_chinese_punctuation() {
+        // Chinese half-width comma (`,`) is intentional — matches the
+        // rest of the codebase. Full-width comma (`，`) would also
+        // be valid but is a different code point; this test guards
+        // against accidental character substitution during refactors.
+        let msg = format_llm_unavailable_message("any reason");
+        assert!(msg.contains("(LLM 暂时不可用, 原因: "), "got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn record_tool_call_threshold_triggers_on_sixth() {
+        let mgr = AgentManager::for_tests();
+        let args = r#"{"path":"/a.md"}"#;
+        for i in 1..=STUCK_THRESHOLD {
+            let stuck = mgr.record_tool_call("thread-1", "read", args).await;
+            assert!(!stuck, "第 {i} 次调用不该触发熔断 (阈值 {})", STUCK_THRESHOLD);
+        }
+        // 第 STUCK_THRESHOLD + 1 次必须返回 true
+        let stuck = mgr.record_tool_call("thread-1", "read", args).await;
+        assert!(stuck, "第 {} 次同调用应触发熔断", STUCK_THRESHOLD + 1);
+    }
+
+    #[tokio::test]
+    async fn record_tool_call_isolates_threads() {
+        let mgr = AgentManager::for_tests();
+        let args = r#"{"path":"/a.md"}"#;
+        // thread-A 触发熔断
+        for _ in 0..=STUCK_THRESHOLD {
+            let _ = mgr.record_tool_call("thread-A", "read", args).await;
+        }
+        // thread-B 应不受影响, 计数独立
+        let stuck = mgr.record_tool_call("thread-B", "read", args).await;
+        assert!(!stuck, "不同 thread 的卡死计数应隔离");
+    }
+
+    #[tokio::test]
+    async fn clear_tool_call_attempts_resets() {
+        let mgr = AgentManager::for_tests();
+        let args = r#"{"path":"/a.md"}"#;
+        for _ in 0..=STUCK_THRESHOLD {
+            let _ = mgr.record_tool_call("thread-1", "read", args).await;
+        }
+        mgr.clear_tool_call_attempts("thread-1").await;
+        // 清空后重新计数, 不应立即触发
+        let stuck = mgr.record_tool_call("thread-1", "read", args).await;
+        assert!(!stuck, "clear 后计数应从 0 重新开始");
+    }
+
+    #[tokio::test]
+    async fn cleanup_thread_removes_read_snapshot() {
+        let mgr = AgentManager::for_tests();
+        // 直接通过公共 API 触发, 这里只看 HashMap 状态
+        // 不能调用 execute_tool_for_thread (要 memo_file), 但 cleanup 的语义
+        // 仅是 HashMap::remove, 单独验证 read_snapshots 这一侧。
+        {
+            let mut snapshots = mgr.read_snapshots.write().await;
+            snapshots
+                .entry("thread-1".to_string())
+                .or_default()
+                .insert("/a.md".to_string(), "content".to_string());
+            assert!(snapshots.contains_key("thread-1"));
+        }
+        mgr.cleanup_thread("thread-1").await;
+        let snapshots = mgr.read_snapshots.read().await;
+        assert!(!snapshots.contains_key("thread-1"), "read_snapshots 应被清空");
+    }
+
+    #[tokio::test]
+    async fn cleanup_thread_removes_tool_call_attempts() {
+        let mgr = AgentManager::for_tests();
+        let args = r#"{"path":"/a.md"}"#;
+        for _ in 0..=STUCK_THRESHOLD {
+            let _ = mgr.record_tool_call("thread-1", "read", args).await;
+        }
+        mgr.cleanup_thread("thread-1").await;
+        // 清理后重新计数, 不应被上次的累积触发
+        let stuck = mgr.record_tool_call("thread-1", "read", args).await;
+        assert!(!stuck, "cleanup 后计数应从 0 重新开始");
+    }
+
+    #[tokio::test]
+    async fn cleanup_thread_isolates_threads() {
+        let mgr = AgentManager::for_tests();
+        let args = r#"{"path":"/a.md"}"#;
+        // thread-A 触发一次计数
+        let _ = mgr.record_tool_call("thread-A", "read", args).await;
+        // thread-B 注入 read snapshot
+        {
+            let mut snapshots = mgr.read_snapshots.write().await;
+            snapshots
+                .entry("thread-B".to_string())
+                .or_default()
+                .insert("/b.md".to_string(), "content".to_string());
+        }
+        mgr.cleanup_thread("thread-A").await;
+        // thread-A 状态清空
+        let attempts = mgr.tool_call_attempts.read().await;
+        assert!(!attempts.contains_key("thread-A"), "thread-A 卡死计数应被清空");
+        drop(attempts);
+        // thread-B 的 read snapshot 不受影响
+        let snapshots = mgr.read_snapshots.read().await;
+        assert!(snapshots.contains_key("thread-B"), "thread-B 数据不应被波及");
+    }
+
+    #[tokio::test]
+    async fn cleanup_thread_is_idempotent() {
+        let mgr = AgentManager::for_tests();
+        // 对不存在的 thread_id 调用, 不应 panic
+        mgr.cleanup_thread("nonexistent").await;
+        mgr.cleanup_thread("nonexistent").await; // 二次调用同样安全
+        let snapshots = mgr.read_snapshots.read().await;
+        let attempts = mgr.tool_call_attempts.read().await;
+        assert!(snapshots.is_empty());
+        assert!(attempts.is_empty());
+    }
+
+    // AgentChunk 序列化 ── 验证 wire 协议形状, 防止日后误改 serde tag 默默
+    // 破坏前后端 IPC 约定。`kind` 必须是 snake_case, 字段命名 (text/id/name/
+    // input/result/message) 是与前端的硬契约, 不要随便改。
+    #[test]
+    fn agent_chunk_text_serializes_with_snake_case_tag() {
+        let chunk = AgentChunk::Text {
+            text: "hello".to_string(),
+        };
+        let v: serde_json::Value = serde_json::to_value(&chunk).unwrap();
+        assert_eq!(v["kind"], "text");
+        assert_eq!(v["text"], "hello");
+    }
+
+    #[test]
+    fn agent_chunk_reasoning_serializes_with_snake_case_tag() {
+        let chunk = AgentChunk::Reasoning {
+            text: "thinking...".to_string(),
+        };
+        let v: serde_json::Value = serde_json::to_value(&chunk).unwrap();
+        assert_eq!(v["kind"], "reasoning");
+        assert_eq!(v["text"], "thinking...");
+    }
+
+    #[test]
+    fn agent_chunk_tool_call_serializes_with_snake_case_tag() {
+        let chunk = AgentChunk::ToolCall {
+            id: "call_1".to_string(),
+            name: "read".to_string(),
+            input: serde_json::json!({"path": "/a.md"}),
+        };
+        let v: serde_json::Value = serde_json::to_value(&chunk).unwrap();
+        assert_eq!(v["kind"], "tool_call");
+        assert_eq!(v["id"], "call_1");
+        assert_eq!(v["name"], "read");
+        assert_eq!(v["input"]["path"], "/a.md");
+    }
+
+    #[test]
+    fn agent_chunk_tool_result_serializes_with_snake_case_tag() {
+        let chunk = AgentChunk::ToolResult {
+            id: "call_1".to_string(),
+            name: "read".to_string(),
+            result: serde_json::json!({"content": "data"}),
+        };
+        let v: serde_json::Value = serde_json::to_value(&chunk).unwrap();
+        assert_eq!(v["kind"], "tool_result");
+        assert_eq!(v["id"], "call_1");
+        assert_eq!(v["name"], "read");
+        assert_eq!(v["result"]["content"], "data");
+    }
+
+    #[test]
+    fn agent_chunk_error_serializes_with_snake_case_tag() {
+        let chunk = AgentChunk::Error {
+            message: "Agent stuck".to_string(),
+        };
+        let v: serde_json::Value = serde_json::to_value(&chunk).unwrap();
+        assert_eq!(v["kind"], "error");
+        assert_eq!(v["message"], "Agent stuck");
+    }
+
+    #[test]
+    fn default_agent_id_returns_stable_placeholder() {
+        // 占位值应稳定为 "default", 历史 schema 兼容要求。
+        let a = default_agent_id();
+        let b = default_agent_id();
+        assert_eq!(a, b);
+        assert_eq!(a.0, "default");
+    }
+
+    #[test]
+    fn agent_id_display_matches_inner() {
+        let id = AgentId::new("custom-agent");
+        assert_eq!(id.to_string(), "custom-agent");
+        assert_eq!(format!("{}", id), "custom-agent");
+    }
+
+    #[test]
+    fn agent_id_from_string_and_str() {
+        let from_string: AgentId = String::from("a").into();
+        let from_str: AgentId = "b".into();
+        assert_eq!(from_string.0, "a");
+        assert_eq!(from_str.0, "b");
+    }
+
+    #[test]
+    fn token_budget_error_message_includes_used_and_budget() {
+        // 前端 `agent-chunk` Error case 会拿到这段字符串, 用于 toast / 上下文提示。
+        // 锁住字段名 (used / budget) 与单位, 防止文案漂移破坏前端正则解析。
+        let err = AgentError::TokenBudget {
+            used: 120_000,
+            budget: 100_000,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("120000"), "应包含 used 数值, 实际: {msg}");
+        assert!(msg.contains("100000"), "应包含 budget 数值, 实际: {msg}");
+        assert!(msg.contains("token budget"), "应保留错误类型标识, 实际: {msg}");
     }
 }

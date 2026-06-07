@@ -1,5 +1,5 @@
 /**
- * Type definitions for WoopMemo app
+ * Type definitions for Flowix app
  * Simplified types for the Tauri-based project
  */
 
@@ -51,10 +51,10 @@ export interface FileListResponse {
 }
 
 // ============================================
-// RPC Types (WoopMemoRPCSchema)
+// RPC Types (FlowixRPCSchema)
 // ============================================
 
-export interface WoopMemoRPCSchema {
+export interface FlowixRPCSchema {
   bun: {
     requests: {
       // Chat
@@ -194,80 +194,6 @@ export interface ToolCall {
   args?: string;
 }
 
-// Stream events from agent (simplified)
-export type StreamEvent =
-  | TextDeltaEvent
-  | ToolCallStartEvent
-  | ToolCallEndEvent
-  | ToolResultEvent
-  | ReasoningStartEvent
-  | ReasoningEvent
-  | ReasoningEndEvent
-  | FinishEvent
-  | ThreadIdEvent
-  | ErrorEvent;
-
-export interface TextDeltaEvent {
-  type: "text-delta";
-  content: string;
-}
-
-export interface ToolCallStartEvent {
-  type: "tool-call-start";
-  toolCallId: string;
-  toolName: string;
-  input?: Record<string, unknown>;
-}
-
-export interface ToolCallEndEvent {
-  type: "tool-call-end";
-  toolCallId: string;
-}
-
-export interface ToolResultEvent {
-  type: "tool-result";
-  toolCallId: string;
-  result: string;
-}
-
-export interface ReasoningEvent {
-  type: "reasoning";
-  content: string;
-}
-
-export interface ReasoningStartEvent {
-  type: "reasoning-start";
-  id: string;
-}
-
-export interface ReasoningEndEvent {
-  type: "reasoning-end";
-  id: string;
-}
-
-export interface FinishEvent {
-  type: "finish";
-  finishReason: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
-}
-
-export interface ThreadIdEvent {
-  type: "thread-id";
-  threadId: string;
-}
-
-export interface ErrorEvent {
-  type: "error";
-  content: string;
-}
-
-// Re-export for backwards compatibility
-export type MessageType = ChatMessage;
-
 // ============================================
 // Frontend-only types
 // ============================================
@@ -283,14 +209,6 @@ export interface FileChangeEvent {
   path: string;
   spacePath: string;
   timestamp: number;
-}
-
-export interface StreamEventPayload {
-  type: string;
-  event: {
-    type: string;
-    [key: string]: unknown;
-  };
 }
 
 // ============================================

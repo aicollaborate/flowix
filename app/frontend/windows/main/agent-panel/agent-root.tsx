@@ -26,6 +26,8 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	const messages = useChatStore((state) => state.messages);
 	const isLoading = useChatStore((state) => state.isLoading);
 	const onSendMessageStore = useChatStore((state) => state.sendMessageStream);
+	const stopMessageStream = useChatStore((state) => state.stopStream);
+	const setPendingPrompt = useChatStore((state) => state.setPendingPrompt);
 	const threadId = useChatStore((state) => state.threadId);
 	const loadThread = useChatStore((state) => state.loadThread);
 	const loadThreadList = useChatStore((state) => state.loadThreadList);
@@ -63,14 +65,11 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages]);
 
-	// Set input value for welcome prompts
+	// 把文本送进 chat store 的 pendingPrompt, 由 Inputbox 自己的 effect 调
+	// setInput 写入受控 state — 直接改 DOM ref 会被 value={input} 的受控
+	// textarea 在下次渲染时回滚, 发送按钮的 disabled 也读不到值。
 	const setInputValue = (value: string) => {
-		if (textareaRef.current) {
-			textareaRef.current.value = value;
-			textareaRef.current.style.height = "auto";
-			const newHeight = Math.min(Math.max(textareaRef.current.scrollHeight, 40), 200);
-			textareaRef.current.style.height = `${newHeight}px`;
-		}
+		setPendingPrompt(value);
 	};
 
 	const handleSendMessage = (content: string, options?: { includeSelectedFile?: boolean }) => {
@@ -110,7 +109,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 
 			<div className="flex-1 overflow-y-auto scrollbar overflow-x-hidden">
 				{messages.length > 0 ? (
-					<div className="space-y-3 px-6 py-4">
+					<div className="space-y-1.5 px-6 py-4">
 						{messages.map((message) => (
 							<ChatMessageComponent key={message.id} message={message} />
 						))}
@@ -125,7 +124,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 			    容器自然收缩到 Inputbox 高度。 */}
 			<div className="shrink-0">
 				{isLoading && <AgentThinkingIndicator />}
-				<Inputbox ref={textareaRef} onSend={handleSendMessage} isLoading={isLoading} />
+				<Inputbox ref={textareaRef} onSend={handleSendMessage} isLoading={isLoading} onStop={stopMessageStream} />
 			</div>
 		</div>
 	);

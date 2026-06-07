@@ -24,14 +24,13 @@ import { Loader2, Check } from 'lucide-react';
  *  custom value can still keep it — the trigger just shows whatever
  *  string is in state, and the dropdown highlights whatever preset (if
  *  any) matches. */
-const PROVIDER_OPTIONS = ['OpenAI', 'Anthropic', 'DeepSeek', 'MiniMax', '自定义'] as const;
+const PROVIDER_OPTIONS = ['OpenAI', 'Anthropic', 'DeepSeek', 'OpenAI Compatible', '自定义'] as const;
 
 /** Default values for新 / 未配置场景。加载时与后端返回的 config 浅合并。
  *  字段命名走 camelCase, 与后端 AiModelConfig 的 serde rename_all 对齐 — 否则
- *  保存时 apiKey/apiUrl/modelName 会被 serde 静默丢, 刷新即丢失。 */
+ *  保存时 apiKey/apiUrl 会被 serde 静默丢, 刷新即丢失。 */
 const DEFAULT_CONFIG: AgentConfig = {
-  provider: 'MiniMax',
-  modelName: 'MiniMax-M3',
+  provider: 'OpenAI Compatible',
   model: 'MiniMax-M3',
   apiUrl: 'https://api.minimaxi.com/v1',
   apiKey: '',
@@ -46,7 +45,7 @@ export function AgentSection() {
   /** 加载阶段出错时记录, 用错误态 UI 替代"加载中..."。 */
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // 从后端 ~/.woop/ai_config.json 异步加载
+  // 从后端 ~/.flowix/ai_config.json 异步加载
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -121,7 +120,7 @@ export function AgentSection() {
       const msg = err instanceof Error ? err.message : String(err);
       setSaveStatus('idle');
       // 之前只 console.error, 用户无感知。现在弹 toast + 状态条提示
-      toast.error(`保存智能体配置失败: ${msg}`);
+      toast.error(`保存 AI 模型配置失败: ${msg}`);
       console.error('[AgentSection] Failed to save ai_config:', err);
     }
   };
@@ -134,7 +133,7 @@ export function AgentSection() {
   if (loadError) {
     return (
       <div className="space-y-3">
-        <SectionHeader title="智能体配置" />
+        <SectionHeader title="AI 模型配置" />
         <div className="rounded-md border border-[color-mix(in_oklch,var(--destructive)_40%,transparent)] bg-[color-mix(in_oklch,var(--destructive)_10%,transparent)] px-4 py-3 text-sm text-[var(--destructive)]">
           加载配置失败: {loadError}
         </div>
@@ -152,7 +151,7 @@ export function AgentSection() {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="智能体配置"
+        title="AI 模型配置"
       />
 
       <div className="space-y-4">
@@ -173,17 +172,7 @@ export function AgentSection() {
           </Select>
         </Field>
 
-        {/* 2. 模型名称 */}
-        <Field title="模型名称">
-          <Input
-            value={localConfig.modelName}
-            onChange={(e) => updateField('modelName', e.target.value)}
-            placeholder="如 Claude 3.5 Sonnet"
-            className={FIELD_INPUT_CLASS}
-          />
-        </Field>
-
-        {/* 3. 模型 ID(原"模型"字段,语义改为 API 调用时的模型标识符) */}
+        {/* 2. 模型 ID(原"模型"字段,语义改为 API 调用时的模型标识符) */}
         <Field title="模型 ID">
           <Input
             value={localConfig.model}
@@ -193,7 +182,7 @@ export function AgentSection() {
           />
         </Field>
 
-        {/* 4. Base URL(原"API 地址") */}
+        {/* 3. Base URL(原"API 地址") */}
         <Field title="Base URL">
           <Input
             value={localConfig.apiUrl}
@@ -203,7 +192,7 @@ export function AgentSection() {
           />
         </Field>
 
-        {/* 5. 模型密钥(原"API 密钥") */}
+        {/* 4. 模型密钥(原"API 密钥") */}
         <Field title="模型密钥" description="仅保存在本地,不会上传至第三方">
           <Input
             type="password"

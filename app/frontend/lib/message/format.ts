@@ -10,7 +10,6 @@ export function formatToolName(name: string | undefined): string {
     grep: "内容搜索",
     bash: "执行命令",
     list_notebooks: "列出笔记本",
-    get_notebook_detail: "笔记本详情",
   };
 
   if (labels[name]) return labels[name];

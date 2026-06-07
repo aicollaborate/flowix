@@ -2,7 +2,7 @@
 
 import { SlidersHorizontal } from 'lucide-react';
 import { SidebarToggleIcon } from '../../../components/icons/sidebar-toggle-icon';
-import productLogo from '../../../assets/product-logo.svg';
+import productLogo from '../../../assets/product-logo.png';
 
 interface MemoListTitlebarWinProps {
   onCollapseSidebar: () => void;
@@ -24,11 +24,11 @@ export function MemoListTitlebarWin({
           by default since we don't pass data-tauri-drag-region to them. */}
       <span
         className="flex items-center gap-1.5 pl-1 select-none pointer-events-none"
-        aria-label="WoopMemo"
+        aria-label="Flowix"
       >
         <img src={productLogo} alt="" aria-hidden="true" className="h-3.5 w-3.5 shrink-0 rounded" />
         <span className="leading-none translate-y-[1px] text-[14px] font-semibold tracking-tight bg-gradient-to-r from-[#5262DC] via-[#6F5BD8] to-[#8A6DDC] bg-clip-text text-transparent">
-          WoopMemo
+          Flowix
         </span>
       </span>
       <div className="flex items-center gap-1">

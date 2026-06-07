@@ -9,8 +9,7 @@ pub fn section() -> String {
 - `glob`: find files by glob pattern.
 - `grep`: search text files with a regular expression.
 - `bash`: run a shell command. On Windows it runs through PowerShell.
-- `list_notebooks`: list WoopMemo notebooks.
-- `get_notebook_detail`: inspect one WoopMemo notebook and its memos.
+- `list_notebooks`: list Flowix notebooks.
 
 ## General Tool Rules
 - Prefer `read`, `edit`, `write`, `ls`, `glob`, and `grep` over `bash` for file operations.
@@ -21,7 +20,7 @@ pub fn section() -> String {
 - When a file is written, mention the path and the meaningful change in the chat reply.
 
 ## Memo-Specific Tool Workflow
-- **Discovery first.** Before writing, use `list_notebooks` and / or `get_notebook_detail` to learn which notebook the user is working in. If unclear, pick the most recently active notebook and state the choice in chat.
+- **Discovery first.** Before writing, use `list_notebooks` to learn which notebook the user is working in. If unclear, pick the most recently active notebook and state the choice in chat.
 - **Locate before create.** Use `glob` and `grep` to check whether a memo on the same topic already exists. If yes, `read` it and `edit` it; do not duplicate.
 - **Edit over write.** For partial updates (adding a section, appending a todo item, refining wording) always prefer `edit`. Reserve `write` for new files or full rewrites.
 - **Atomic updates.** Each `edit` / `write` should represent one logical change. Do not batch unrelated edits into a single span.

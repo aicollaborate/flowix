@@ -49,7 +49,6 @@ fn function_tool(name: &str, description: &str, parameters: serde_json::Value) -
 pub fn get_all_tools() -> Vec<Tool> {
     vec![
         notebook::list_notebooks_tool(),
-        notebook::get_notebook_detail_tool(),
         filesystem::read_tool(),
         filesystem::write_tool(),
         filesystem::edit_tool(),
@@ -62,42 +61,42 @@ pub fn get_all_tools() -> Vec<Tool> {
 #[derive(Clone, Debug)]
 pub struct ToolScope {
     allowed_roots: Vec<PathBuf>,
+    /// Canonical default notebook path (e.g. `~/Documents/flowix` on macOS).
+    /// Held separately so the read / scope tools can hint the *correct*
+    /// path when the LLM tries one that's outside the registered scope —
+    /// typically a stale `~/Documents/woop notebook` from before the
+    /// 2026/06 brand rename. See `MemoFile::get_default_notebook_path`.
+    default_root: PathBuf,
 }
 
 impl ToolScope {
     pub fn from_memo_file(memo_file: &std::sync::RwLock<crate::memo_file::MemoFile>) -> Self {
-        let allowed_roots = memo_file
+        let (allowed_roots, default_root) = memo_file
             .read()
-            .map(|guard| guard.registered_notebook_paths())
-            .unwrap_or_default();
-        Self { allowed_roots }
+            .map(|guard| {
+                (
+                    guard.registered_notebook_paths(),
+                    guard.get_default_notebook_path(),
+                )
+            })
+            .unwrap_or_else(|_| (Vec::new(), PathBuf::new()));
+        Self {
+            allowed_roots,
+            default_root,
+        }
     }
 
     pub fn is_allowed(&self, path: &Path) -> bool {
         self.allowed_roots
             .iter()
-            .any(|root| path_is_inside(path, root))
-    }
-}
-
-fn canonical_existing_or_parent(path: &Path) -> Option<PathBuf> {
-    if path.exists() {
-        return std::fs::canonicalize(path).ok();
+            .any(|root| crate::path_scope::path_is_inside(path, root))
     }
 
-    let parent = path.parent()?;
-    let canonical_parent = std::fs::canonicalize(parent).ok()?;
-    Some(canonical_parent.join(path.file_name()?))
-}
-
-fn path_is_inside(path: &Path, root: &Path) -> bool {
-    let Some(path) = canonical_existing_or_parent(path) else {
-        return false;
-    };
-    let Some(root) = canonical_existing_or_parent(root) else {
-        return false;
-    };
-    path.starts_with(root)
+    /// Canonical default notebook path. Use this to construct error
+    /// messages that tell the LLM where the *real* notebook is.
+    pub fn default_root(&self) -> &Path {
+        &self.default_root
+    }
 }
 
 /// Execute a tool by name with the given arguments.
@@ -109,8 +108,8 @@ pub async fn execute_tool(
 ) -> ToolResult {
     let scope = ToolScope::from_memo_file(memo_file);
     match tool_name {
-        "list_notebooks" | "get_notebook_detail" => {
-            notebook::execute_tool(tool_name, arguments, memo_file).await
+        "list_notebooks" => {
+            notebook::execute_tool(tool_name, memo_file).await
         }
         "read" | "write" | "edit" | "ls" | "glob" | "grep" => {
             filesystem::execute_tool(tool_name, arguments, read_snapshot, &scope).await

@@ -72,6 +72,14 @@ export interface MemoStore {
   deleteMemo: (id: string) => Promise<boolean>;
   favoriteMemo: (id: string) => Promise<boolean>;
   unfavoriteMemo: (id: string) => Promise<boolean>;
+
+  // 后端 memo-event 推送的 store action — 由 useMemoEvents 监听器调用。
+  // 设计: 只做"乐观更新" + `triggerRefresh`, 真正重排 / preview 刷新走
+  // MemoList 里 [refreshTrigger] useEffect 的 loadData 管线, 避免在 store
+  // 里维护两套排序逻辑。
+  handleMemoCreated: (memo: MemoItem) => void;
+  handleMemoUpdated: (id: string) => void;
+  handleMemoDeleted: (id: string) => void;
 }
 
 function omitUndefined<T extends object>(value: T): Partial<T> {
@@ -172,6 +180,47 @@ export const useMemoStore = create<MemoStore>()(
 
       unfavoriteMemo: async (id) => {
         return await memos.unfavoriteMemo(id);
+      },
+
+      // ===== memo-event 推送入口 =====
+      // useMemoEvents 监听后端 memo-event, 按 kind 派发到下面三个 action。
+      // 仅做"乐观更新" (UI 立刻动) + 触发 refreshTrigger, 真正的 sort / preview
+      // 重算走 MemoList 的 [refreshTrigger] useEffect → loadData → get_memos 拉一遍。
+      // 这样 store 不维护第二套排序, list.json 是唯一真源。
+
+      handleMemoCreated: (memo) => {
+        set((state) => {
+          // 重复 id 防御: 同一 memo 在多个事件里到达时, 避免重复 push
+          if (state.memos.some((m) => m.id === memo.id)) {
+            return state;
+          }
+          return { memos: [...state.memos, memo] };
+        });
+        get().triggerRefresh();
+      },
+
+      handleMemoUpdated: (id) => {
+        // 我们没有完整 memo payload, 只能动 updatedAt 占位让 sort 位置动一下,
+        // 真正的 preview / tags / todos 由 refreshTrigger → loadMemos 重拉
+        set((state) => ({
+          memos: state.memos.map((m) =>
+            m.id === id ? { ...m, updatedAt: Date.now() } : m
+          ),
+          selectedMemo:
+            state.selectedMemo?.id === id
+              ? { ...state.selectedMemo, updatedAt: Date.now() }
+              : state.selectedMemo,
+        }));
+        get().triggerRefresh();
+      },
+
+      handleMemoDeleted: (id) => {
+        set((state) => ({
+          memos: state.memos.filter((m) => m.id !== id),
+          selectedMemo:
+            state.selectedMemo?.id === id ? null : state.selectedMemo,
+        }));
+        // Deleted 不 bump refreshTrigger — 列表已经同步, 没有需要重拉的派生字段
       },
     }),
     {

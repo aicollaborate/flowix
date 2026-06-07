@@ -2,7 +2,7 @@
  * 首屏 boot: 在 CSS paint 之前把 data-theme 写到 <html>, 防止深色模式下
  * 偏好设置/主窗口出现一帧白色闪烁。
  *
- * 主题真源在 ~/.woop/preference.json (Tauri IPC), 但 IPC 是 async — 等到
+ * 主题真源在 ~/.flowix/preference.json (Tauri IPC), 但 IPC 是 async — 等到
  * React mount + useEffect 跑完时, 首帧已经画完。 这里用 localStorage 做
  * 同步缓存, 与 lib/theme/apply.ts 写入的 key 保持一致; 缓存由 applyTheme
  * 在每次主题解析后更新, 真源修改后再开窗也能命中。
@@ -16,7 +16,7 @@
  */
 (function () {
   try {
-    var cached = localStorage.getItem('woop-theme');
+    var cached = localStorage.getItem('flowix-theme');
     var resolved;
     if (cached === 'dark' || cached === 'light' || cached === 'rock') {
       resolved = cached;

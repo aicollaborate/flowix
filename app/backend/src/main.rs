@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    woopmemo_lib::run()
+    flowix_lib::run()
 }

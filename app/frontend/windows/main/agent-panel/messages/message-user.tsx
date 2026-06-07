@@ -15,21 +15,25 @@ export function MessageUser({ message }: MessageUserProps) {
   const { meta, citation, content } = parseYamlMeta(message.content);
 
   return (
-    <div className="flex flex-row-reverse gap-3">
-      <div className="flex flex-col gap-1 w-fit items-end max-w-full">
-        {meta.selecteditem && (
-          <div
-            className="flex items-center gap-1 text-xs text-[var(--foreground)] bg-[var(--card)] px-2 py-1 rounded border border-[var(--border)] max-w-[300px]"
-            title={meta.selecteditem}
-          >
-            <span>{truncateStart(meta.selecteditem)}</span>
+    <>
+      <div className="flex flex-row-reverse gap-3">
+        <div className="flex flex-col gap-1 w-fit items-end max-w-full">
+          <div className="py-2" />
+          {meta.selecteditem && (
+            <div
+              className="flex items-center gap-1 text-xs text-[var(--foreground)] bg-[var(--card)] px-2 py-1 rounded border border-[var(--border)] max-w-[300px]"
+              title={meta.selecteditem}
+            >
+              <span>{truncateStart(meta.selecteditem)}</span>
+            </div>
+          )}
+          {citation && <CitationCard text={citation} />}
+          <div className="bg-[var(--muted)] rounded-tl-lg rounded-tr-2xl rounded-bl-lg rounded-br-lg py-2 px-3 text-sm text-[var(--foreground)] w-fit max-w-full">
+            <MarkdownRenderer content={content} />
           </div>
-        )}
-        {citation && <CitationCard text={citation} />}
-        <div className="bg-[var(--muted)] rounded-tl-lg rounded-tr-2xl rounded-bl-lg rounded-br-lg py-2 px-3 text-sm text-[var(--foreground)] w-fit max-w-full">
-          <MarkdownRenderer content={content} />
         </div>
       </div>
-    </div>
+      <div className="py-1" />
+    </>
   );
 }

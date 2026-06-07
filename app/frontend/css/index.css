@@ -91,7 +91,7 @@
 
 	/* Dialog pop + slide-up + fade (替代了 tw-animate-css v4 插件,
 	 * 该插件在 Tailwind v3 下不生成任何 class)。 */
-	@keyframes woop-dialog-in {
+	@keyframes flowix-dialog-in {
 		from {
 			opacity: 0;
 			transform: translate3d(0, 16px, 0) scale(0.9);
@@ -102,7 +102,7 @@
 		}
 	}
 
-	@keyframes woop-dialog-out {
+	@keyframes flowix-dialog-out {
 		from {
 			opacity: 1;
 			transform: translate3d(0, 0, 0) scale(1);
@@ -113,30 +113,30 @@
 		}
 	}
 
-	@keyframes woop-fade-in {
+	@keyframes flowix-fade-in {
 		from { opacity: 0; }
 		to { opacity: 1; }
 	}
 
-	@keyframes woop-fade-out {
+	@keyframes flowix-fade-out {
 		from { opacity: 1; }
 		to { opacity: 0; }
 	}
 
-	.woop-dialog-enter {
-		animation: woop-dialog-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+	.flowix-dialog-enter {
+		animation: flowix-dialog-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
 	}
 
-	.woop-dialog-leave {
-		animation: woop-dialog-out 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+	.flowix-dialog-leave {
+		animation: flowix-dialog-out 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
 	}
 
-	.woop-fade-enter {
-		animation: woop-fade-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+	.flowix-fade-enter {
+		animation: flowix-fade-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
 	}
 
-	.woop-fade-leave {
-		animation: woop-fade-out 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+	.flowix-fade-leave {
+		animation: flowix-fade-out 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
 	}
 
 	.icon-btn {
@@ -184,25 +184,36 @@
 
 @keyframes agentThinkingDot {
 	0%, 100% {
-		opacity: 0.55;
-		transform: scale(0.86);
+		opacity: 0.6;
+		transform: scale(0.9);
 	}
 	50% {
-		opacity: 1;
-		transform: scale(1);
+		opacity: 0.95;
+		transform: scale(0.98);
 	}
 }
 
+/* 扫光: 延长入光 (10%→25%) 与离场 (75%→90%) 的渐入渐出避免硬切,
+   峰值 0.78 + 2.5px blur 让光带与字融合得更柔亮。 */
 @keyframes agentThinkingShine {
 	0% {
-		left: -45%;
+		left: -60%;
 		opacity: 0;
 	}
-	35% {
-		opacity: 0.9;
+	10% {
+		opacity: 0.15;
 	}
-	70%, 100% {
-		left: 115%;
+	25% {
+		opacity: 0.45;
+	}
+	50% {
+		opacity: 0.78;
+	}
+	75% {
+		opacity: 0.45;
+	}
+	90%, 100% {
+		left: 130%;
 		opacity: 0;
 	}
 }

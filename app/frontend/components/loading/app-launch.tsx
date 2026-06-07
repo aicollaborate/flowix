@@ -10,7 +10,7 @@ export function AppLaunchLoading() {
 	useEffect(() => {
 		const ctx = gsap.context(() => {
 			// Split text into characters for animation
-			const text = "WoopMemo more light";
+			const text = "Flowix more light";
 			if (textRef.current) {
 				textRef.current.innerHTML = text
 					.split("")

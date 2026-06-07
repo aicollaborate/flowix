@@ -18,7 +18,7 @@ import { sanitizeTheme, type ThemeId } from '../theme';
  * 看不到 — 导致"刚改的值在另一处读不到、刷新后丢失"的诡异 bug。
  *
  * 用 zustand 单例后, 任何订阅者拿到的都是同一份 state, 写入立即通知
- * 所有订阅者。 后端 IPC 仍走 ~/.woop/preference.json, 这里只是前端
+ * 所有订阅者。 后端 IPC 仍走 ~/.flowix/preference.json, 这里只是前端
  * 状态层的统一源。
  */
 

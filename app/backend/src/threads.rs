@@ -3,11 +3,27 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use crate::agent::AgentId;
+
+/// 线程表操作错误。`Sqlite` 由 `#[from]` 自动覆盖所有 `rusqlite::Error` 调用点,
+/// `NotFound` 由 `load_thread_llm_messages` 等显式构造, 上层 `?` 链路区分。
+///
+/// 显示风格: 复合变体 `Thread(#[from] ThreadError)` 会渲染成
+/// `"thread error: thread database error: <rusqlite 错误>"` ── 三层前缀.
+/// 嫌长可改 `#[error(transparent)]`, 但 v1 保持显式便于排查。
+#[derive(Debug, thiserror::Error)]
+pub enum ThreadError {
+    #[error("thread database error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+    #[error("thread not found: {0}")]
+    NotFound(String),
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadInfo {
     pub thread_id: String,
-    pub agent_id: String,
+    pub agent_id: AgentId,
     pub title: String,
     pub created_at: i64,
     pub updated_at: i64,
@@ -27,12 +43,18 @@ pub struct ChatMessage {
     pub tool_name: Option<String>,
     pub tool_data: Option<String>,
     pub tool_input: Option<serde_json::Value>,
+    /// 助手消息关联的 tool_calls 数组 (OpenAI 格式 JSON, 单元素或多元素)。
+    /// None 表示纯文本助手消息; Some(vec![...]) 表示该助手轮次同时发出了工具调用。
+    /// 存储层用 serde_json::Value 以避免与 rllm 类型耦合。
+    #[serde(default)]
+    pub tool_calls: Option<serde_json::Value>,
     pub reasoning: Option<String>,
     pub is_completed: Option<bool>,
     pub is_collapsed: Option<bool>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Thread {
     pub info: ThreadInfo,
     pub messages: Vec<ChatMessage>,
@@ -43,8 +65,16 @@ pub struct ThreadManager {
 }
 
 impl ThreadManager {
-    pub fn new(db_path: PathBuf) -> Result<Self, String> {
-        let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+    /// 测试用 fixture ── 不写磁盘, 用 `Connection::open_in_memory()` 建一个空库。
+    /// `agent.rs::for_tests` 用它, 因为单元测试只验证 `AgentManager` 内部 HashMap
+    /// 状态, 不真正读写 thread 库。
+    ///
+    /// PR-B 会把它升级成 `new_in_memory()` 并配合 `lock_conn` 助手把测试用与
+    /// 生产用统一一份 migrations 初始化 (CREATE TABLE IF NOT EXISTS 兼容内存库)。
+    #[cfg(test)]
+    pub fn for_tests() -> Self {
+        let conn = Connection::open_in_memory().expect("open_in_memory failed");
+        // 跟生产 `new` 一样跑 migrations, 任何"是否有某列"判断才能跑通。
         conn.execute_batch(
             "
             PRAGMA foreign_keys = ON;
@@ -70,6 +100,7 @@ impl ThreadManager {
                 tool_name TEXT,
                 tool_data TEXT,
                 tool_input TEXT,
+                tool_calls TEXT,
                 reasoning TEXT,
                 is_completed INTEGER,
                 is_collapsed INTEGER,
@@ -81,43 +112,102 @@ impl ThreadManager {
                 ON thread_messages(thread_id, sequence);
             ",
         )
-        .map_err(|e| e.to_string())?;
+        .expect("in-memory migrations failed");
+        Self {
+            conn: Mutex::new(conn),
+        }
+    }
+
+    pub fn new(db_path: PathBuf) -> Result<Self, ThreadError> {
+        let conn = Connection::open(db_path)?;
+        conn.execute_batch(
+            "
+            PRAGMA foreign_keys = ON;
+
+            CREATE TABLE IF NOT EXISTS threads (
+                thread_id TEXT PRIMARY KEY,
+                agent_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS thread_messages (
+                id TEXT PRIMARY KEY,
+                thread_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                llm_content TEXT,
+                system_reminder_directory TEXT,
+                timestamp TEXT NOT NULL,
+                is_loading INTEGER,
+                tool_call_id TEXT,
+                tool_name TEXT,
+                tool_data TEXT,
+                tool_input TEXT,
+                tool_calls TEXT,
+                reasoning TEXT,
+                is_completed INTEGER,
+                is_collapsed INTEGER,
+                sequence INTEGER NOT NULL,
+                FOREIGN KEY(thread_id) REFERENCES threads(thread_id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_thread_messages_thread_sequence
+                ON thread_messages(thread_id, sequence);
+            ",
+        )?;
+
+        // 旧库一次性添加 tool_calls 列。新库 CREATE TABLE 已含, 这里会报
+        // "duplicate column name", 吞掉即可。
+        if let Err(e) = conn.execute(
+            "ALTER TABLE thread_messages ADD COLUMN tool_calls TEXT",
+            [],
+        ) {
+            tracing::debug!("[ThreadManager] tool_calls migration: {}", e);
+        }
 
         Ok(Self {
             conn: Mutex::new(conn),
         })
     }
 
-    pub async fn list_threads(&self) -> Result<Vec<ThreadInfo>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT thread_id, agent_id, title, created_at, updated_at
-                 FROM threads
-                 ORDER BY updated_at DESC",
-            )
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(ThreadInfo {
-                    thread_id: row.get(0)?,
-                    agent_id: row.get(1)?,
-                    title: row.get(2)?,
-                    created_at: row.get(3)?,
-                    updated_at: row.get(4)?,
-                })
-            })
-            .map_err(|e| e.to_string())?;
+    /// 加锁助手 ── 锁中毒 (panic held it) 时仍返回 guard, 不让单点 panic
+    /// 拖垮整个进程。中毒意味着 in-memory 状态可能不一致, 但所有写入都先
+    /// 落盘才更新内存, 这种窗口期极少。错误级别用 `tracing::error!` 与
+    /// `user_config.rs` 保持一致 (不降级到 warn)。
+    fn lock_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|poisoned| {
+            tracing::error!("[ThreadManager] connection lock poisoned, recovering");
+            poisoned.into_inner()
+        })
+    }
 
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())
+    pub async fn list_threads(&self) -> Result<Vec<ThreadInfo>, ThreadError> {
+        let conn = self.lock_conn();
+        let mut stmt = conn.prepare(
+            "SELECT thread_id, agent_id, title, created_at, updated_at
+             FROM threads
+             ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ThreadInfo {
+                thread_id: row.get(0)?,
+                agent_id: AgentId(row.get(1)?),
+                title: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     pub async fn create_thread(
         &self,
-        agent_id: String,
+        agent_id: AgentId,
         title: String,
-    ) -> Result<ThreadInfo, String> {
+    ) -> Result<ThreadInfo, ThreadError> {
         let now = chrono::Utc::now().timestamp_millis();
         let thread_id = format!("thread_{}", now);
 
@@ -129,25 +219,24 @@ impl ThreadManager {
             updated_at: now,
         };
 
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute(
             "INSERT INTO threads (thread_id, agent_id, title, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
                 info.thread_id,
-                info.agent_id,
+                info.agent_id.0,
                 info.title,
                 info.created_at,
                 info.updated_at
             ],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
 
         Ok(info)
     }
 
-    pub async fn get_thread(&self, thread_id: &str) -> Result<Option<Thread>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+    pub async fn get_thread(&self, thread_id: &str) -> Result<Option<Thread>, ThreadError> {
+        let conn = self.lock_conn();
         let info = conn
             .query_row(
                 "SELECT thread_id, agent_id, title, created_at, updated_at
@@ -157,57 +246,49 @@ impl ThreadManager {
                 |row| {
                     Ok(ThreadInfo {
                         thread_id: row.get(0)?,
-                        agent_id: row.get(1)?,
+                        agent_id: AgentId(row.get(1)?),
                         title: row.get(2)?,
                         created_at: row.get(3)?,
                         updated_at: row.get(4)?,
                     })
                 },
             )
-            .optional()
-            .map_err(|e| e.to_string())?;
+            .optional()?;
 
         let Some(info) = info else {
             return Ok(None);
         };
 
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, role, content, llm_content, system_reminder_directory, timestamp,
-                        is_loading, tool_call_id, tool_name, tool_data, tool_input, reasoning,
-                        is_completed, is_collapsed
-                 FROM thread_messages
-                 WHERE thread_id = ?1
-                 ORDER BY sequence ASC",
-            )
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([thread_id], Self::row_to_message)
-            .map_err(|e| e.to_string())?;
-        let messages = rows
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare(
+            "SELECT id, role, content, llm_content, system_reminder_directory, timestamp,
+                    is_loading, tool_call_id, tool_name, tool_data, tool_input, tool_calls, reasoning,
+                    is_completed, is_collapsed
+             FROM thread_messages
+             WHERE thread_id = ?1
+             ORDER BY sequence ASC",
+        )?;
+        let rows = stmt.query_map([thread_id], Self::row_to_message)?;
+        let messages = rows.collect::<Result<Vec<_>, _>>()?;
 
         Ok(Some(Thread { info, messages }))
     }
 
-    pub async fn add_message(&self, thread_id: &str, message: ChatMessage) -> Result<(), String> {
+    pub async fn add_message(&self, thread_id: &str, message: ChatMessage) -> Result<(), ThreadError> {
         let now = chrono::Utc::now().timestamp_millis();
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         let sequence: i64 = conn
             .query_row(
                 "SELECT COALESCE(MAX(sequence), 0) + 1 FROM thread_messages WHERE thread_id = ?1",
                 [thread_id],
                 |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
 
         conn.execute(
             "INSERT INTO thread_messages (
                 id, thread_id, role, content, llm_content, system_reminder_directory, timestamp,
-                is_loading, tool_call_id, tool_name, tool_data, tool_input, reasoning,
+                is_loading, tool_call_id, tool_name, tool_data, tool_input, tool_calls, reasoning,
                 is_completed, is_collapsed, sequence
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 message.id,
                 thread_id,
@@ -221,13 +302,13 @@ impl ThreadManager {
                 message.tool_name,
                 message.tool_data,
                 message.tool_input.map(|v| v.to_string()),
+                message.tool_calls.as_ref().map(|v| v.to_string()),
                 message.reasoning,
                 opt_bool_to_int(message.is_completed),
                 opt_bool_to_int(message.is_collapsed),
                 sequence,
             ],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         self.touch_thread(&conn, thread_id, now)?;
         Ok(())
     }
@@ -238,25 +319,67 @@ impl ThreadManager {
         tool_call_id: &str,
         tool_name: &str,
         result_content: &str,
-    ) -> Result<(), String> {
+    ) -> Result<(), ThreadError> {
         let now = chrono::Utc::now().timestamp_millis();
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute(
             "UPDATE thread_messages
              SET content = ?1, tool_data = ?1, tool_name = ?2, is_loading = 0
              WHERE thread_id = ?3 AND role = 'tool' AND tool_call_id = ?4",
             params![result_content, tool_name, thread_id, tool_call_id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         self.touch_thread(&conn, thread_id, now)?;
         Ok(())
     }
 
-    pub async fn delete_thread(&self, thread_id: &str) -> Result<bool, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let deleted = conn
-            .execute("DELETE FROM threads WHERE thread_id = ?1", [thread_id])
-            .map_err(|e| e.to_string())?;
+    /// 仅把 `is_loading = 0` 归位 ── 不动 `content` / `tool_data` / `tool_name`。
+    /// 给 `IsLoadingGuard` 的 drop 用: 错误路径下我们只想解锁 UI 转圈, 不应
+    /// 拿空串覆盖已经 (部分) 写入的工具结果。`update_tool_result` 在成功路径
+    /// 上会写 0 顺便 `touch_thread` ── guard 走这条更窄的 UPDATE, 避免副作用
+    /// 错配。也省一次 `touch_thread` (`now()` 写一次 thread meta), 防止
+    /// 错误路径意外把 thread 顶到列表顶。
+    pub async fn clear_tool_loading(
+        &self,
+        thread_id: &str,
+        tool_call_id: &str,
+    ) -> Result<(), ThreadError> {
+        let conn = self.lock_conn();
+        conn.execute(
+            "UPDATE thread_messages SET is_loading = 0
+             WHERE thread_id = ?1 AND role = 'tool' AND tool_call_id = ?2",
+            params![thread_id, tool_call_id],
+        )?;
+        Ok(())
+    }
+
+    /// Overwrite the `tool_calls` JSON column of an existing message.
+    /// Used by the agent's recovery loop to sanitize malformed
+    /// `function.arguments` strings in place rather than delete-and-reinsert
+    /// (which would disturb the message's `sequence` and confuse the
+    /// reload on the next round). Returns true if the row was found and
+    /// updated.
+    pub async fn update_message_tool_calls(
+        &self,
+        thread_id: &str,
+        message_id: &str,
+        tool_calls_json: &serde_json::Value,
+    ) -> Result<bool, ThreadError> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let conn = self.lock_conn();
+        let updated = conn.execute(
+            "UPDATE thread_messages SET tool_calls = ?1
+             WHERE thread_id = ?2 AND id = ?3",
+            params![tool_calls_json.to_string(), thread_id, message_id],
+        )?;
+        if updated > 0 {
+            self.touch_thread(&conn, thread_id, now)?;
+        }
+        Ok(updated > 0)
+    }
+
+    pub async fn delete_thread(&self, thread_id: &str) -> Result<bool, ThreadError> {
+        let conn = self.lock_conn();
+        let deleted = conn.execute("DELETE FROM threads WHERE thread_id = ?1", [thread_id])?;
         Ok(deleted > 0)
     }
 
@@ -265,14 +388,13 @@ impl ThreadManager {
         &self,
         thread_id: &str,
         title: String,
-    ) -> Result<Option<ThreadInfo>, String> {
+    ) -> Result<Option<ThreadInfo>, ThreadError> {
         let now = chrono::Utc::now().timestamp_millis();
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = self.lock_conn();
         conn.execute(
             "UPDATE threads SET title = ?1, updated_at = ?2 WHERE thread_id = ?3",
             params![title, now, thread_id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         drop(conn);
         Ok(self.get_thread(thread_id).await?.map(|thread| thread.info))
     }
@@ -282,17 +404,17 @@ impl ThreadManager {
         conn: &Connection,
         thread_id: &str,
         updated_at: i64,
-    ) -> Result<(), String> {
+    ) -> Result<(), ThreadError> {
         conn.execute(
             "UPDATE threads SET updated_at = ?1 WHERE thread_id = ?2",
             params![updated_at, thread_id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         Ok(())
     }
 
     fn row_to_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<ChatMessage> {
         let tool_input_raw: Option<String> = row.get(10)?;
+        let tool_calls_raw: Option<String> = row.get(11)?;
         Ok(ChatMessage {
             id: row.get(0)?,
             role: row.get(1)?,
@@ -305,9 +427,10 @@ impl ThreadManager {
             tool_name: row.get(8)?,
             tool_data: row.get(9)?,
             tool_input: tool_input_raw.and_then(|raw| serde_json::from_str(&raw).ok()),
-            reasoning: row.get(11)?,
-            is_completed: int_to_opt_bool(row.get(12)?),
-            is_collapsed: int_to_opt_bool(row.get(13)?),
+            tool_calls: tool_calls_raw.and_then(|raw| serde_json::from_str(&raw).ok()),
+            reasoning: row.get(12)?,
+            is_completed: int_to_opt_bool(row.get(13)?),
+            is_collapsed: int_to_opt_bool(row.get(14)?),
         })
     }
 }

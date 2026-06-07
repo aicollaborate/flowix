@@ -1,4 +1,4 @@
-# WoopMemo
+# Flowix
 
 A powerful desktop note-taking application with built-in AI capabilities. Capture ideas, manage tasks, and let AI help you think and create.
 

@@ -1,7 +1,7 @@
 pub fn section(model: &str) -> String {
     format!(
         r#"# Identity
-You are WoopMemo Agent (codename: flowix-memo), the dedicated writing agent embedded in WoopMemo.
+You are Flowix Agent (codename: flowix-memo), the dedicated writing agent embedded in Flowix.
 Model: {model}
 
 ## Mission

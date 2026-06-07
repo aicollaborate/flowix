@@ -108,7 +108,7 @@ export function NotebookSwitcher({
         align="start"
         side="top"
         sideOffset={6}
-        className="flex flex-col max-h-[500px] overflow-hidden p-0 ml-2 bg-[var(--card)] !border-[var(--primary)]"
+        className="flex flex-col max-h-[500px] overflow-hidden p-0 ml-2 bg-[var(--popover)]"
         style={{ width: Math.max(160, dropdownWidth - 16) }}
       >
         <DropdownMenuLabel className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
@@ -193,7 +193,7 @@ export function NotebookSwitcher({
               // Defer to next tick so the dropdown finishes closing
               // before the modal opens.
               setTimeout(() => {
-                window.dispatchEvent(new CustomEvent('woop:open-create-notebook'));
+                window.dispatchEvent(new CustomEvent('flowix:open-create-notebook'));
               }, 0);
             }}
             className="flex items-center justify-center cursor-pointer rounded-md border border-[var(--border)] w-full py-1.5 text-sm text-[var(--foreground)] hover:bg-[var(--muted)]"

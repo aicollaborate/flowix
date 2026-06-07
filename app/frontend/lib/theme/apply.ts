@@ -11,12 +11,12 @@ export interface ApplyOptions {
  * id (dark / light / rock), 让 <head> 的 inline 脚本在 CSS paint 前就能把
  * data-theme 写到 <html>, 避免深色模式开窗时一帧白色闪烁。
  *
- * 真源始终是 ~/.woop/preference.json (Tauri IPC); 这个 cache 只是给首屏
+ * 真源始终是 ~/.flowix/preference.json (Tauri IPC); 这个 cache 只是给首屏
  * 做同步 fallback, 命中失败时 boot 脚本会回退到系统外观。
  *
  * 与 index.html boot 脚本中的字符串保持一致。
  */
-export const THEME_CACHE_KEY = 'woop-theme';
+export const THEME_CACHE_KEY = 'flowix-theme';
 
 /**
  * 纯函数: 把 themeId + 系统偏好解析后, 把结果写到给定 root。

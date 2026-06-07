@@ -297,7 +297,7 @@ export function MessageTool({ message }: { message: ChatMessage }) {
 
   return (
     <div className="flex gap-3">
-      <div className="w-full px-1 py-1.5">
+      <div className="w-full pr-1 py-1.5">
         <div className="flex items-center gap-2">
           <ToolIcon className="h-3.5 w-3.5 shrink-0 text-[var(--muted-foreground)]" />
           <span className="text-sm text-[var(--foreground)]">{formatToolName(message.toolName)}</span>

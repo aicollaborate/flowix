@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MessageSquareDashed, SquarePen, Search, ChevronDown } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { SquarePen, Search, ChevronDown, Check } from 'lucide-react';
 import { HashStraightIcon, HashIcon, DotsSixIcon, EyeIcon, EyeSlashIcon, ArrowLineUpIcon, CaretRightIcon } from "@phosphor-icons/react";
 import { useMemoStore, useDocumentStore, type MemoItem } from '../../../lib/store';
 import type { Notebook } from '../../../lib/store';
@@ -30,6 +30,7 @@ import {
   DialogDescription,
 } from '../../../components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
+import { GlobalSearchCommand } from '../global-search-command';
 
 const TAG_ORDER_SETTING_PREFIX = 'tag_order:';
 const HIDDEN_TAGS_SETTING_PREFIX = 'hidden_tags:';
@@ -79,15 +80,14 @@ function getTodoSelectionKey(todo: MemoTodoListEntry, index: number): string {
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center h-full gap-2 text-[var(--muted-foreground)]">
-      <MessageSquareDashed className="w-12 h-12 opacity-30" />
-      <span className="text-sm">未找到备忘录</span>
+      <span className="text-sm">未找到笔记</span>
     </div>
   );
 }
 
 export function MemoList() {
   const { request } = useTauriRpc();
-  const { listContainerRef, registerCard, captureSnapshot, animateInsert } =
+  const { listContainerRef, registerCard, prepareForInsert, onListRendered } =
     useMemoInsertAnimation();
   const {
     memos,
@@ -108,6 +108,7 @@ export function MemoList() {
   const [deleteMemo, setDeleteMemo] = useState<MemoItem | null>(null);
   const [createNotebookOpen, setCreateNotebookOpen] = useState(false);
   const [notebookDropdownOpen, setNotebookDropdownOpen] = useState(false);
+  const [searchCommandOpen, setSearchCommandOpen] = useState(false);
   const [newNotebookName, setNewNotebookName] = useState('');
   const [newNotebookPath, setNewNotebookPath] = useState('');
   const [editNotebookOpen, setEditNotebookOpen] = useState(false);
@@ -163,8 +164,8 @@ export function MemoList() {
       setNewNotebookPath('');
       setCreateNotebookOpen(true);
     };
-    window.addEventListener('woop:open-create-notebook', handleOpen);
-    return () => window.removeEventListener('woop:open-create-notebook', handleOpen);
+    window.addEventListener('flowix:open-create-notebook', handleOpen);
+    return () => window.removeEventListener('flowix:open-create-notebook', handleOpen);
   }, []);
 
   // Listen for cross-component triggers to open the edit-notebook dialog
@@ -178,8 +179,8 @@ export function MemoList() {
       setEditNotebookName(notebook.name);
       setEditNotebookOpen(true);
     };
-    window.addEventListener('woop:open-edit-notebook', handleOpen as EventListener);
-    return () => window.removeEventListener('woop:open-edit-notebook', handleOpen as EventListener);
+    window.addEventListener('flowix:open-edit-notebook', handleOpen as EventListener);
+    return () => window.removeEventListener('flowix:open-edit-notebook', handleOpen as EventListener);
   }, []);
 
   // Listen for cross-component triggers to open the delete-memo confirmation
@@ -192,8 +193,8 @@ export function MemoList() {
       if (!memo) return;
       setDeleteMemo(memo);
     };
-    window.addEventListener('woop:request-delete-memo', handleOpen as EventListener);
-    return () => window.removeEventListener('woop:request-delete-memo', handleOpen as EventListener);
+    window.addEventListener('flowix:request-delete-memo', handleOpen as EventListener);
+    return () => window.removeEventListener('flowix:request-delete-memo', handleOpen as EventListener);
   }, []);
 
   const loadData = useCallback(async () => {
@@ -680,15 +681,22 @@ export function MemoList() {
     const result: any = await request('add_document', { tag: undefined, notebookId: selectedNotebook.id });
     if (!result) return;
 
-    const snapshot = captureSnapshot(result.id);
+    // Synchronously capture pre-render positions BEFORE the store update that
+    // adds the new memo. The animation itself runs in the useLayoutEffect below,
+    // after React commits the new list but before the browser paints it.
+    prepareForInsert(result.id);
     await loadMemos({ notebookId: selectedNotebook.id });
     const newMemo = useMemoStore.getState().memos.find(m => m.id === result.id);
     if (newMemo) {
       setSelectedMemo({ ...newMemo, isOpen: true });
       openMemoDocument(newMemo, selectedNotebook);
     }
-    await animateInsert(snapshot, result.id);
   };
+
+  // Run the FLIP animation synchronously after each list commit, before paint.
+  useLayoutEffect(() => {
+    onListRendered();
+  }, [memos, onListRendered]);
 
   const handleConfirmCreateNotebook = async () => {
     if (!newNotebookName.trim() || !newNotebookPath.trim()) return;
@@ -746,51 +754,41 @@ export function MemoList() {
             <DropdownMenuLabel className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] px-2">筛选</DropdownMenuLabel>
             <DropdownMenuItem
               onClick={() => handleFilterChange('all')}
-              className={cn(
-                "flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]",
-                activeFilter === 'all' && "bg-[var(--muted)]"
-              )}
+              className="flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
             >
               <span>全部</span>
+              {activeFilter === 'all' && <Check className="w-4 h-4 text-[var(--primary)]" />}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => handleFilterChange('thisWeek')}
-              className={cn(
-                "flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]",
-                activeFilter === 'thisWeek' && "bg-[var(--muted)]"
-              )}
+              className="flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
             >
               <span>只看本周</span>
+              {activeFilter === 'thisWeek' && <Check className="w-4 h-4 text-[var(--primary)]" />}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => handleFilterChange('thisMonth')}
-              className={cn(
-                "flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]",
-                activeFilter === 'thisMonth' && "bg-[var(--muted)]"
-              )}
+              className="flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
             >
               <span>只看本月</span>
+              {activeFilter === 'thisMonth' && <Check className="w-4 h-4 text-[var(--primary)]" />}
             </DropdownMenuItem>
 
             {/* Group 2: Sort Options */}
             <DropdownMenuLabel className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] px-2">排序</DropdownMenuLabel>
             <DropdownMenuItem
               onClick={() => handleSortChange('createdAt')}
-              className={cn(
-                "flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]",
-                activeSort === 'createdAt' && "bg-[var(--muted)]"
-              )}
+              className="flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
             >
               <span>创建时间</span>
+              {activeSort === 'createdAt' && <Check className="w-4 h-4 text-[var(--primary)]" />}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => handleSortChange('updatedAt')}
-              className={cn(
-                "flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]",
-                activeSort === 'updatedAt' && "bg-[var(--muted)]"
-              )}
+              className="flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
             >
               <span>更新时间</span>
+              {activeSort === 'updatedAt' && <Check className="w-4 h-4 text-[var(--primary)]" />}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -799,7 +797,7 @@ export function MemoList() {
             size="icon"
             variant="outline"
             className={cn(HEADER_ICON_BTN_CLASS, 'bg-[var(--card)]')}
-            onClick={() => { /* TODO: open search */ }}
+            onClick={() => setSearchCommandOpen(true)}
             title="全文搜索"
             aria-label="搜索"
           >
@@ -1111,7 +1109,7 @@ export function MemoList() {
             />
             <div className="flex gap-2">
               <Input
-                placeholder="选择文件夹路径"
+                placeholder="选择本地文件夹"
                 value={newNotebookPath}
                 onChange={(e) => setNewNotebookPath(e.target.value)}
                 className="flex-1"
@@ -1119,7 +1117,7 @@ export function MemoList() {
               />
               <Button
                 variant="outline"
-                className="h-10"
+                className="h-8"
                 onClick={async () => {
                   // Use IPC to open directory dialog
                   const result = await request<string | null>('select_directory');
@@ -1196,6 +1194,9 @@ export function MemoList() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 全局搜索 / 命令面板 */}
+      <GlobalSearchCommand open={searchCommandOpen} onOpenChange={setSearchCommandOpen} />
     </div>
   );
 }

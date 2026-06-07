@@ -4,7 +4,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
-/// ~/.woop/preference.json — 用户偏好设置
+use crate::USER_CONFIG_DIR_NAME;
+
+/// ~/.flowix/preference.json — 用户偏好设置
 /// 字段全部 #[serde(default)], 文件损坏或缺失时回退到默认值。
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -58,25 +60,52 @@ pub struct PreferenceFile {
     pub theme: Theme,
 }
 
-/// ~/.woop/ai_config.json — 智能体配置
+/// ~/.flowix/ai_config.json — AI 模型配置
 ///
 /// `PartialEq` / `Eq` 派生用于 `AgentManager` 的缓存命中判定 (`agent.rs`
 /// 里 `ensure_instance` 会用 `cached.config == config` 比较)。结构体只有
 /// `String` 字段, 派生的 derive 足够。
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiModelConfig {
     #[serde(default)]
     pub provider: String,
-    #[serde(default)]
-    pub model_name: String,
     #[serde(default)]
     pub model: String,
     #[serde(default)]
     pub api_url: String,
     #[serde(default)]
     pub api_key: String,
+    /// 单次 `chat_stream` 调用跨所有 cycle 的 token 累计上限。`Usage` 由
+    /// provider 在每个流的末尾单独 push 一次, agent 跨 cycle 累加 `total_tokens`,
+    /// 超出即熔断并以 `AgentError::TokenBudget` 收口。`0` 表示不限制 (保留
+    /// 历史行为, 也方便单测)。默认 180_000 ── 100 cycle × 1.8k token,
+    /// 留出 reasoning + system_prompt 余量, 同时挡住"工具结果越喂越胖"型
+    /// wallet drain。
+    #[serde(default = "default_max_total_tokens")]
+    pub max_total_tokens: u32,
+}
+
+fn default_max_total_tokens() -> u32 {
+    180_000
+}
+
+// 手写 Default 而非 `#[derive(Default)]`: 派生实现走 `<u32 as Default>::default()`
+// 给到 0, 不读 `default_max_total_tokens()` ── 那条函数只对 JSON 反序列化
+// (`#[serde(default = "...")]`) 生效。两条路径必须给到同一个兜底值, 否则
+// "刚启动未读盘" 与 "老 config.json 缺字段" 行为分裂 ── 前者会拿到 budget=0
+// 等于不限, 后者会拿到 180_000。
+impl Default for AiModelConfig {
+    fn default() -> Self {
+        Self {
+            provider: String::new(),
+            model: String::new(),
+            api_url: String::new(),
+            api_key: String::new(),
+            max_total_tokens: default_max_total_tokens(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -91,6 +120,18 @@ pub struct UserConfigStore {
     config_dir: PathBuf,
     preference: RwLock<PreferenceFile>,
     ai_config: RwLock<AiConfigFile>,
+}
+
+/// 用户配置 (`preference.json` / `ai_config.json`) 写盘错误。`Io` 自动从
+/// `std::io::Error` 转, `Json` 从 `serde_json::Error` 转 ── 之前用
+/// `io::Error::new(io::ErrorKind::Other, e)` 手动包装的写法可以删掉, 让
+/// `?` 一步到位。
+#[derive(Debug, thiserror::Error)]
+pub enum UserConfigError {
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("serialization error: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 impl UserConfigStore {
@@ -134,9 +175,9 @@ impl UserConfigStore {
     }
 
     pub fn new(home_dir: PathBuf) -> Self {
-        let config_dir = home_dir.join(".woop");
+        let config_dir = home_dir.join(USER_CONFIG_DIR_NAME);
         let _ = fs::create_dir_all(&config_dir);
-        // ~/.woop 目录收紧到 0o700, 同机器其他用户进不来, 文件权限才有意义。
+        // ~/.flowix 目录收紧到 0o700, 同机器其他用户进不来, 文件权限才有意义。
         set_dir_owner_only_perms(&config_dir);
 
         let preference = Self::read_preference_from_disk(&config_dir).unwrap_or_default();
@@ -160,9 +201,8 @@ impl UserConfigStore {
     /// 先把 JSON 落盘 (tmp + fsync + rename, 0o600), 成功后才更新内存。
     /// 任一写步骤失败 → 内存保持旧值, 磁盘保持旧文件, 不出现"内存新磁盘旧"或
     /// "半写截断"的损坏状态。
-    pub fn set_preference(&self, p: PreferenceFile) -> std::io::Result<()> {
-        let content = serde_json::to_string_pretty(&p)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    pub fn set_preference(&self, p: PreferenceFile) -> Result<(), UserConfigError> {
+        let content = serde_json::to_string_pretty(&p)?;
         let path = self.config_dir.join("preference.json");
         atomic_write_json(&path, &content)?;
         *self.write_preference() = p;
@@ -173,9 +213,8 @@ impl UserConfigStore {
         self.read_ai_config().clone()
     }
 
-    pub fn set_ai_config(&self, c: AiConfigFile) -> std::io::Result<()> {
-        let content = serde_json::to_string_pretty(&c)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    pub fn set_ai_config(&self, c: AiConfigFile) -> Result<(), UserConfigError> {
+        let content = serde_json::to_string_pretty(&c)?;
         let path = self.config_dir.join("ai_config.json");
         atomic_write_json(&path, &content)?;
         *self.write_ai_config() = c;
@@ -247,3 +286,47 @@ fn set_dir_owner_only_perms(path: &Path) {
 
 #[cfg(not(unix))]
 fn set_dir_owner_only_perms(_path: &Path) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_total_tokens_default_is_180k() {
+        // 默认 180k ── 100 cycle × 1.8k token, 留出 reasoning + system_prompt
+        // 余量。改默认值时这条单测必须同步改。
+        let cfg = AiModelConfig::default();
+        assert_eq!(cfg.max_total_tokens, 180_000);
+    }
+
+    #[test]
+    fn max_total_tokens_round_trips_through_json() {
+        let cfg = AiModelConfig {
+            provider: "openai".into(),
+            model: "gpt-4o".into(),
+            api_url: "https://x".into(),
+            api_key: "k".into(),
+            max_total_tokens: 50_000,
+        };
+        let s = serde_json::to_string(&cfg).unwrap();
+        // camelCase 形状 ── 与前端 AiModelConfig 类型一致。
+        assert!(s.contains("\"maxTotalTokens\":50000"), "got: {s}");
+        let back: AiModelConfig = serde_json::from_str(&s).unwrap();
+        assert_eq!(back.max_total_tokens, 50_000);
+        assert_eq!(back.model, "gpt-4o");
+    }
+
+    #[test]
+    fn legacy_ai_config_without_max_total_tokens_loads_with_default() {
+        // 老 `~/.flowix/ai_config.json` 没这字段 ── 必须能反序列化, 落到
+        // 默认 180_000, 不能让用户首启后突然多了一个 None / 0 熔断。
+        let legacy = r#"{
+            "provider": "openai",
+            "model": "gpt-4o",
+            "apiUrl": "https://x",
+            "apiKey": "k"
+        }"#;
+        let cfg: AiModelConfig = serde_json::from_str(legacy).unwrap();
+        assert_eq!(cfg.max_total_tokens, 180_000);
+    }
+}

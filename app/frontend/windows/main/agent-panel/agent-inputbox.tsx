@@ -1,6 +1,6 @@
 import React, { useState, useRef, forwardRef, useEffect, useMemo } from "react";
 import { Plus, X, FileText, Hash } from "lucide-react";
-import { PaperPlaneRight } from "@phosphor-icons/react";
+import { PaperPlaneRight, Stop } from "@phosphor-icons/react";
 import { AITextarea } from "../../../components/ui/aitextarea";
 import { Button } from "../../../components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "../../../components/ui/popover";
@@ -22,6 +22,15 @@ interface InputboxProps {
 	onSend: (content: string, options?: { includeSelectedFile?: boolean; memos?: MemoItem[] }) => void;
 	isLoading?: boolean;
 	onNewChat?: () => void;
+	/**
+	 * 用户点击停止按钮时调用。父组件通常接到 chat-store.stopStream,
+	 * 后端 AgentManager.stop_chat 翻 cancel flag, in-flight chat_stream
+	 * 在下一个 checkpoint 调 flush_cancel 退出, 触发 sendMessageStream
+	 * 的 finally 块把 isLoading 拉回 false。
+	 *
+	 * 不传则不渲染停止按钮 ── 默认行为跟改造前一样 (发送按钮一直显示)。
+	 */
+	onStop?: () => void;
 }
 
 const MIN_HEIGHT = 44;
@@ -29,10 +38,14 @@ const MAX_HEIGHT = 180;
 const MAX_MEMOS = 10;
 
 export const Inputbox = forwardRef<HTMLTextAreaElement, InputboxProps>((props, ref) => {
-	const { onSend, isLoading, onNewChat } = props;
+	const { onSend, isLoading, onNewChat, onStop } = props;
 	const [input, setInput] = useState("");
 	const [selectedMemos, setSelectedMemos] = useState<MemoItem[]>([]);
 	const [inputboxMemos, setInputboxMemos] = useState<MemoItem[]>([]);
+	// 显式跟踪 IME 组合状态: macOS 上 keydown 事件里 e.isComposing
+	// 偶发为 false, keyCode === 229 又是单次按键才有, 都没有连续性,
+	// 只能靠 compositionstart / compositionend 自己维护。
+	const [isComposing, setIsComposing] = useState(false);
 	const internalRef = useRef<HTMLTextAreaElement>(null);
 	const textareaRef = (ref as React.RefObject<HTMLTextAreaElement>) || internalRef;
 
@@ -136,7 +149,10 @@ export const Inputbox = forwardRef<HTMLTextAreaElement, InputboxProps>((props, r
 	};
 
 	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-		if ((e as unknown as { isComposing: boolean }).isComposing) return;
+		// IME 组合中: 让 IME 自己处理 Enter (选中候选 / 提交拼音)。
+		// macOS 上 keydown 的 e.isComposing 偶发为 false, 叠 state 与
+		// keyCode === 229 (浏览器对 IME 中按键的固定编码) 兜底。
+		if (isComposing || e.isComposing || e.keyCode === 229) return;
 		if (e.key === "Enter") {
 			if (e.shiftKey) return;
 			e.preventDefault();
@@ -182,9 +198,11 @@ export const Inputbox = forwardRef<HTMLTextAreaElement, InputboxProps>((props, r
 									value={input}
 									onChange={handleChange}
 									onKeyDown={handleKeyDown}
+									onCompositionStart={() => setIsComposing(true)}
+									onCompositionEnd={() => setIsComposing(false)}
 									placeholder="问 AI 进行写作"
 									disabled={isLoading}
-									className="min-h-[44px] max-h-[180px] w-full overflow-auto resize-none border-0 p-0 bg-transparent placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-0 text-[15px]"
+									className="min-h-[44px] max-h-[180px] w-full overflow-auto resize-none border-0 p-0 bg-transparent placeholder:text-[var(--muted-foreground)] placeholder:opacity-60 focus:outline-none focus:ring-0 text-[15px]"
 									style={{ fontFamily: 'var(--agent-font)' }}
 									rows={1}
 								/>
@@ -229,15 +247,33 @@ export const Inputbox = forwardRef<HTMLTextAreaElement, InputboxProps>((props, r
 								<InputboxAdd onNewChat={onNewChat} />
 							</PopoverContent>
 						</Popover>
-						<Button
-							type="submit"
-							size="icon"
-							disabled={isLoading || !input || input.trim() === ""}
-							onClick={handleSubmit}
-							className="h-8 w-8 rounded-full bg-[var(--primary)] hover:bg-[var(--primary)] text-[var(--primary-foreground)] disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							<PaperPlaneRight className="h-5 w-5" />
-						</Button>
+						{isLoading ? (
+							// 运行时显示停止按钮 ── 颜色用 warning (琥珀), 与
+							// 主题里的警示色一致; 比 destructive (红) 弱一档,
+							// 强调"中止正在做的事"而非"破坏性操作"。不需要 disabled,
+							// 用户连点两次也只会触发两次 stop_chat, 后端第二次
+							// 会返回 false (no-op, flag 已被前一次 remove)。
+							<Button
+								type="button"
+								size="icon"
+								onClick={onStop}
+								aria-label="停止生成"
+								title="停止生成"
+								className="h-8 w-8 rounded-full bg-[var(--warning)] hover:bg-[var(--warning)] text-[var(--warning-foreground)]"
+							>
+								<Stop className="h-4 w-4" weight="fill" />
+							</Button>
+						) : (
+							<Button
+								type="submit"
+								size="icon"
+								disabled={!input || input.trim() === ""}
+								onClick={handleSubmit}
+								className="h-8 w-8 rounded-full bg-[var(--primary)] hover:bg-[var(--primary)] text-[var(--primary-foreground)] disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								<PaperPlaneRight className="h-5 w-5" />
+							</Button>
+						)}
 					</div>
 				</div>
 			</div>

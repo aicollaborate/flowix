@@ -65,7 +65,10 @@ export function MenuBoard({ open, onOpenChange }: MenuBoardProps) {
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
       {/* (蒙层已移除) */}
 
-      <div className="relative w-full h-full bg-[var(--background)] border border-[var(--border)] shadow-2xl flex justify-center">
+      {/* 外层用 --popover 抬高自主窗口 (主窗口的 memo 列表列 = --card), 让命令面板
+       * 视觉上"浮"在主页面之上, 三个主题在 css/theme/*.css 的 --popover 定义中
+       * 统一调色, 这里只引用 token, 不写具体颜色. */}
+      <div className="relative w-full h-full bg-[var(--popover)] text-[var(--popover-foreground)] border border-[var(--border)] shadow-2xl flex justify-center">
         <div className="w-full max-w-[800px] flex overflow-hidden">
           <Button
             variant="ghost"

@@ -9,6 +9,14 @@
 	--background: oklch(0.955 0.007 var(--neutral-hue));
 	--foreground: oklch(0.333 0.012 var(--neutral-hue));
 	--card: oklch(0.970 0.007 var(--neutral-hue));
+	/* 浮层底 (命令面板/弹窗): 在 --card 基础上再加亮度+色相饱和, 让命令面板
+	 * (Cmd+K) 在岩灰底 (L=0.955) 上读作"温润的高光纸面". 旧值复用 --card
+	 * (差 0.015) 在浅橄榄底上几乎与主页面同色, 浮层没有存在感; 提到 0.982
+	 * 并加 chroma 0.012, 亮度差扩到 0.027, 同时微微的橄榄调让浮层"偏暖"
+	 * (主底偏冷, 浮层偏暖, 心理上浮起), 配合阴影能清晰看到边界, 又不破坏
+	 * rock 主题沉稳基调. */
+	--popover: oklch(0.982 0.012 var(--neutral-hue));
+	--popover-foreground: var(--foreground);
 
 	--primary: oklch(0.440 0.009 var(--neutral-hue));
 	--primary-foreground: oklch(0.970 0.007 var(--neutral-hue));

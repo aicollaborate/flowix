@@ -351,7 +351,7 @@ export function MainLayout() {
       setNotebookPopupOpen(false);
       // Defer to next tick so the dropdown finishes closing before the dialog opens.
       setTimeout(() => {
-        window.dispatchEvent(new CustomEvent<Notebook>('woop:open-edit-notebook', { detail: notebook }));
+        window.dispatchEvent(new CustomEvent<Notebook>('flowix:open-edit-notebook', { detail: notebook }));
       }, 0);
     },
     []
@@ -401,7 +401,7 @@ export function MainLayout() {
   const handleRequestDeleteMemo = useCallback(() => {
     if (!currentMemo) return;
     window.dispatchEvent(
-      new CustomEvent<MemoItem>('woop:request-delete-memo', { detail: currentMemo })
+      new CustomEvent<MemoItem>('flowix:request-delete-memo', { detail: currentMemo })
     );
   }, [currentMemo]);
 
@@ -478,7 +478,11 @@ export function MainLayout() {
 
     getCurrentWindow().onDragDropEvent((event) => {
       if (event.payload.type !== 'drop') return;
-      openExternalDocument(firstMarkdownPath(event.payload.paths));
+      const { paths } = event.payload;
+      if (!paths || paths.length === 0) return;
+      // 拖到窗口的 .md 文件统一走 "external markdown" 模式: 不进 list.json,
+      // 用户可手动 save 成正式 memo。
+      openExternalDocument(firstMarkdownPath(paths));
     }).then((fn) => {
       if (disposed) {
         fn();
@@ -590,7 +594,7 @@ export function MainLayout() {
                 />
               ) : (
                 <div className="flex items-center justify-center h-full text-center text-[var(--muted-foreground)] text-sm">
-                  请选择一个 Memo 文档
+                  请选择一个文档
                 </div>
               )}
             </div>

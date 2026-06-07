@@ -3,7 +3,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { UserSettings } from '../constants';
-import type { ChatMessage } from '../../types/agent';
+import type { AgentChunk, ChatMessage } from '../../types/agent';
 
 // ============================================
 // Types
@@ -49,21 +49,21 @@ export function isInitialized(): boolean {
 // RPC Method Wrappers (for type safety)
 // ============================================
 
-// Preferences (后端 ~/.woop/preference.json, 见 backend/src/user_config.rs)
+// Preferences (后端 ~/.flowix/preference.json, 见 backend/src/user_config.rs)
 export const preferences = {
   get: () => invoke<UserSettings>('get_preference'),
   set: (preference: UserSettings) => invoke<void>('set_preference', { preference }),
 };
 
-// AI Config (后端 ~/.woop/ai_config.json, 字段与 AgentConfig 镜像)
-// ─ 真源在后端文件; 偏好设置的智能体 tab 用 get/set 加载与保存。
+// AI Config (后端 ~/.flowix/ai_config.json, 字段与 AgentConfig 镜像)
+// ─ 真源在后端文件; 偏好设置的 AI 模型 tab 用 get/set 加载与保存。
 //   chat 调用走 backend AgentManager, 无需前端再 init。
 export const aiConfig = {
   get: () => invoke<{ model: AgentConfig }>('get_ai_config'),
   set: (config: AgentConfig) => invoke<void>('set_ai_config', { config: { model: config } }),
 };
 
-// 全局元数据 KV (~/.woop/global_meta_data.json, 用于 notebook 的 tag 顺序 / 隐藏状态等非偏好数据)
+// 全局元数据 KV (~/.flowix/global_meta_data.json, 用于 notebook 的 tag 顺序 / 隐藏状态等非偏好数据)
 // 后端 set_* 返回 Result<(), String>, 前端 await 即抛错。
 export const settings = {
   get: (key: string) => invoke<{ value: string | null }>('get_setting', { key }),
@@ -76,6 +76,17 @@ export const settings = {
 // Memos
 export type FilterType = 'all' | 'todos' | 'favorited' | 'tagged' | 'thisWeek' | 'thisMonth';
 export type SortType = 'createdAt' | 'updatedAt';
+
+export type MatchField = 'title' | 'tag' | 'body';
+
+export interface MemoSearchHit {
+  id: string;
+  filename: string;
+  snippet: string;
+  matchedIn: MatchField;
+  score: number;
+  updatedAt: number;
+}
 
 export const memos = {
   getMemos: (params?: {
@@ -103,6 +114,12 @@ export const memos = {
   clearMemos: (notebookId?: string) => invoke<boolean>('clear_memos', { notebookId }),
   favoriteMemo: (id: string) => invoke<boolean>('favorite_memo', { id }),
   unfavoriteMemo: (id: string) => invoke<boolean>('unfavorite_memo', { id }),
+  search: (notebookId: string | null, query: string, limit?: number) =>
+    invoke<{ hits: MemoSearchHit[]; indexReady: boolean }>('search_memos', {
+      notebookId,
+      query,
+      limit,
+    }),
 };
 
 // Tags
@@ -166,7 +183,7 @@ export const windows = {
 
 // Agent
 //
-// 智能体配置以 ~/.woop/ai_config.json 为真源 ─ 见 aiConfig.set/get 上方。
+// AI 模型配置以 ~/.flowix/ai_config.json 为真源 ─ 见 aiConfig.set/get 上方。
 // 前端不再 init agent / 提交模型信息: chat / thread 调用时, 后端按需读取配置
 // 并惰性构建 provider 实例 (见 backend/src/agent.rs AgentManager::ensure_instance)。
 //
@@ -175,7 +192,6 @@ export const windows = {
 // 到 #[serde(default)] = 空串, 表现就是"保存后刷新 apiKey/apiUrl 都空了"。
 export interface AgentConfig {
   provider: string;
-  modelName: string;
   model: string;
   apiUrl: string;
   apiKey: string;
@@ -201,10 +217,13 @@ export interface ThreadInfo {
 }
 
 export const agent = {
-  chat: (threadId: string, message: AgentUserMessage) =>
-    invoke<ChatResponse>('chat_with_agent', { threadId, message }),
   chatStream: (threadId: string, message: AgentUserMessage) =>
     invoke<ChatResponse>('chat_with_agent_stream', { threadId, message }),
+  // 终止运行中的 chat_stream。后端 AgentManager.stop_chat 翻转 cancel flag,
+  // 正在跑的 ReAct 循环在下一个 checkpoint 检测到后调 flush_cancel 退出。
+  // 返回 true = 成功触发了取消, false = 当前没有 chat 在跑 (no-op)。
+  stopChatStream: (threadId: string) =>
+    invoke<boolean>('stop_agent_stream', { threadId }),
   listThreads: () =>
     invoke<ThreadInfo[]>('thread_list'),
   createThread: (title: string) =>
@@ -216,7 +235,7 @@ export const agent = {
 };
 
 // Stream event handling
-export type StreamCallback = (chunk: string) => void;
+export type StreamCallback = (chunk: AgentChunk) => void;
 
 let streamUnlisten: UnlistenFn | null = null;
 
@@ -224,7 +243,7 @@ export async function listenToAgentStream(callback: StreamCallback): Promise<voi
   if (streamUnlisten) {
     streamUnlisten();
   }
-  streamUnlisten = await listen<string>('agent-chunk', (event) => {
+  streamUnlisten = await listen<AgentChunk>('agent-chunk', (event) => {
     callback(event.payload);
   });
 }

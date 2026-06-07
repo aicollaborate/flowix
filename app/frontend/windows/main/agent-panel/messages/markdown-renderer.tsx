@@ -17,8 +17,8 @@ const WRAPPER_CLASS =
   "[&_h3]:text-[0.88rem] [&_h3]:font-normal [&_h3]:mt-2 " +
   "[&_h4]:text-[0.82rem] [&_h4]:font-normal [&_h4]:mt-1.5 " +
   "[&_p]:text-[0.82rem] [&_p]:font-normal [&_p]:leading-[1.8] [&_p]:mt-1.5 [&_p:last-child]:mb-0 " +
-  "[&_ul]:list-disc [&_ul]:list-inside [&_ul]:mt-2 " +
-  "[&_ol]:list-decimal [&_ol]:list-inside [&_ol]:mt-2 " +
+  "[&_ul]:list-disc [&_ul]:list-inside [&_ul]:mt-2 [&_ul]:text-[0.82rem] [&_ul]:leading-[1.8] " +
+  "[&_ol]:list-decimal [&_ol]:list-inside [&_ol]:mt-2 [&_ol]:text-[0.82rem] [&_ol]:leading-[1.8] " +
   "[&_strong]:font-medium " +
   "[&_a]:text-primary [&_a]:no-underline hover:[&_a]:underline " +
   "[&_blockquote]:border-l-4 [&_blockquote]:border-primary [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_blockquote]:mb-2 " +

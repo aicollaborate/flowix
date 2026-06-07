@@ -6,7 +6,7 @@ use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// 全局元数据 KV 存储, 替代旧版 SQLite `app.db`。
 ///
-/// 文件位置: `~/.woop/global_meta_data.json`, 与 `preference.json` /
+/// 文件位置: `~/.flowix/global_meta_data.json`, 与 `preference.json` /
 /// `ai_config.json` / `notebook.json` 同目录。
 ///
 /// 数据模型: 任意 string key → string value 的扁平映射。旧 SQLite 表

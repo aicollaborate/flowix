@@ -7,6 +7,12 @@
 	--background: oklch(1 0 0);                                                   /* 页面底色 */
 	--foreground: oklch(0.215 0.038 var(--neutral-hue));                          /* 主文字色 */
 	--card: oklch(1 0 0);                                                         /* 卡片底色 */
+	/* 浮层底 (命令面板/弹窗): 略带冷色相的极淡灰白, 让命令面板 (Cmd+K) 浮在纯白的
+	 * 主窗口之上时有可辨的"纸面"感, 不靠描边/阴影单独承担视觉边界. chroma 0.005
+	 * 几乎不可见但足够让"白"从背景的纯白中独立出来; 亮度 0.985 vs card 1.0 是
+	 * 设计上的微小退让, 用阴影 + 这一丝色感把整面板"托"起来. */
+	--popover: oklch(0.985 0.005 var(--neutral-hue));                             /* 浮层底: 命令面板/弹窗 */
+	--popover-foreground: var(--foreground);                                      /* 浮层文字 */
 
 	--primary: oklch(0.552 var(--brand-chroma) var(--brand-hue));                 /* 主色按钮 */
 	--primary-foreground: oklch(1 0 0);                                           /* 主色文字 */

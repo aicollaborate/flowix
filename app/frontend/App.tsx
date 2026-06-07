@@ -6,6 +6,7 @@ import { Toaster } from "sonner";
 import { useUserSettings } from "./lib/hooks/useUserSettings";
 import { useUserSettingsStore } from "./lib/store/user-settings-store";
 import { useApplyFontSettings } from "./lib/hooks/useApplyFontSettings";
+import { useMemoEvents } from "./lib/hooks/useMemoEvents";
 import { ThemeProvider } from "./lib/theme";
 import { listenToUserConfigChanges, stopListeningToUserConfigChanges } from "./lib/tauri/client";
 
@@ -30,6 +31,11 @@ function App() {
   const flushPending = useUserSettingsStore((s) => s.flushPending);
   useApplyFontSettings(settings.format);
 
+  // 跨窗口订阅后端 `memo-event` (统一事件总线) — 用户 / Agent / 外部工具
+  // 任何一方的笔记变更都走这条管道, 前端一个监听器派发到 memo-store。
+  // 挂顶层让主窗口和偏好设置窗口都同步。
+  useMemoEvents();
+
   // 启动加载一次, 卸载前 flush 防止拖动滑块过程中关窗丢改动
   useEffect(() => {
     loadInitial();
@@ -38,7 +44,7 @@ function App() {
     };
   }, [loadInitial, flushPending]);
 
-  // 跨窗口同步: 另一窗口成功写入 ~/.woop/preference.json 后, 后端 emit
+  // 跨窗口同步: 另一窗口成功写入 ~/.flowix/preference.json 后, 后端 emit
   // 'user-config-changed', 收到后从磁盘重新 loadInitial — 保证两窗口
   // 的 useUserSettingsStore 收敛。ai_config 由 agent 段自己监听 (见
   // windows/preferences/sections/agent.tsx)。

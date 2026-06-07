@@ -52,19 +52,6 @@ function buildUserLlmContent(content: string, messages: ChatMessage[]): {
   };
 }
 
-function parseToolEvent(chunk: string, prefix: string): any | null {
-  if (!chunk.startsWith(prefix)) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(chunk.slice(prefix.length).trim());
-  } catch (err) {
-    console.error('[ChatStore] Failed to parse tool event:', err);
-    return null;
-  }
-}
-
 function toToolInput(input: unknown): Record<string, unknown> | undefined {
   if (input && typeof input === 'object' && !Array.isArray(input)) {
     return input as Record<string, unknown>;
@@ -119,6 +106,18 @@ export interface ChatStore {
   deleteThread: (threadId: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   sendMessageStream: (content: string) => Promise<void>;
+  /**
+   * 终止当前 thread 的 in-flight chat_stream。
+   *
+   * 故意不动 `isLoading` ── 真正的 isLoading=false 由后端 chat_stream
+   * 退出时, `sendMessageStream` 的 `finally` 块统一负责。 这里只负责
+   * 把 "用户想停" 的信号发到 Rust (AgentManager.stop_chat 翻 cancel flag),
+   * 之后 UI 状态会跟着 `finally` 自然收敛。
+   *
+   * 如果当前没有 chat 在跑 (e.g. isLoading=false), 后端 stop_chat 返回
+   * false, 我们也不做额外处理 ── 静默 no-op 即可。
+   */
+  stopStream: () => Promise<void>;
 }
 
 export const useChatStore = create<ChatStore>()(
@@ -287,100 +286,108 @@ export const useChatStore = create<ChatStore>()(
           let hasAnyAssistantText = false;
 
           await listenToAgentStream((chunk) => {
-            const toolCallEvent = parseToolEvent(chunk, '[TOOL_CALL]: ');
-            if (toolCallEvent) {
-              assistantMessageId = null;
-              const toolMessage: ChatMessage = {
-                id: `tool-${toolCallEvent.id || Date.now()}`,
-                role: 'tool',
-                content: '',
-                timestamp: new Date().toISOString(),
-                toolCallId: String(toolCallEvent.id || ''),
-                toolName: String(toolCallEvent.name || ''),
-                toolInput: toToolInput(toolCallEvent.input),
-                isLoading: true,
-              };
-              set((state) => ({ messages: [...state.messages, toolMessage] }));
-              return;
-            }
-
-            const toolResultEvent = parseToolEvent(chunk, '[TOOL_RESULT]: ');
-            if (toolResultEvent) {
-              assistantMessageId = null;
-              const resultContent = JSON.stringify(toolResultEvent.result ?? {}, null, 2);
-              set((state) => ({
-                messages: state.messages.map((m) =>
-                  m.role === 'tool' && m.toolCallId === String(toolResultEvent.id || '')
-                    ? {
-                        ...m,
-                        content: resultContent,
-                        toolData: resultContent,
-                        toolName: String(toolResultEvent.name || m.toolName || ''),
-                        isLoading: false,
-                      }
-                    : m
-                ),
-              }));
-              return;
-            }
-
-            if (chunk.startsWith('[REASONING]: ')) {
-              const reasoningText = chunk.slice('[REASONING]: '.length);
-              appendStreamingReasoning(reasoningText);
-
-              if (!reasoningMessageId) {
-                reasoningMessageId = `reasoning-${Date.now()}`;
-                const reasoningMessage: ChatMessage = {
-                  id: reasoningMessageId,
-                  role: 'reasoning',
-                  content: reasoningText,
+            // 结构化协议 ── `AgentChunk.kind` 判别, 替换旧的字符串前缀
+            // (startsWith('[TOOL_CALL]: ')/'[REASONING]: '/etc.) 解析。
+            switch (chunk.kind) {
+              case 'text': {
+                const text = chunk.text;
+                // 跳过纯空白 chunk ── 防止 LLM 流中间出现 "\n" 时生成空卡片
+                if (!text || !text.trim()) return;
+                hasAnyAssistantText = true;
+                appendStreamingContent(text);
+                if (reasoningMessageId) {
+                  set((state) => ({
+                    messages: state.messages.map((m) =>
+                      m.id === reasoningMessageId ? { ...m, isCompleted: true } : m
+                    ),
+                  }));
+                }
+                if (!assistantMessageId) {
+                  assistantMessageId = `assistant-${Date.now()}`;
+                  const assistantMessage: ChatMessage = {
+                    id: assistantMessageId,
+                    role: 'assistant',
+                    content: text,
+                    timestamp: new Date().toISOString(),
+                  };
+                  set((state) => ({ messages: [...state.messages, assistantMessage] }));
+                } else {
+                  set((state) => ({
+                    messages: state.messages.map((m) =>
+                      m.id === assistantMessageId ? { ...m, content: m.content + text } : m
+                    ),
+                  }));
+                }
+                return;
+              }
+              case 'reasoning': {
+                const text = chunk.text;
+                appendStreamingReasoning(text);
+                if (!reasoningMessageId) {
+                  reasoningMessageId = `reasoning-${Date.now()}`;
+                  const reasoningMessage: ChatMessage = {
+                    id: reasoningMessageId,
+                    role: 'reasoning',
+                    content: text,
+                    timestamp: new Date().toISOString(),
+                    isCompleted: false,
+                  };
+                  set((state) => ({ messages: [...state.messages, reasoningMessage] }));
+                } else {
+                  set((state) => ({
+                    messages: state.messages.map((m) =>
+                      m.id === reasoningMessageId ? { ...m, content: m.content + text } : m
+                    ),
+                  }));
+                }
+                return;
+              }
+              case 'tool_call': {
+                assistantMessageId = null;
+                const toolMessage: ChatMessage = {
+                  id: `tool-${chunk.id || Date.now()}`,
+                  role: 'tool',
+                  content: '',
                   timestamp: new Date().toISOString(),
-                  isCompleted: false,
+                  toolCallId: chunk.id,
+                  toolName: chunk.name,
+                  toolInput: toToolInput(chunk.input),
+                  isLoading: true,
                 };
-                set((state) => ({ messages: [...state.messages, reasoningMessage] }));
-              } else {
+                set((state) => ({ messages: [...state.messages, toolMessage] }));
+                return;
+              }
+              case 'tool_result': {
+                assistantMessageId = null;
+                const resultContent = JSON.stringify(chunk.result ?? {}, null, 2);
                 set((state) => ({
                   messages: state.messages.map((m) =>
-                    m.id === reasoningMessageId ? { ...m, content: m.content + reasoningText } : m
+                    m.role === 'tool' && m.toolCallId === chunk.id
+                      ? {
+                          ...m,
+                          content: resultContent,
+                          toolData: resultContent,
+                          toolName: chunk.name || m.toolName || '',
+                          isLoading: false,
+                        }
+                      : m
                   ),
                 }));
+                return;
               }
-              return;
-            }
-
-            // Skip empty/whitespace-only chunks to avoid creating empty
-            // assistant placeholders between tool calls. The LLM stream may
-            // emit pure-whitespace chunks (e.g. "\n" or "") that would
-            // otherwise produce a visible empty card here.
-            if (!chunk || !chunk.trim()) {
-              return;
-            }
-
-            hasAnyAssistantText = true;
-            appendStreamingContent(chunk);
-            if (reasoningMessageId) {
-              set((state) => ({
-                messages: state.messages.map((m) =>
-                  m.id === reasoningMessageId ? { ...m, isCompleted: true } : m
-                ),
-              }));
-            }
-
-            if (!assistantMessageId) {
-              assistantMessageId = `assistant-${Date.now()}`;
-              const assistantMessage: ChatMessage = {
-                id: assistantMessageId,
-                role: 'assistant',
-                content: chunk,
-                timestamp: new Date().toISOString(),
-              };
-              set((state) => ({ messages: [...state.messages, assistantMessage] }));
-            } else {
-              set((state) => ({
-                messages: state.messages.map((m) =>
-                  m.id === assistantMessageId ? { ...m, content: m.content + chunk } : m
-                ),
-              }));
+              case 'error': {
+                // 错误事件独立卡片 ── 旧协议下 [ERROR]: 会被 fallthrough 当
+                // 文本拼到 assistant 正文 (chat-store.ts:355-384), 这里
+                // 显式分支渲染成独立 assistant 错误卡片, 不污染正常流。
+                const errorMessage: ChatMessage = {
+                  id: `error-${Date.now()}`,
+                  role: 'assistant',
+                  content: chunk.message,
+                  timestamp: new Date().toISOString(),
+                };
+                set((state) => ({ messages: [...state.messages, errorMessage] }));
+                return;
+              }
             }
           });
 
@@ -427,6 +434,20 @@ export const useChatStore = create<ChatStore>()(
             clearStreamingReasoning();
             set({ isLoading: false });
           }
+        },
+
+        stopStream: async () => {
+          const { threadId, isLoading } = get();
+          if (!isLoading || !threadId) return;
+          try {
+            await agent.stopChatStream(threadId);
+          } catch (err) {
+            console.error('Failed to stop stream:', err);
+          }
+          // 不动 isLoading / 不调 stopListeningToAgentStream ── 后端
+          // chat_stream 收到 cancel 后会走 flush_cancel 路径返回, 触发
+          // 上面的 finally 块统一清理 (isLoading=false + 卸载 listener
+          // + 清空 streaming buffers)。
         },
       };
     },

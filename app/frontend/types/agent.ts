@@ -1,5 +1,5 @@
 /**
- * Unified chat message types for WoopMemo app
+ * Unified chat message types for Flowix app
  */
 
 // Thread list item
@@ -40,75 +40,44 @@ export interface ToolCall {
   args?: string;
 }
 
-// Stream events from agent
-export type StreamEvent =
-  | TextDeltaEvent
-  | ToolCallStartEvent
-  | ToolCallEndEvent
-  | ToolResultEvent
-  | ReasoningStartEvent
-  | ReasoningEvent
-  | ReasoningEndEvent
-  | FinishEvent
-  | ThreadIdEvent
-  | ErrorEvent;
+// Stream events from agent ── 与后端 `AgentChunk` 1:1 镜像, 由
+// `client.ts:listenToAgentStream` 监听 `agent-chunk` 通道消费。
+// 替换之前 `[REASONING]:` / `[TOOL_CALL]:` / `[TOOL_RESULT]:` / `[ERROR]:`
+// 字符串前缀协议 ── 用判别联合 (kind) 替代 startsWith。
+export type AgentChunk =
+  | AgentChunkText
+  | AgentChunkReasoning
+  | AgentChunkToolCall
+  | AgentChunkToolResult
+  | AgentChunkError;
 
-export interface TextDeltaEvent {
-  type: "text-delta";
-  content: string;
+export interface AgentChunkText {
+  kind: "text";
+  text: string;
 }
 
-export interface ToolCallStartEvent {
-  type: "tool-call-start";
-  toolCallId: string;
-  toolName: string;
-  input?: Record<string, unknown>;
+export interface AgentChunkReasoning {
+  kind: "reasoning";
+  text: string;
 }
 
-export interface ToolCallEndEvent {
-  type: "tool-call-end";
-  toolCallId: string;
-}
-
-export interface ToolResultEvent {
-  type: "tool-result";
-  toolCallId: string;
-  result: string;
-}
-
-export interface ReasoningEvent {
-  type: "reasoning";
-  content: string;
-}
-
-export interface ReasoningStartEvent {
-  type: "reasoning-start";
+export interface AgentChunkToolCall {
+  kind: "tool_call";
   id: string;
+  name: string;
+  input: Record<string, unknown>;
 }
 
-export interface ReasoningEndEvent {
-  type: "reasoning-end";
+export interface AgentChunkToolResult {
+  kind: "tool_result";
   id: string;
+  name: string;
+  result: unknown;
 }
 
-export interface FinishEvent {
-  type: "finish";
-  finishReason: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
-}
-
-export interface ThreadIdEvent {
-  type: "thread-id";
-  threadId: string;
-}
-
-export interface ErrorEvent {
-  type: "error";
-  content: string;
+export interface AgentChunkError {
+  kind: "error";
+  message: string;
 }
 
 // Re-export for backwards compatibility

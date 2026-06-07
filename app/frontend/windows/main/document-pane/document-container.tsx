@@ -488,18 +488,26 @@ export function DocumentContainer({ filePath, onMetainfoData, onCharCountChange,
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
-    listen<{ path?: string; tool?: string }>('agent-document-updated', async (event) => {
-      if (disposed || !filePath || !event.payload?.path) return;
-      const updatedPath = normalizePathForCompare(event.payload.path);
-      const currentPath = normalizePathForCompare(filePath);
-      if (updatedPath !== currentPath) return;
+    // 监听后端统一事件总线 `memo-event` 的 `updated` 变体。替代旧的
+    // `agent-document-updated`(只对 Agent edit 触发) — 现在任何写者
+    // (用户 / Agent / 外部工具) 都会 emit `updated`, 编辑器按 path 匹配刷新。
+    listen<{ kind: 'updated'; id: string; path: string; source: string }>(
+      'memo-event',
+      async (event) => {
+        if (disposed || !filePath) return;
+        if (event.payload?.kind !== 'updated') return;
+        if (!event.payload.path) return;
+        const updatedPath = normalizePathForCompare(event.payload.path);
+        const currentPath = normalizePathForCompare(filePath);
+        if (updatedPath !== currentPath) return;
 
-      if (hasUnsavedLocalChanges()) return;
+        if (hasUnsavedLocalChanges()) return;
 
-      clearSaveTimer();
+        clearSaveTimer();
 
-      await reloadDocument(filePath, { preservePending: false, showLoading: false });
-    }).then((fn) => {
+        await reloadDocument(filePath, { preservePending: false, showLoading: false });
+      }
+    ).then((fn) => {
       if (disposed) {
         fn();
       } else {
@@ -576,7 +584,7 @@ export function DocumentContainer({ filePath, onMetainfoData, onCharCountChange,
   if (!filePath) {
     return (
       <div className="w-full flex items-center justify-center h-full text-[var(--muted-foreground)] text-sm">
-        请选择一个 Memo 文档
+        请选择一个文档
       </div>
     );
   }

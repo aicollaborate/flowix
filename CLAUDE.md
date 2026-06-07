@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-WoopMemo 是一款桌面笔记应用，具备 AI 能力，基于 Tauri 2 (Rust 后端) + React 19 + TypeScript + Tiptap 构建。
+Flowix 是一款桌面笔记应用，具备 AI 能力，基于 Tauri 2 (Rust 后端) + React 19 + TypeScript + Tiptap 构建。
 
 ## 命令
 
@@ -19,7 +19,7 @@ npm run tauri build   # 生产构建
 
 ## 技术栈
 
-- **后端**：Tauri 2、Rust、JSON 配置文件（`~/.woop/*.json`，原子写入 + 0o600 权限）、YAML 解析
+- **后端**：Tauri 2、Rust、JSON 配置文件（`~/.flowix/*.json`，原子写入 + 0o600 权限）、YAML 解析
 - **前端**：React 19、TypeScript、Tiptap 编辑器、Zustand（状态管理 + 持久化）、Tailwind CSS、shadcn UI
 - **AI**：`rllm` crate 支持 OpenAI/Anthropic/DeepSeek
 
@@ -39,8 +39,8 @@ npm run tauri build   # 生产构建
 ### 后端（`app/backend/src/`）
 - `lib.rs` - 应用入口，插件配置，命令路由
 - `commands.rs` - 所有 Tauri IPC 命令（备忘录、标签、笔记本、文件、AI 代理）
-- `user_config.rs` - `~/.woop/preference.json` + `ai_config.json`（原子写入：tmp + fsync + rename, 0o600）
-- `global_meta_data.rs` - `~/.woop/global_meta_data.json`（扩展键值对，无 schema）
+- `user_config.rs` - `~/.flowix/preference.json` + `ai_config.json`（原子写入：tmp + fsync + rename, 0o600）
+- `global_meta_data.rs` - `~/.flowix/global_meta_data.json`（扩展键值对，无 schema）
 - `memo_file.rs` - 文件存储管理（YAML frontmatter + markdown）
 - `agent.rs` - AI 代理管理（LLM 连接）
 - `threads.rs` - 对话线程管理
@@ -64,7 +64,7 @@ npm run tauri build   # 生产构建
 
 ### 数据流
 1. 前端通过 `lib/tauri/client.ts` 调用 Tauri IPC 命令
-2. Rust 后端处理命令，更新 `~/.woop/*.json` 或备忘录文件系统
+2. Rust 后端处理命令，更新 `~/.flowix/*.json` 或备忘录文件系统
 3. 返回 JSON，前端更新 Zustand store
 4. UI 自动响应 store 变化
 

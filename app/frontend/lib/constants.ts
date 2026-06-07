@@ -25,14 +25,14 @@ export function isTextFile(fileName: string): boolean {
 
 // UI 存储键名
 export const STORAGE_KEYS = {
-  CHAT: 'woopmemo-chat-storage',
-  SETTINGS: 'woopmemo-settings',
-  TAG: 'woopmemo-tag',
-  MEMO: 'woopmemo-memo-storage',
+  CHAT: 'flowix-chat-storage',
+  SETTINGS: 'flowix-settings',
+  TAG: 'flowix-tag',
+  MEMO: 'flowix-memo-storage',
 } as const;
 
 /* ============================================================
- * User Settings (镜像后端 ~/.woop/preference.json 结构)
+ * User Settings (镜像后端 ~/.flowix/preference.json 结构)
  * 字段与后端 PreferenceFile / *Config 一一对应, 改 nested 后:
  *   - settings.personalize.customInstruction
  *   - settings.format.fontFamily

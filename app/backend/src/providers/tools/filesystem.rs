@@ -145,9 +145,17 @@ fn ensure_allowed(scope: &ToolScope, path: &Path) -> Result<(), ToolResult> {
     if scope.is_allowed(path) {
         Ok(())
     } else {
+        // Include the canonical default notebook path so the LLM can
+        // self-correct when it tries a stale path (e.g. the
+        // pre-rename `~/Documents/woop notebook`).
+        let hint = format!(
+            " Hint: the current default notebook is at '{}'. If your target is inside it, retry with that path.",
+            scope.default_root().display()
+        );
         Err(ToolResult::error(format!(
-            "Path is outside the registered notebook scope: {}",
-            path.display()
+            "Path is outside the registered notebook scope: {}.{}",
+            path.display(),
+            hint
         )))
     }
 }
@@ -171,7 +179,22 @@ async fn read(arguments: &str, scope: &ToolScope) -> ToolResult {
     }
     let content = match fs::read_to_string(&path) {
         Ok(content) => content,
-        Err(e) => return ToolResult::error(format!("Failed to read {}: {}", path.display(), e)),
+        Err(e) => {
+            // When the file is missing, append a hint pointing at the
+            // default notebook so the LLM doesn't keep guessing at the
+            // same wrong path.
+            let hint = if !scope.default_root().as_os_str().is_empty() {
+                format!(" Default notebook is at {}.", scope.default_root().display())
+            } else {
+                String::new()
+            };
+            return ToolResult::error(format!(
+                "Failed to read {}: {}.{}",
+                path.display(),
+                e,
+                hint
+            ));
+        }
     };
 
     let offset = args.offset.unwrap_or(0);

@@ -84,7 +84,7 @@ export function DialogContent({ children, className, showOverlay = true }: Dialo
 				<div
 					className={cn(
 						'fixed inset-0 bg-black/50 z-50',
-						visible ? 'woop-fade-enter' : 'woop-fade-leave'
+						visible ? 'flowix-fade-enter' : 'flowix-fade-leave'
 					)}
 					onClick={() => onOpenChange(false)}
 				/>
@@ -97,7 +97,7 @@ export function DialogContent({ children, className, showOverlay = true }: Dialo
 				<div
 					className={cn(
 						'relative w-full max-w-[380px] rounded-2xl bg-[var(--background)] px-5 py-4 shadow-lg pointer-events-auto',
-						visible ? 'woop-dialog-enter' : 'woop-dialog-leave',
+						visible ? 'flowix-dialog-enter' : 'flowix-dialog-leave',
 						className
 					)}
 				>
