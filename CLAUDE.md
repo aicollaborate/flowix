@@ -21,7 +21,7 @@ npm run tauri build   # 生产构建
 
 - **后端**：Tauri 2、Rust、JSON 配置文件（`~/.flowix/*.json`，原子写入 + 0o600 权限）、YAML 解析
 - **前端**：React 19、TypeScript、Tiptap 编辑器、Zustand（状态管理 + 持久化）、Tailwind CSS、shadcn UI
-- **AI**：`rllm` crate 支持 OpenAI/Anthropic/DeepSeek
+- **AI**：`rllm` crate 支持 OpenAI / Anthropic / DeepSeek；统一通过 `openai_compatible` provider 适配 OpenAI 风格接口（Anthropic/DeepSeek 也走此通道）
 
 ## 架构
 
@@ -38,12 +38,16 @@ npm run tauri build   # 生产构建
 
 ### 后端（`app/backend/src/`）
 - `lib.rs` - 应用入口，插件配置，命令路由
-- `commands.rs` - 所有 Tauri IPC 命令（备忘录、标签、笔记本、文件、AI 代理）
+- `commands/` - Tauri IPC 命令按域拆分：`memo.rs` / `notebook.rs` / `tag.rs` / `thread.rs` / `agent.rs` / `file.rs` / `kv.rs` / `settings.rs` / `dialog.rs` / `window.rs` / `helpers.rs`
+- `memo_file/` - 文件存储管理（`mod.rs` + `content.rs` / `frontmatter.rs` / `list_store.rs` / `notebook.rs` / `types.rs` / `derivation.rs` / `registration.rs` / `time.rs`）
 - `user_config.rs` - `~/.flowix/preference.json` + `ai_config.json`（原子写入：tmp + fsync + rename, 0o600）
 - `global_meta_data.rs` - `~/.flowix/global_meta_data.json`（扩展键值对，无 schema）
-- `memo_file.rs` - 文件存储管理（YAML frontmatter + markdown）
 - `agent.rs` - AI 代理管理（LLM 连接）
 - `threads.rs` - 对话线程管理
+- `fs_watcher.rs` - 文件系统监听（`notify` crate 包装）
+- `memo_events.rs` - 备忘录事件总线（前端订阅）
+- `path_scope.rs` - 路径作用域 / 沙箱白名单
+- `search.rs` - 全局搜索后端
 
 ### 前端（`app/frontend/`）
 - `App.tsx` - 入口；按 `window.location.hash` 路由到 `MainLayout` 或 `PreferencesView`（均用 `lazy()` + `Suspense` 加载）
@@ -51,16 +55,19 @@ npm run tauri build   # 生产构建
   - `main-layout.tsx` - 三栏布局编排
   - `memo-pane/`, `document-pane/`, `agent-panel/`, `status-bar/`
   - `menu-board.tsx` - Cmd+K 命令面板
+  - `global-search-command.tsx` - 全局搜索命令面板
 - `windows/preferences/` - 偏好设置窗口
   - `preferences-view.tsx`, `preferences-titlebar-{mac,win}.tsx`
   - `sections/` - 设置 tab 内容 + `primitives.tsx`（Field/SectionHeader/FieldRow）+ `types.ts`（SettingsTab）
-- `components/` - 跨窗口共享资源（见上）
+- `components/` - 跨窗口共享资源（见上）；`ui/command.tsx` 是 shadcn Command 组件（命令面板底层）
 - `lib/` - 业务工具
-  - `hooks/` - 全局 hooks（`useUserSettings`, `useApplyTheme`, `useApplyFontSettings`, `useTauriRpc`, `useMemoInsertAnimation`, `useComposingValue`）
+  - `hooks/` - 全局 hooks（`useUserSettings`, `useApplyTheme`, `useApplyFontSettings`, `useTauriRpc`, `useMemoInsertAnimation`, `useComposingValue`, `useMemoEvents`）
   - `store/` - Zustand stores
   - `tauri/client.ts` - IPC 封装
-  - `constants.ts`, `toast`, `export`, `path`, `utils`, `message/`
-- `types/`, `css/`, `assets/`
+  - `constants.ts`, `toast`, `export`, `path`, `utils`, `message/`, `theme/`
+- `types/` - 共享类型（`memo.ts`, `agent.ts`, `index.ts`）
+- `css/` - 全局样式 + `theme/{light,dark,rock}.css`（主题变量）
+- `assets/` - 静态资源（`product-logo.png`, `empty-memo.png` 等）
 
 ### 数据流
 1. 前端通过 `lib/tauri/client.ts` 调用 Tauri IPC 命令
@@ -105,12 +112,17 @@ npm run tauri build   # 生产构建
 
 ## Git 操作
 
+远程仓库：`git@github.com:aicollaborate/flowix.git`
+
 ```bash
 # 首次推送（远程为空）
 git init
-git remote add origin git@github.com:aicollaborate/woop.git
+git remote add origin git@github.com:aicollaborate/flowix.git
 git add -A && git commit -m "Initial commit"
 git push -u origin main
+
+# 远程地址变更
+git remote set-url origin git@github.com:aicollaborate/flowix.git
 
 # 强制覆盖远程（完全替换远程分支，远程有本地无的文件会被删除）
 git push -f origin main
