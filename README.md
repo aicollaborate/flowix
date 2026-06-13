@@ -24,13 +24,13 @@
 ### 🎨 主题预览 · Theme preview
 
 **☀️ 浅色 · Light**
-![浅色主题 Light](public/浅色.jpg)
+![浅色主题 Light](homepage/theme-light.jpg)
 
 **🌙 深色 · Dark**
-![深色主题 Dark](public/深色.jpg)
+![深色主题 Dark](homepage/theme-dark.jpg)
 
 **🪨 岩灰 · Rock**
-![岩灰主题 Rock](public/岩灰.jpg)
+![岩灰主题 Rock](homepage/theme-rock.jpg)
 
 </div>
 
@@ -153,6 +153,76 @@ npm run tauri build
 ```
 
 **环境要求**：Node.js 20+、Rust 1.75+、macOS 14+ 或 Windows 10+。
+
+---
+
+
+### 🛠️ CLI 工具 (sidecar)
+
+Flowix 自带一个独立的命令行工具 `flowix-cli`, 跟桌面端**共享同一份 `memo_file` 存储**。Terminal 跑的修改, 桌面端 watcher 会 1 秒内自动反映; 反之亦然。
+
+构建并暴露给 PATH:
+
+```bash
+# 1. 编译 CLI (release, 当前 host)
+npm run cli:build
+
+# 2. 把 sidecar 软链到 PATH
+ln -sf "$(pwd)/app/flowix-desktop/binaries/flowix-cli-$(rustc -vV | sed -n 's|host: ||p')" /usr/local/bin/flowix-cli
+
+# 3. 验证
+flowix-cli --version
+```
+
+或者从已经构建好的 `.app` 内部拷出:
+
+```bash
+cp "app/flowix-desktop/target/release/bundle/macos/Flowix.app/Contents/MacOS/flowix-cli" /usr/local/bin/
+```
+
+#### 命令一览
+
+```bash
+flowix-cli --version
+flowix-cli --help
+
+flowix-cli notebooks              # 列出所有笔记本
+flowix-cli list <notebook>        # 列出某笔记本下的笔记
+flowix-cli show <id>              # 读一条笔记到 stdout
+flowix-cli new <notebook> [name]  # 调 $EDITOR 创建一条笔记
+flowix-cli new <notebook> -       # 从 stdin 创建 (echo "# title" \| flowix-cli new work -)
+```
+
+#### 环境变量
+
+- `FLOWIX_HOME` — 覆盖 config dir (默认 `~/.flowix`)
+- `FLOWIX_DATA` — 覆盖 data dir (默认 `<OS data dir>/flowix`)
+
+#### 数据流
+
+- CLI 读 `~/.flowix/notebook.json` + `<notebook>/.metadata/list.json` + `<notebook>/*.md`
+- 写路径走原子写 (write tmp + fs::rename), 跟桌面端共享同一份代码 ── 不会分裂
+- 与桌面端**完全独立**的进程, 互不冲突; 桌面端 watcher 监测 `list.json` 变化自动 reload
+
+---
+
+### 📦 Distribution (CI / Homebrew)
+
+Release artifacts 由 GitHub Actions 自动构建 (`.github/workflows/release.yml`):
+
+- 3 平台 sidecar: macOS (arm64 + x64) / Linux / Windows
+- 3 平台 Tauri bundle: `.dmg` / `.msi` / `.deb` + `.AppImage`
+- 触发: `git tag v0.1.0 && git push --tags`
+
+装 CLI (macOS, Homebrew):
+
+```bash
+brew install aicollaborate/flowix/flowix
+# 或 .app:
+brew install --cask aicollaborate/flowix/flowix
+```
+
+下载 `.dmg` / `.msi` / `.AppImage` 走 [GitHub Releases](https://github.com/aicollaborate/flowix/releases)。
 
 ---
 
@@ -295,6 +365,76 @@ npm run tauri build
 ```
 
 **Requirements**: Node.js 20+, Rust 1.75+, macOS 14+ or Windows 10+.
+
+---
+
+
+### 🛠️ CLI tool (sidecar)
+
+Flowix ships with a standalone `flowix-cli` binary that **shares the same `memo_file` storage** as the desktop app. Edits from the terminal are visible in the desktop UI within ~1 second (and vice versa) via the filesystem watcher.
+
+Build and expose to PATH:
+
+```bash
+# 1. Compile the CLI (release, current host)
+npm run cli:build
+
+# 2. Symlink the sidecar into PATH
+ln -sf "$(pwd)/app/flowix-desktop/binaries/flowix-cli-$(rustc -vV | sed -n 's|host: ||p')" /usr/local/bin/flowix-cli
+
+# 3. Verify
+flowix-cli --version
+```
+
+Or copy from an existing `.app` bundle:
+
+```bash
+cp "app/flowix-desktop/target/release/bundle/macos/Flowix.app/Contents/MacOS/flowix-cli" /usr/local/bin/
+```
+
+#### Commands
+
+```bash
+flowix-cli --version
+flowix-cli --help
+
+flowix-cli notebooks              # List all notebooks
+flowix-cli list <notebook>        # List notes in a notebook
+flowix-cli show <id>              # Print a note to stdout
+flowix-cli new <notebook> [name]  # Create via $EDITOR
+flowix-cli new <notebook> -       # Create from stdin (echo "# title" \| flowix-cli new work -)
+```
+
+#### Environment
+
+- `FLOWIX_HOME` — Override config dir (default `~/.flowix`)
+- `FLOWIX_DATA` — Override data dir (default `<OS data dir>/flowix`)
+
+#### Data flow
+
+- CLI reads `~/.flowix/notebook.json` + `<notebook>/.metadata/list.json` + `<notebook>/*.md`
+- Writes are atomic (write tmp + fs::rename), sharing the desktop app's code path
+- **Fully independent** process from the desktop app; the desktop watcher picks up `list.json` changes automatically
+
+---
+
+### 📦 Distribution (CI / Homebrew)
+
+Release artifacts are built automatically by GitHub Actions (`.github/workflows/release.yml`):
+
+- 3-platform sidecar: macOS (arm64 + x64) / Linux / Windows
+- 3-platform Tauri bundle: `.dmg` / `.msi` / `.deb` + `.AppImage`
+- Trigger: `git tag v0.1.0 && git push --tags`
+
+Install CLI (macOS, via Homebrew):
+
+```bash
+brew install aicollaborate/flowix/flowix
+# or .app:
+brew install --cask aicollaborate/flowix/flowix
+```
+
+For direct downloads, see [GitHub Releases](https://github.com/aicollaborate/flowix/releases).
 
 ---
 

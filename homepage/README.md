@@ -44,7 +44,7 @@ python3 -m http.server 8000
 - **主题预览可交互**——三个主题通过文字 tab 切换（无 JS 框架、~30 行原生 JS），默认浅色；图片用 `hidden` 属性隐藏非活动项，键盘左右箭头也能切。
 - **首屏节奏**——hero 底部 padding 压到 2rem（其它 section 4rem），让预览图在桌面端首屏底部约 1/3 自然露出；预览段不留标题标签，靠 tabs 自解释。
 - **1200 主宽 + 720 文本**——`.container` 1200px 给视觉段（预览图、AI 卡片网格 4 列横排）做容器，`.prose` 收口到 720px 左对齐，避免 1200 容器里正文行宽过大。`.container-wide` 与 `.container` 同宽（保留作为未来差异化扩展位）。
-- **对齐 light 主题**——颜色 token 全部走 OKLCH，与 [app/frontend/css/theme/light.css](../app/frontend/css/theme/light.css) 同源：品牌紫 `--brand: oklch(0.552 0.185 273)`、链接紫 `--link: oklch(0.45 0.18 273)`、中性冷蓝灰 `hue 255`。主按钮从黑底换成紫底，让首页"和 app 是同一套皮肤"。
+- **对齐 light 主题**——颜色 token 全部走 OKLCH，与 [app/flowix-web/css/theme/light.css](../app/flowix-web/css/theme/light.css) 同源：品牌紫 `--brand: oklch(0.552 0.185 273)`、链接紫 `--link: oklch(0.45 0.18 273)`、中性冷蓝灰 `hue 255`。主按钮从黑底换成紫底，让首页"和 app 是同一套皮肤"。
 
 ## 下一版 TODO
 

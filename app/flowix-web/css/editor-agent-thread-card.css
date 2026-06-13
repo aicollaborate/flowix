@@ -1,0 +1,878 @@
+/*
+ * AgentThreadCard NodeView 样式 ── 编辑器内嵌的 AI 对话卡片。
+ *
+ * 由 app/flowix-web/components/mdeditor/extensions/agent-thread-card.tsx
+ * 命令式生成 DOM (不是 React 组件), 类名约定: .agent-thread-card__*。
+ * 所有规则限定在 .comn-tiptap-editor 作用域下, 避免污染 Agent 主面板。
+ */
+
+/* 尺寸 token:
+ *  --atc-send-size     发送按钮高
+ *  --atc-bottom-pad    按钮距 composer 容器底
+ *  --atc-max-height    卡片总高上限 (消息全量回放时由 body 内部滚动)
+ *  --atc-header-h      header 高度 (固定 40px) ── grid 第 1 行
+ *
+ * 注: composer 行改用 auto ── 不再需要 --atc-composer-h token。
+ * 之前用 var(--atc-composer-h) 显式行高, 折叠态 composer display: none
+ * 时 grid 仍给这行 55px 槽位, 卡片底部多出空白色块 ── 修复点
+ * 就是改 auto 行, 让 display: none 时行高归 0。 */
+.comn-tiptap-editor {
+  --atc-send-size: 28px;
+  --atc-bottom-pad: 10px;
+  --atc-max-height: 480px;
+  --atc-composer-max-h: 200px;
+  --atc-header-h: 40px;
+}
+
+.comn-tiptap-editor .agent-thread-card {
+  /* ── 高度布局用 grid + 显式行高 ──
+   *
+   * 之前用 flex column + body { flex: 1 1 auto; min-height: 0;
+   * overflow-y: auto } 期待"body 自动填满剩余空间, max-height 限制
+   * 卡高"。但实测不滚 ── 根因是:
+   *
+   *   卡片是 ProseMirror 块级子元素, 父级 ProseMirror 高度
+   *   不确定 (min-height: 100% + 内容撑开), 因此 card 的 main
+   *   size 是不确定的。CSS Flexbox 1 §9.9.1: 当 flex 容器主轴
+   *   尺寸不确定时, flex item 的 flex-grow: 1 不生效 ──
+   *   body 按内容原高撑开, 超出 card max-height 边界但不
+   *   触发 overflow: auto (因为 clientHeight = content 原高,
+   *   scrollHeight - clientHeight = 0)。
+   *
+   * 修复: 改用 display: grid + grid-template-rows: auto 1fr auto。
+   * - grid 容器在显式 grid-template-rows 下自带"确定主轴尺寸"语义
+   *   (CSS Grid 1 §7.1.1), 不依赖父级高度是否确定 ── 中间 1fr
+   *   永远 = card 高度 - 头尾。
+   * - body 1fr + min-height: 0 允许被 max-height 收缩; overflow-y: auto
+   *   触发条件天然满足 (body 高度确定 + 内容超出 → 出现滚动条)。
+   * - header / composer 走 auto 行, 按内容原高, 不会被压缩。
+   * - 选 auto 而非显式 var() 行高: 折叠态 composer display: none 时
+   *   auto 行收缩到 0, 卡片不再多出 55px 空白 (若用显式 var() 行高
+   *   grid 仍保留 55px 槽位 ── 那个用户报告的"额外白色区块"就是这个)。
+   */
+  display: grid;
+  grid-template-rows: var(--atc-header-h) 1fr auto;
+  margin: 1rem 0;
+  max-height: var(--atc-max-height);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  /* ── overflow: hidden 兜底裁剪 ──
+   *
+   * 卡片根 border-radius: 8px 默认只裁剪自身 background 和 border ──
+   * 子元素 (header 的 65% 混色 + backdrop-filter blur) 仍是矩形 box,
+   * 会越过 card 的 8px 圆角曲线, 在折叠态下"探出"到卡片外的空气里。
+   * 用户报告的"标题栏底部圆角超出容器"就是这个: header 矩形底部
+   * 末端与 card 底部 8px 圆角之间有 8x8 三角缺口, header 背景色
+   * 漏到那里形成视觉溢出。
+   *
+   * 修复: 给 card 加 overflow: hidden, 让 8px border-radius 成为
+   * 硬裁剪边界 ── 所有子元素被夹在圆角内, 不论子元素自身有没有
+   * border-radius。折叠态视觉是一个干净的 42px 圆角矩形, 没有任何
+   * 探出。
+   *
+   * 对 body 滚动无影响: body 是 grid item, 自己的 overflow-y: auto
+   * 形成独立滚动上下文, card 的 overflow: hidden 不影响 body 内部
+   * scrollHeight/clientHeight 关系 ── grid 1fr + min-height: 0 已经
+   * 让 body 高度确定, 滚动触发条件不变。
+   *
+   * 对 error (position: absolute) 的影响: error 浮在 composer 之上,
+   * 正常状态本就在 card 内部, 加 overflow: hidden 后被夹在 card
+   * 圆角内 ── 不会跑到 card 外, 符合预期。 */
+  overflow: hidden;
+  background: var(--card);
+  color: var(--foreground);
+}
+
+/* NodeSelection 选中态 ── 覆盖 editor.css:729 的全局 .ProseMirror-selectednode
+ * (outline: 2px; outline-offset: 2px; 给 image/videoAttachment 等用)。
+ *
+ * Agent 卡片是 1px border, 要让选中外描边"贴"在 border 上:
+ * - outline 1px 厚: 与原 border 同粗, 不出现 2px 厚重感
+ * - outline-offset: -1px: outline 从元素 box 外侧往内缩 1px ──
+ *   元素有 1px border, 所以 outline 落在"border 内边沿"上,
+ *   视觉上"正好覆盖"原 border (从外面看就是 brand 色替换了 --border 色)
+ * - border-radius: 8px: 显式继承卡片圆角, 防止 outline 在圆角处变直角
+ *   (现代浏览器 outline 已支持 border-radius, 但显式写更稳)
+ * - 选择器特异性: .agent-thread-card.ProseMirror-selectednode = (0,2,0)
+ *   高于全局 .ProseMirror-selectednode = (0,1,0), 本规则胜出 */
+.comn-tiptap-editor .ProseMirror .agent-thread-card.ProseMirror-selectednode {
+  outline: 1px solid var(--brand);
+  outline-offset: -1px;
+  border-radius: 8px;
+  transition: outline-color 120ms ease-out;
+}
+
+/* 头部 ── grid auto 行, 高度由 grid-template-rows 显式控制 (40px)。
+ * 取消旧的 min-height 写法, 用 height 让 grid 行严格等于 token。
+ * 背景与消息区一致 (var(--card)): 头部不再走 frosted glass, 改为
+ * 与 body 同色 ── 卡片视觉是一个整体, header 仅靠 1px 下边框或
+ * 字重差异与 body 分区, 不再用半透明 + 模糊制造"分块感"。
+ *
+ * ── 圆角裁剪责任收口到 card 根 ──
+ * 之前 header 自己写 border-top-left-radius + border-top-right-radius
+ * + overflow: hidden, 把"圆角裁剪 header 背景"的责任扛在 header 上。
+ * 现在 card 根加了 overflow: hidden, 8px border-radius 已经是硬裁剪
+ * 边界 ── header 矩形背景自动被夹在 card 圆角内, 顶部 8px 圆角
+ * 跟 card 顶部 8px 圆角重合, 不需要在 header 重复声明。
+ *
+ * 收口的好处: 圆角裁剪的"责任唯一真源"在 .agent-thread-card, 后续
+ * 若改 card 圆角 (e.g. 8px → 12px) 只需改一处, header 不会忘记
+ * 同步。 */
+.comn-tiptap-editor .agent-thread-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: var(--atc-header-h);
+  padding: 0 0.8rem;
+  box-sizing: border-box;
+  /* 与 body 视觉合一: body 显式不写 background, 继承自 card 根
+   * var(--card); header 直接写同色, 头/体在视觉上是同一块, 靠
+   * 文字层级和组件内部 padding 区分。去掉 backdrop-filter ──
+   * 半透明 + 模糊只在背景透出时才有意义, 实色背景下无效果且
+   * 徒增 GPU 开销。 */
+  background: var(--card);
+}
+
+/* 左侧: 图标 + (agent 名 | 对话名) 单行排版, 整体 flex 1 让 meta 推到右边 */
+.comn-tiptap-editor .agent-thread-card__agent {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 8px;
+}
+
+/* 右侧 actions: meta + collapse 按钮, 整体右对齐 flex 容器。 */
+.comn-tiptap-editor .agent-thread-card__actions {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+/* Sparkle icon, 跟 __open-panel-icon / __trash-icon / __chevron-icon 同形态:
+ * 14×14, color 继承 agentWrap 的 color, 不缩。Sparkle 是头部左侧唯一的 ICON,
+ * 之前是 22×22 方块 + 'AI' 文字 (占位), 现在换成真正的 phosphor Sparkle ──
+ * 视觉上'轻', 不与对话标题 14px 文字抢视觉重量; 与 GitHub Copilot /
+ * Notion AI / ChatGPT 等 AI 产品的 sparkle 图标一致, 强化'AI 助手'的
+ * 产品语义。
+ *
+ * 不再加方块背景 / border ── 之前 22×22 方块是占位元素, 现在 SVG 直接
+ * 渲染, 头部高度 (40px) 留 14px 给 icon, 多余空间给标题。 */
+.comn-tiptap-editor .agent-thread-card__agent-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--brand);
+}
+
+/* 标题直接挂在 __agent 下 ── 之前是 (icon | title-wrap{ agent-name | title }) 三层
+ * 包裹, 现在 agent-name 隐藏、title-wrap 不再需要, 简化为 (icon | title) 两层。
+ * 视觉上是 Sparkle icon + 对话名, 跟 GitHub Copilot 等 AI 卡片头部一致。 */
+.comn-tiptap-editor .agent-thread-card__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comn-tiptap-editor .agent-thread-card__meta {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 5px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* 折叠按钮 ── 22×22 方形, 14×14 Caret 图标。
+ * 颜色与 meta 文字一致 (muted-foreground), hover 时背景 var(--muted) 形成
+ * "可点击"暗示。不用圆形是因为只有 22px, 圆角 5px 与 agent-icon 视觉对齐。 */
+.comn-tiptap-editor .agent-thread-card__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.comn-tiptap-editor .agent-thread-card__collapse:hover {
+  background: var(--muted);
+}
+
+.comn-tiptap-editor .agent-thread-card__chevron-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: currentColor;
+  /* 折叠态旋转 180° ── DOM 只挂一个 chevron-down SVG, 通过 CSS transform
+   * 翻成 chevron-up, 比 TS 端 replaceChildren+append 重建节点更省 ──
+   * SVG path 不变, 不重新创建节点, 不重新触发 layout, 旋转也走 GPU
+   * 合成层。transition 配合状态切换给出 150ms 的平滑动画, 比硬切更
+   * 柔和。 */
+  transition: transform 150ms ease;
+}
+
+.comn-tiptap-editor .agent-thread-card--collapsed .agent-thread-card__chevron-icon {
+  transform: rotate(180deg);
+}
+
+/* reasoning 消息折叠态旋转 ── 与卡片级 collapse 按钮同源思路, 复用
+ * .agent-thread-card__chevron-icon class 命中 SVG。父级折叠类挂在
+ * per-message item 上 (agent-thread-card__message--reasoning-collapsed),
+ * 不与 card 根的 .--collapsed 耦合 ── 卡片折叠时 body display:none 整体
+ * 隐藏, reasoning chevron 不会渲染; 反之卡片展开、某条 reasoning 折叠
+ * 时, 这里的修饰类仍然能命中。每条 reasoning 独立切旋转, 与父级
+ * card 折叠态解耦。 */
+.comn-tiptap-editor .agent-thread-card__message--reasoning-collapsed .agent-thread-card__chevron-icon {
+  transform: rotate(180deg);
+}
+
+/* 删除对话按钮 ── 位于折叠按钮左侧, 22×22 方形 + 5px 圆角 + hover var(--muted),
+ * 视觉与 __collapse / __open-panel 同源 ── 三个按钮形成 header 右侧 actions 区
+ * 的视觉同组。
+ *
+ * hover 色不用 destructive: 当前是文件 icon 在 muted 体系里, hover 走 var(--muted)
+ * 跟其他两个按钮保持一致; 真要做 destructive 高亮应该放在删除确认弹窗阶段, 而
+ * 不是把单按钮 hover 染色 ── 那会跟其他两个按钮形成视觉不协调, 反而弱化警示。
+ *
+ * ── 为什么不直接复用 __collapse 类 ──
+ *   - 语义解耦: __collapse 是'折叠/展开', __delete 是'删除对话', 行为完全不同。
+ *   - 未来扩展: __delete 可能加二次确认 / loading 态 / 错误提示, __collapse 不会。
+ *   - DevTools 可读性: 看 className 就能直接区分。 */
+.comn-tiptap-editor .agent-thread-card__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.comn-tiptap-editor .agent-thread-card__delete:hover {
+  background: var(--muted);
+}
+
+/* 复用 __open-panel-icon 口径 ── 14×14, color 继承按钮文字色, 不缩小。
+ * 之所以独立类不复用, 是因为以后可能给删除按钮单独调 hover 色或加危险态, 独立类
+ * 给未来留扩展空间。 */
+.comn-tiptap-editor .agent-thread-card__trash-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+/* 打开 AI 对话侧边栏按钮 ── 占据 metaEl 位的"原消息条数"位置。
+ * 视觉与 collapse 按钮同源 (22×22 方形, 5px 圆角, hover var(--muted)),
+ * 区别仅在: (1) 图标是 ChatTeardrop 而非 caret; (2) 语义是"打开侧边栏"
+ * 而非"折叠卡片"。两者独立类, 避免以后改其中之一误伤另一个。
+ *
+ * ── 为什么不直接复用 __collapse 类 ──
+ *   - 语义解耦: __collapse 描述"折叠/展开卡片内容", __open-panel
+ *     描述"打开右侧 Agent 侧边栏", 行为不同, 未来扩展空间也不同
+ *     (e.g. __open-panel 可能加"面板已开则高亮"状态)。
+ *   - 调试可读性: DevTools 看 className 能直接区分两个按钮。
+ *   - CSS 隔离: 改 __collapse 的 hover 色不会意外波及气泡按钮。 */
+.comn-tiptap-editor .agent-thread-card__open-panel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.comn-tiptap-editor .agent-thread-card__open-panel:hover {
+  background: var(--muted);
+}
+
+.comn-tiptap-editor .agent-thread-card__open-panel-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+/* 消息区 ── grid 1fr 中间行, min-height: 0 允许被 max-height 收缩。
+ *
+ *  - grid 1fr 在显式 grid-template-rows 下 = 父级高度 - 头尾,
+ *    永远确定, overflow-y: auto 触发条件天然满足。
+ *  - min-height: 0 允许 body 行被 max-height 父级收缩 (否则 grid
+ *    行默认 min-height: auto 会被内容撑开, max-height 形同虚设)。
+ *  - padding 上下 3.6rem / 左右 12px ── 上下留白让首/末条消息
+ *    不会"贴"在 header 下沿 / composer 上沿, 滚动到边界时消息与
+ *    卡片边缘有缓冲。3.6rem ≈ 57.6px (16px 根字号), 接近 composer
+ *    高度 (≈55px), 给消息"与 composer 对齐的呼吸感"。左右 12px
+ *    保持与原来一致, 不影响消息气泡的左右间距。 */
+.comn-tiptap-editor .agent-thread-card__body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2rem 1.5rem;
+  /* transition 配合 .--collapsed 折叠: padding 3.6rem 12px → 0, 150ms ease 塌缩。
+   * 注: 现在折叠改用 display: none ── body 直接消失; padding transition
+   * 仍保留, 给后续若想"保留行只压内容"的玩法留接口。 */
+  transition: padding 150ms ease;
+}
+
+/* 折叠态 ── 隐藏 body / error / composer, 卡片仅保留 header。
+ * grid 容器中 1fr 行在 body display: none 时, grid 把它的轨道高
+ * 缩到 0, composer 行被 grid-template-rows 推到 body 顶 ── 视觉
+ * 上等同于"body 消失, composer 顶到 header 下"。 */
+.comn-tiptap-editor .agent-thread-card--collapsed .agent-thread-card__body {
+  display: none;
+}
+
+.comn-tiptap-editor .agent-thread-card--collapsed .agent-thread-card__error {
+  display: none;
+}
+
+.comn-tiptap-editor .agent-thread-card--collapsed .agent-thread-card__composer {
+  display: none;
+}
+
+.comn-tiptap-editor .agent-thread-card__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comn-tiptap-editor .agent-thread-card__messages > * {
+  max-width: 100%;
+}
+
+/* ─────────────────────────────────────────────────────────────────
+ * 消息卡片 ── 完全对齐 Agent 面板 message-*.tsx 的视觉与布局。
+ * ─────────────────────────────────────────────────────────────────
+ *
+ * 面板 5 种 role 的视觉规范:
+ *   user       气泡 (bg-muted), 靠右, 圆角 8/16/8/8
+ *   assistant  纯文本, 占满, 无气泡, mt-1 顶部留白
+ *   reasoning  折叠按钮 + 左边竖线 (border-l) + 缩进, 灰字
+ *   tool       单行 flex: icon + 名称 + summary, 无气泡
+ *   end        居中小字, 灰字, 时间戳
+ *
+ * 卡片 base 默认 "无背景无圆角", 5 个 role 修饰类各自按面板
+ * 对应风格覆盖 ── 不再是"一统气泡"模式。 */
+.comn-tiptap-editor .agent-thread-card__message {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  user-select: text;
+}
+
+/* ── user: 气泡 + 靠右 ──────────────────────────────────────────
+ * 圆角体系 (与面板 Tailwind token 对应):
+ *   rounded-lg  = 0.5rem = 8px
+ *   rounded-2xl = 1rem   = 16px
+ * 面板 user 圆角: 8px 16px 8px 8px (右上 2xl 最圆, 其它 lg)。
+ * margin-left: auto 在 flex column 容器里把 user 推右 (CSS 端
+ * 替代 row-reverse, 不破坏 assistant 左对齐)。 */
+.comn-tiptap-editor .agent-thread-card__message--user {
+  margin-left: auto;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px 16px 8px 8px;
+  background: var(--muted);
+}
+
+/* ── assistant: 纯文本, 无气泡, 顶部 mt-1 留白 ────────────────
+ * 面板 assistant = `text-sm mt-1`, 无背景无圆角, 占满左侧。 */
+.comn-tiptap-editor .agent-thread-card__message--assistant {
+  padding: 4px 0 0;
+  color: var(--foreground);
+}
+
+/* ── reasoning: 可折叠 ── 对齐面板 message-reasoning 布局 ─────────
+ * 面板结构:
+ *   <div flex gap-3>
+ *     <div flex-col gap-1 w-full>
+ *       <button> {ChevronDown|Right + "思考中/思考完成"} </button>
+ *       {!reasoningCollapsed && <div pl-4 ml-1.5 border-l> ...content </div>}
+ *     </div>
+ *   </div>
+ *
+ * 卡片版 (per-message 折叠态, 不走全局 store):
+ *   .__message--reasoning { gap: 4px }
+ *     .__message-reasoning-header (button) { flex 排 caret + label,
+ *       hover 反馈用 var(--muted-foreground) → var(--agent-foreground) }
+ *     .__message-reasoning-body { pl-12px + border-l + mt-4px }
+ *     .__message--reasoning-collapsed .__message-reasoning-body { display: none }
+ * 数值: pl-4 = 12px (这里 12px 与 6px ml-1.5 视觉接近, 同时让缩进在
+ * 卡片宽度下不至于挤掉内容), border-l = 2px (卡片小尺寸下更可见)。 */
+.comn-tiptap-editor .agent-thread-card__message--reasoning {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted-foreground);
+}
+
+.comn-tiptap-editor .agent-thread-card__message-reasoning-header {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 2px 4px 2px 0;
+  margin-left: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.1;
+  cursor: pointer;
+  /* hover 反馈改为纯字色变化 ── reasoning 折叠按钮嵌入在消息流里,
+   * 视觉权重本就低, 鼠标悬停时给一个"高亮"色就够了, 加背景块会
+   * 跟上下相邻消息之间制造色块边界, 反而打断阅读节奏。颜色用
+   * 前景色 var(--foreground) ── 比 --muted-foreground 对比度高,
+   * 鼠标移上去按钮文本"亮起来"的暗示清晰。 */
+  transition: color 150ms ease;
+}
+
+.comn-tiptap-editor .agent-thread-card__message-reasoning-header:hover {
+  color: var(--foreground);
+}
+
+.comn-tiptap-editor .agent-thread-card__message-reasoning-header svg {
+  display: block;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  color: currentColor;
+  transition: transform 150ms ease;
+}
+
+.comn-tiptap-editor .agent-thread-card__message-reasoning-body {
+  padding: 2px 0 4px 12px;
+  margin-left: 5px;
+  border-left: 1px solid var(--border);
+}
+
+.comn-tiptap-editor .agent-thread-card__message--reasoning-collapsed .agent-thread-card__message-reasoning-body {
+  display: none;
+}
+
+/* ── tool: 单行 flex: icon + 名称 + summary ─────────────────────
+ * 面板 message-tool 容器 = `w-full pr-1 py-1.5` 内部
+ *   `flex items-center gap-2`:
+ *     - ToolIcon (h-3.5 w-3.5 text-muted-foreground, 按 toolName 切换)
+ *     - 工具名 (text-sm text-agent-foreground) ── 走 formatToolName
+ *       做中英映射, e.g. read → 读取, bash → 执行命令
+ *     - summary (text-xs font-mono text-muted-foreground) ── pathLike 字段
+ *
+ * 卡片场景没有 React Phosphor, 改用内联 SVG 路径表 ── toolName → 图标
+ * key 映射与面板 lib/message/icons.ts 的 TOOL_ICONS 1:1, 视觉等价
+ * (同样 14×14 渲染, 同样 muted-foreground 颜色)。未命中 → Terminal。 */
+.comn-tiptap-editor .agent-thread-card__message--tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.comn-tiptap-editor .agent-thread-card__message-tool-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
+
+.comn-tiptap-editor .agent-thread-card__message-tool-name {
+  flex: 0 0 auto;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.comn-tiptap-editor .agent-thread-card__message-tool-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── end: 居中小字 + 时间戳 ────────────────────────────────────
+ * 面板 message-end = `text-xs text-[var(--muted-foreground)]
+ * text-center`, 内容或时间戳。卡片里 mt-2 让 end 消息与前一条
+ * 有视觉间距, 不与下一条 user/assistant "贴" 一起。 */
+.comn-tiptap-editor .agent-thread-card__message--end {
+  display: block;
+  margin: 4px 0;
+  text-align: center;
+}
+
+.comn-tiptap-editor .agent-thread-card__message--end .agent-thread-card__message-content {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ── 通用: role 标签 + 气泡文字 ────────────────────────────────
+ *
+ * __message-role 现在已不再使用 ── user/assistant 无 role 标签,
+ * reasoning 的 label 已经合并到 __message-reasoning-header button 里。
+ * 规则保留作 fallback (若以后加新 role 想用文字标签可复用)。
+ *
+ * reasoning 的标签用中文"思考中" / "思考完成", 还原面板 button 文字感 ──
+ * 不大写, 无字间距, 字号 12px, 字重 500 (与面板 button 的 text-sm
+ * + 默认字重视觉接近)。 */
+.comn-tiptap-editor .agent-thread-card__message-role {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.1;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* 消息正文容器 ── 现在内容是 marked 输出的 HTML 树, 不能再用
+ * white-space: pre-wrap (会把 <p> 节点当文本节点, 不再分段)。改成
+ * 默认 block 流式 + overflow-wrap: anywhere (替代 word-break:
+ * break-word, 语义更准), 字号 14px 与面板 message-assistant 节奏
+ * 接近。 */
+.comn-tiptap-editor .agent-thread-card__message-content {
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* reasoning 的正文用 muted-foreground + 13px, 与面板 reasoning
+ * 颜色一致。 */
+.comn-tiptap-editor .agent-thread-card__message--reasoning .agent-thread-card__message-content {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+/* end 角色的 content: 居中灰字 (保留在 .--end 修饰里)。 */
+.comn-tiptap-editor .agent-thread-card__message--end .agent-thread-card__message-content {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ── markdown 元素排版 ── 对齐面板 markdown-renderer WRAPPER_CLASS
+ * 子选择器 (面板走 Tailwind arbitrary variant, 卡片走原生 CSS 子选择器,
+ * 效果相同)。面板整体节奏 text-[0.82rem] / leading-[1.8] / mt-1.5,
+ * 卡片统一为 13px / 1.6 / mt-6px ── 比面板略紧凑, 让卡片小尺寸下
+ * 信息密度更合适。 */
+.comn-tiptap-editor .agent-thread-card__message-content > *:first-child {
+  margin-top: 0;
+}
+.comn-tiptap-editor .agent-thread-card__message-content > *:last-child {
+  margin-bottom: 0;
+}
+
+.comn-tiptap-editor .agent-thread-card__message-content p {
+  margin: 6px 0;
+  line-height: 1.6;
+}
+.comn-tiptap-editor .agent-thread-card__message-content h1,
+.comn-tiptap-editor .agent-thread-card__message-content h2,
+.comn-tiptap-editor .agent-thread-card__message-content h3,
+.comn-tiptap-editor .agent-thread-card__message-content h4 {
+  margin: 8px 0 4px;
+  color: var(--foreground);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.comn-tiptap-editor .agent-thread-card__message-content h1 { font-size: 15px; }
+.comn-tiptap-editor .agent-thread-card__message-content h2 { font-size: 14px; }
+.comn-tiptap-editor .agent-thread-card__message-content h3 { font-size: 13px; }
+.comn-tiptap-editor .agent-thread-card__message-content h4 { font-size: 13px; font-weight: 500; }
+
+.comn-tiptap-editor .agent-thread-card__message-content ul,
+.comn-tiptap-editor .agent-thread-card__message-content ol {
+  margin: 6px 0;
+  padding-left: 22px;
+  line-height: 1.6;
+}
+.comn-tiptap-editor .agent-thread-card__message-content ul { list-style: disc; }
+.comn-tiptap-editor .agent-thread-card__message-content ol { list-style: decimal; }
+.comn-tiptap-editor .agent-thread-card__message-content li { margin: 2px 0; }
+.comn-tiptap-editor .agent-thread-card__message-content li > p { margin: 2px 0; }
+
+.comn-tiptap-editor .agent-thread-card__message-content strong { font-weight: 600; }
+.comn-tiptap-editor .agent-thread-card__message-content em { font-style: italic; }
+.comn-tiptap-editor .agent-thread-card__message-content del { color: var(--muted-foreground); }
+
+/* 链接 ── 面板走 text-primary + hover:underline; 卡片用 var(--brand)
+ * + hover:underline。target=_blank / rel=noopener 在 marked 输出
+ * 不会自动加, 后续如需可注入属性 (此处保留基础样式)。 */
+.comn-tiptap-editor .agent-thread-card__message-content a {
+  color: var(--brand);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in oklch, var(--brand) 35%, transparent);
+}
+.comn-tiptap-editor .agent-thread-card__message-content a:hover {
+  border-bottom-color: var(--brand);
+}
+
+/* 引用块 ── 面板走 border-l-4 border-primary pl-4 italic
+ * text-muted-foreground, 卡片映射到 3px 左边框 + 12px 左 padding。 */
+.comn-tiptap-editor .agent-thread-card__message-content blockquote {
+  margin: 6px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--brand);
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+/* 分隔线 ── 面板 border-t 10% 透明; 卡片走 1px 透明分割。 */
+.comn-tiptap-editor .agent-thread-card__message-content hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid color-mix(in oklch, var(--muted-foreground) 12%, transparent);
+}
+
+/* 内联 code: 面板走 bg-[var(--code-bg)] px-1.5 rounded-md border
+ * border-border text-[0.78rem]; 卡片保持同节奏 (12px, muted 背景)。 */
+.comn-tiptap-editor .agent-thread-card__message-content code {
+  /* 行内 code: 对齐 .comn-tiptap-editor .tiptap p code 的视觉口径 —
+   * padding: 0 0.4rem / 0.4rem 圆角 / 0.78rem 字号 / var(--code-bg) 底色,
+   * 颜色与边框仍走 --foreground / --border token. */
+  padding: 0 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--code-bg);
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: 0.78rem;
+}
+
+/* fenced code 块 ── marked 输出 <pre><code class="language-x">,
+ * 我们重置 pre 自身的 padding/border (pre 是 code 的外层, 默认
+ * 已有 margin + 4px padding, 与内嵌 code 的边框重叠), 把所有
+ * 样式集中到 code 上。 */
+.comn-tiptap-editor .agent-thread-card__message-content pre {
+  margin: 8px 0;
+  padding: 0;
+  overflow-x: auto;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.comn-tiptap-editor .agent-thread-card__message-content pre code {
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  white-space: pre;
+}
+
+/* 表格 ── 面板走 min-w-full border-collapse + thead transparent +
+ * tr border-b + th/td px-3 py-2; 卡片同节奏。 */
+.comn-tiptap-editor .agent-thread-card__message-content table {
+  width: 100%;
+  margin: 8px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.comn-tiptap-editor .agent-thread-card__message-content thead {
+  background: transparent;
+}
+.comn-tiptap-editor .agent-thread-card__message-content tr {
+  border-bottom: 1px solid var(--border);
+}
+.comn-tiptap-editor .agent-thread-card__message-content tr:last-child {
+  border-bottom: 0;
+}
+.comn-tiptap-editor .agent-thread-card__message-content th,
+.comn-tiptap-editor .agent-thread-card__message-content td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: top;
+}
+
+.comn-tiptap-editor .agent-thread-card__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+/* error 提示块 ── 默认 hidden (DOM 写了 hidden 属性), 用 absolute
+ * 浮在 composer 之上, 不挤压 body 区域; 视觉上 error 与 composer
+ * 间距 6px, 高度由内容决定。折叠态在 .--collapsed 下用 display: none
+ * 进一步隐藏 (虽然 hidden 已隐, 双保险)。
+ *
+ * bottom 数值: composer 实际占位 = 8 (padding-top) + 28.8 (textarea)
+ * + 10 (padding-bottom) + 2 (border) + 6 (margin-bottom) = 54.8px ──
+ * 圆到 55, error 浮在 composer 顶 + 6px 间距 = bottom: 61px。 */
+.comn-tiptap-editor .agent-thread-card__error {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 61px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+  border-radius: 6px;
+  color: var(--destructive);
+  background: color-mix(in oklch, var(--destructive) 8%, transparent);
+  font-size: 12px;
+  z-index: 1;
+}
+
+/* composer 圆角胶囊容器 ── grid auto 行, 高度由内容决定 (auto 行
+ * 在子元素 display: none 时收缩到 0, 这是折叠态没有空白区块的关键)。
+ * 外层 max-height: --atc-composer-max-h (200px) 兜底封顶; 内部
+ * textarea 在 field-sizing: content 配合自身 max-height (= 外层
+ * max-height - padding-y) 下, 内容超出时走 overflow-y 内部滚动,
+ * composer 容器不被撑破。
+ *
+ * 多行状态由 .--multi-line 修饰类切到 flex-end (按钮贴底, 始终维持
+ * --atc-bottom-pad 距离)。类切换由 agent-thread-card.tsx 的 input 事件控制。 */
+.comn-tiptap-editor .agent-thread-card__composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+  width: calc(100% - 24px);
+  margin: 0 0.8rem 6px;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--background);
+  box-sizing: border-box;
+  max-height: 15rem;
+}
+
+.comn-tiptap-editor .agent-thread-card__composer--multi-line {
+  align-items: flex-end;
+}
+
+.comn-tiptap-editor .agent-thread-card__composer textarea {
+  display: block;
+  flex: 1 1 0;
+  /* 默认单行 1rem, line-height 1rem 视觉对齐; field-sizing: content
+   * 让 textarea 高度跟随内容增长 (Safari 17.4+ / Chrome 123+, Tauri
+   * WKWebView 已支持), 旧浏览器降级为 min-height 单行 + overflow-y
+   * 内部滚动。
+   *
+   * max-height = 外层 --atc-composer-max-h - padding-y (8 + --atc-bottom-pad
+   * = 18px) ── 让 textarea 的最大高度 = composer 内容区高度, 内容超出时
+   * 在 textarea 内部 overflow-y 滚动, composer 容器不被撑破。 */
+  min-height: 1rem;
+  line-height: 1rem;
+  max-height: calc(var(--atc-composer-max-h) - 8px - var(--atc-bottom-pad));
+  height: auto;
+  field-sizing: content;
+  resize: none;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--foreground);
+  padding: 0;
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+}
+
+.comn-tiptap-editor .agent-thread-card__composer textarea:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.comn-tiptap-editor .agent-thread-card__composer textarea::placeholder {
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}
+
+/* 发送按钮 ── 28×28 圆形, 内嵌 16×16 Phosphor 图标。
+ * 尺寸取自 --atc-send-size, 与 textarea min-height 公式联动。 */
+.comn-tiptap-editor .agent-thread-card__send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--atc-send-size);
+  height: var(--atc-send-size);
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 9999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  cursor: pointer;
+}
+
+.comn-tiptap-editor .agent-thread-card__send:hover {
+  background: color-mix(in oklch, var(--primary) 88%, var(--foreground) 12%);
+}
+
+.comn-tiptap-editor .agent-thread-card__send:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.comn-tiptap-editor .agent-thread-card__send-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.comn-tiptap-editor .agent-thread-card__send--stop {
+  background: var(--warning);
+  color: var(--floating-foreground);
+}
+
+.comn-tiptap-editor .agent-thread-card__send--stop:hover {
+  background: color-mix(in oklch, var(--warning) 88%, var(--foreground) 12%);
+}

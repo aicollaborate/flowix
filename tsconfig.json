@@ -20,6 +20,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["app/frontend"],
+  "include": ["app/flowix-web"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -17,8 +17,6 @@ dist-ssr
 
 # Rust / Tauri
 target/
-Cargo.lock
-app/backend/target
 
 # Editor directories and files
 .vscode/*
@@ -30,3 +28,7 @@ app/backend/target
 *.njsproj
 *.sln
 *.sw?
+
+# CLI sidecar 构建产物 (由 scripts/build-cli.sh 生成, 见 app/flowix-desktop/tauri.conf.json externalBin)
+app/flowix-desktop/binaries/flowix-cli-*
+!app/flowix-desktop/binaries/.gitkeep

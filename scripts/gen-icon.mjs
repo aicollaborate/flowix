@@ -1,11 +1,11 @@
-// Regenerates the desktop icon set from app/frontend/assets/product-logo.png.
+// Regenerates the desktop icon set from app/flowix-web/assets/product-logo.png.
 //
 // Run from repo root:
 //
 //     node scripts/gen-icon.mjs
 //
 // Shells out to `npx tauri icon` (output defaults to
-// `app/backend/icons/` next to tauri.conf.json). The CLI also writes
+// `app/flowix-desktop/icons/` next to tauri.conf.json). The CLI also writes
 // iOS / Android / Windows Store variants by default; this project
 // ships desktop only, so the script drops the mobile dirs afterwards.
 //
@@ -18,8 +18,8 @@ import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
-const backendDir = resolve(root, 'app/backend');
-const sourcePng = resolve(root, 'app/frontend/assets/product-logo.png');
+const backendDir = resolve(root, 'app/flowix-desktop');
+const sourcePng = resolve(root, 'app/flowix-web/assets/product-logo.png');
 const iconsDir = resolve(backendDir, 'icons');
 
 console.log(`source  ${sourcePng}`);
@@ -34,4 +34,4 @@ execSync(`npx tauri icon "${sourcePng}"`, {
 for (const sub of ['android', 'ios']) {
 	rmSync(resolve(iconsDir, sub), { recursive: true, force: true });
 }
-console.log('cleaned app/backend/icons/{android,ios}');
+console.log('cleaned app/flowix-desktop/icons/{android,ios}');
