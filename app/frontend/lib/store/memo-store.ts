@@ -176,8 +176,12 @@ export interface MemoStore {
   upsertMemo: (memo: MemoItem) => void;
   // Incremental memo update (avoids full reload)
   updateMemoMeta: (id: string, meta: Partial<Pick<MemoItem, 'updatedAt' | 'preview' | 'favorited'>>) => void;
-  // Sync memo metadata to DB (tags, todos, filename) + store update
-  syncMemoMeta: (id: string, meta: { filename?: string; preview?: string }, options?: { deferRename?: boolean }) => Promise<void>;
+  // 注: 历史上还有 `syncMemoMeta` 这个 store action, 它在 IPC 层就是把
+  // `filename` / `preview` 推给后端 `update_memo_db`。但编辑器的实际保存
+  // 路径是 `useDocumentAutosave` → `writeDocument` (IPC 写盘) →
+  // `useMemoMetadataSync.syncMemoMetadata` → 直接调 `updateMemoDb`, 整个
+  // 流程根本不走 store action。`syncMemoMeta` 仓内 0 调用方 ── 已删除,
+  // 避免后人误把它当成另一条保存路径。
   // Data loading
   loadMemos: (params?: { notebookId?: string; filter?: FilterType; sort?: SortType; tagId?: string }) => Promise<void>;
   loadNotebooks: () => Promise<void>;
@@ -241,23 +245,6 @@ export const useMemoStore = create<MemoStore>()(
             ? { ...state.selectedMemo, ...nextMeta }
             : state.selectedMemo,
         }));
-      },
-
-      syncMemoMeta: async (id, meta, options) => {
-        const nextMeta = omitUndefined(meta);
-        // Update store immediately for responsiveness
-        set((state) => ({
-          memos: state.memos.map((m) => m.id === id ? { ...m, ...nextMeta } : m),
-          selectedMemo: state.selectedMemo?.id === id
-            ? { ...state.selectedMemo, ...nextMeta }
-            : state.selectedMemo,
-        }));
-        // Async DB update
-        await memos.updateMemoDb(id, meta.filename, undefined, meta.preview, options?.deferRename);
-        const latestMemo = await memos.readMemo(id);
-        if (latestMemo) {
-          get().upsertMemo(latestMemo as MemoItem);
-        }
       },
 
       loadMemos: async (params) => {
