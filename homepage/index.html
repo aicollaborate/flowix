@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flowix — 用 Markdown 管理 AI 工作</title>
+  <meta name="description" content="Flowix 是一款本地优先 Markdown 笔记应用。用它启动 Agent、Codex、Claude，AI 在你的上下文里接着写。" />
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230a0a0a'/><text x='16' y='22' text-anchor='middle' font-family='system-ui' font-size='18' font-weight='600' fill='%23fafaf7'>F</text></svg>" />
+  <style>
+    :root {
+      --bg: oklch(1 0 0);
+      --bg-soft: oklch(0.969 0.003 255);
+      --text: oklch(0.215 0.038 255);
+      --text-soft: oklch(0.278 0.030 255);
+      --text-muted: oklch(0.613 0.018 255);
+      --border: oklch(0.928 0.006 255);
+      --border-strong: oklch(0.87 0.008 255);
+      --brand: oklch(0.552 0.185 273);
+      --brand-hover: oklch(0.48 0.185 273);
+      --brand-fg: oklch(1 0 0);
+      --link: oklch(0.45 0.18 273);
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", system-ui, "Helvetica Neue", Arial, "Public Sans", sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+      letter-spacing: 0.005em;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+
+    a {
+      color: var(--link);
+      text-decoration: none;
+      border-bottom: 1px solid var(--border);
+      transition: border-color 0.15s ease, color 0.15s ease;
+    }
+    a:hover { border-bottom-color: var(--link); }
+    a.bare { border: none; }
+
+    code, pre, kbd {
+      font-family: "SF Mono", "Menlo", "Monaco", "Consolas", "Liberation Mono", monospace;
+      font-size: 0.9em;
+    }
+
+    code {
+      background: var(--bg-soft);
+      padding: 0.15em 0.4em;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+    }
+    pre {
+      background: var(--bg-soft);
+      padding: 1rem 1.25rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      line-height: 1.55;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      border: none;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+    .container-wide {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    /* Header */
+    header {
+      padding: 1.25rem 0;
+    }
+    header .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .wordmark {
+      font-weight: 600;
+      font-size: 1.05rem;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+    .wordmark .dot { color: var(--text-muted); }
+    .nav-links { display: flex; gap: 1.5rem; font-size: 0.9rem; }
+    .nav-links a {
+      color: var(--text-soft);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .nav-links a svg { display: block; }
+    .nav-links a:hover { color: var(--text); }
+
+    /* Hero */
+    .hero {
+      padding: 7rem 0 2rem;
+      border-top: none;
+    }
+    .hero h1 {
+      font-size: clamp(2.25rem, 5.5vw, 3.5rem);
+      font-weight: 600;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin: 0 0 1.5rem;
+    }
+    .hero .lede {
+      font-size: 1.1rem;
+      color: var(--text-soft);
+      margin: 0 0 2.5rem;
+      max-width: 36em;
+    }
+    .hero .ctas {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-bottom: 1.5rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.6rem 1.1rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      border: 1px solid var(--border-strong);
+      background: var(--bg);
+      color: var(--text);
+      transition: all 0.15s ease;
+    }
+    .btn:hover { border-color: var(--text); }
+    .btn-primary {
+      background: var(--brand);
+      color: var(--brand-fg);
+      border-color: var(--brand);
+      border-radius: 12px;
+    }
+    .btn-primary:hover {
+      background: var(--brand-hover);
+      border-color: var(--brand-hover);
+      color: var(--brand-fg);
+    }
+    .hero .meta {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin: 0;
+    }
+
+    /* Generic sections */
+    section {
+      padding: 4rem 0;
+      border-top: 1px solid var(--border);
+    }
+    .eyebrow {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin: 0 0 1.75rem;
+    }
+    .prose { max-width: 720px; }
+    .prose p { margin: 0 0 1rem; }
+    .prose p:last-child { margin-bottom: 0; }
+
+    /* Features grid */
+    .features {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+    @media (min-width: 640px) {
+      .features { grid-template-columns: 1fr 1fr; gap: 2rem 3rem; }
+    }
+    .feature h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0 0 0.4rem;
+      letter-spacing: -0.01em;
+    }
+    .feature p {
+      color: var(--text-soft);
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    /* Audience split */
+    .audience {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2.5rem;
+    }
+    @media (min-width: 640px) {
+      .audience { grid-template-columns: 1fr 1fr; gap: 3rem; }
+    }
+    .audience-col h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 0 0 1rem;
+    }
+    .audience-col ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .audience-col li {
+      padding: 0.65rem 0;
+      border-top: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+    .audience-col li:last-child { border-bottom: 1px solid var(--border); }
+    .audience-col .not { color: var(--text-soft); }
+
+    /* Theme previews */
+    .theme-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .theme-tab {
+      background: none;
+      border: none;
+      padding: 0.4rem 0.2rem;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.15s ease, border-color 0.15s ease;
+    }
+    .theme-tab:hover { color: var(--text-soft); }
+    .theme-tab.active {
+      color: var(--text);
+      border-bottom-color: var(--text);
+    }
+    .theme-tab:focus-visible {
+      outline: 2px solid var(--brand);
+      outline-offset: 4px;
+      border-radius: 2px;
+    }
+    .theme-stage {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--bg-soft);
+    }
+    .theme-image {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .theme-image[hidden] { display: none; }
+
+    /* AI capability cards */
+    .ai-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+    @media (min-width: 640px) {
+      .ai-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+    .ai-item {
+      padding: 0.9rem 1rem;
+      background: var(--bg-soft);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .ai-item .label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+    .ai-item .desc { font-size: 0.9rem; color: var(--text); line-height: 1.45; }
+
+    /* Install */
+    .install pre { margin: 1rem 0 1.25rem; }
+    .install p { font-size: 0.9rem; color: var(--text-soft); margin: 0 0 0.4rem; }
+
+    /* Footer */
+    footer {
+      padding: 2.5rem 0;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    footer .container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    footer a { color: var(--text-soft); }
+    footer a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="container">
+      <a href="/" class="wordmark bare">Flowix Memo</a>
+      <nav class="nav-links">
+        <a href="https://github.com/aicollaborate/flowix" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          <span>GitHub</span>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <h1>用 Markdown 管理 AI 工作。</h1>
+        <p class="lede">本地优先的 Markdown 笔记，写得顺手。用它启动 Agent、Codex、Claude——写 prompt、列需求、编规范、画工作流，AI 在你的上下文里接着写。</p>
+        <div class="ctas">
+          <a href="https://github.com/aicollaborate/flowix" target="_blank" rel="noopener" class="btn btn-primary bare">立即下载</a>
+          <a href="#install" class="btn bare">更多平台</a>
+        </div>
+        <p class="meta">macOS / Windows / 免账号</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="container-wide">
+        <div class="theme-tabs" role="tablist" aria-label="主题切换">
+          <button class="theme-tab active" data-theme="light" role="tab" aria-selected="true">浅色</button>
+          <button class="theme-tab" data-theme="dark" role="tab" aria-selected="false">深色</button>
+          <button class="theme-tab" data-theme="rock" role="tab" aria-selected="false">岩灰</button>
+        </div>
+        <div class="theme-stage">
+          <img class="theme-image" data-theme="light" src="theme-light.jpg" alt="浅色主题截图" decoding="async" />
+          <img class="theme-image" data-theme="dark" src="theme-dark.jpg" alt="深色主题截图" hidden decoding="async" />
+          <img class="theme-image" data-theme="rock" src="theme-rock.jpg" alt="岩灰主题截图" hidden decoding="async" />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <p class="eyebrow">适合谁 &middot; 不适合谁</p>
+        <div class="audience">
+          <div class="audience-col">
+            <h3>适合你，如果&hellip;</h3>
+            <ul>
+              <li>想让 AI 接着你的笔记写，而不是从零开始</li>
+              <li>在 Markdown 里写 prompt、需求、规范、工作流</li>
+              <li>用笔记启动 Agent、Codex、Claude 让它们接着干</li>
+              <li>重视数据主权，文件能直接打开</li>
+            </ul>
+          </div>
+          <div class="audience-col">
+            <h3>不适合你，如果你需要&hellip;</h3>
+            <ul>
+              <li class="not">只需要简单记事（系统便签就够了）</li>
+              <li class="not">团队协作 / 多人同步</li>
+              <li class="not">双链 / 知识图谱</li>
+              <li class="not">离不开插件生态</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <p class="eyebrow">AI 真的会干活</p>
+        <div class="prose">
+          <p>大多数笔记应用只挂个聊天侧栏——AI 看不到你的上下文，答完就忘。Flowix 的 AI 是真正的代理：它读你的笔记、写你的笔记、搜索文件、调用工具，每一步都看得见，也能随时叫停。</p>
+        </div>
+        <div class="ai-grid">
+          <div class="ai-item">
+            <div class="label">工具调用</div>
+            <div class="desc">读写笔记、搜索文件</div>
+          </div>
+          <div class="ai-item">
+            <div class="label">可观测</div>
+            <div class="desc">实时看到代理的思考过程</div>
+          </div>
+          <div class="ai-item">
+            <div class="label">流式响应</div>
+            <div class="desc">边想边写，不让你干等</div>
+          </div>
+          <div class="ai-item">
+            <div class="label">模型自选</div>
+            <div class="desc">OpenAI &middot; Anthropic &middot; DeepSeek</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <p class="eyebrow">四件用笔记能做的事</p>
+        <div class="features">
+          <div class="feature">
+            <h3>写 prompt</h3>
+            <p>写在笔记里，发给 Agent、Codex、Claude 直接用。</p>
+          </div>
+          <div class="feature">
+            <h3>列需求</h3>
+            <p>需求清单就是 Markdown，AI 接着往下做。</p>
+          </div>
+          <div class="feature">
+            <h3>编规范</h3>
+            <p>规范写在笔记里，团队和 AI 都照着执行。</p>
+          </div>
+          <div class="feature">
+            <h3>画工作流</h3>
+            <p>把步骤画在笔记里，AI 按图执行。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <p class="eyebrow">数据留在你的硬盘上</p>
+        <div class="prose">
+          <p>一切都在本地。笔记是硬盘上的 Markdown + YAML 文件，纯文本，任何编辑器都能打开。配置是本地的 JSON 文件。整个数据目录就是一个普通文件夹，打包就能带走到任何机器。</p>
+          <p>写下的任何一篇笔记，都能直接交给 Codex、Claude 或别的 Agent 当上下文读。不用导出、不用转换、不用复制粘贴——因为就是纯文本。</p>
+          <p>没有云端。没有遥测。没有分析。AI 在本地读你的文件、写你的文件——只有你按了发送键的那一丁点 prompt 才会离开本机。源码以 <a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener">CC BY-NC 4.0</a> 协议开源——每一行都能读。</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="install" class="install">
+      <div class="container">
+        <p class="eyebrow">快速开始</p>
+        <pre><code>git clone https://github.com/aicollaborate/flowix.git
+cd flowix
+npm install
+npm run tauri dev</code></pre>
+        <p>环境要求：Node.js 20+、Rust 1.75+、macOS 14+ 或 Windows 10+。</p>
+        <p>生产构建：<code>npm run tauri build</code></p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <div>Flowix &middot; 用 Markdown 管理 AI 工作</div>
+      <div>
+        <a href="https://github.com/aicollaborate/flowix" target="_blank" rel="noopener" class="bare">GitHub</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function() {
+      var tabs = document.querySelectorAll('.theme-tab');
+      var images = document.querySelectorAll('.theme-image');
+
+      function activate(tab) {
+        tabs.forEach(function(t) {
+          var isActive = t === tab;
+          t.classList.toggle('active', isActive);
+          t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+        images.forEach(function(img) {
+          img.hidden = img.dataset.theme !== tab.dataset.theme;
+        });
+      }
+
+      tabs.forEach(function(tab, i) {
+        tab.addEventListener('click', function() { activate(tab); });
+        tab.addEventListener('keydown', function(e) {
+          if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            var dir = e.key === 'ArrowRight' ? 1 : -1;
+            var next = tabs[(i + dir + tabs.length) % tabs.length];
+            next.focus();
+            activate(next);
+          }
+        });
+      });
+    })();
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,585 @@
+/* Tiptap Editor — Markdown Styles */
+@import "highlight.js/styles/github-dark.css";
+
+.comn-tiptap-editor {
+  display: block;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+}
+
+.comn-tiptap-editor .editor-content {
+  position: relative;
+  box-sizing: border-box;
+  height: 100%;
+  overflow-y: auto;
+  /* 固定滚动条 gutter 宽度, 避免 ProseMirror 内容区在滚动条出现/隐藏时抖动 */
+  scrollbar-gutter: stable;
+}
+
+.comn-tiptap-editor .ProseMirror {
+  display: block;
+  width: 100%;
+  min-height: 100%;
+  max-width: var(--app-document-width, 680px);
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 0 2.5rem 10rem 2.5rem;
+  outline: none;
+  font-family: var(--app-font-family, 'Nunito Sans', 'Inter', -apple-system, 'Segoe UI', sans-serif, BlinkMacSystemFont);
+  font-size: var(--app-font-size, 15px);
+  line-height: var(--app-line-height, 1.6);
+  color: var(--document-foreground);
+  background: transparent !important;
+  caret-color: var(--brand);
+  cursor: text;
+
+  /* 让标题 rem 值跟随用户设定的基准字号 */
+  --editor-scale: calc(var(--app-font-size, 15px) / 16px);
+}
+
+.comn-tiptap-editor:focus .ProseMirror {
+  outline: none;
+}
+
+.comn-tiptap-editor .ProseMirror > *:not(.tiptap-datetime-widget):first-of-type {
+  margin-top: 0.5rem;
+}
+
+.comn-tiptap-editor .tiptap h1,
+.comn-tiptap-editor .tiptap h2,
+.comn-tiptap-editor .tiptap h3,
+.comn-tiptap-editor .tiptap h4,
+.comn-tiptap-editor .tiptap h5,
+.comn-tiptap-editor .tiptap h6 {
+  margin: 1.5rem 0 0.5rem 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.comn-tiptap-editor .tiptap h1 {
+  font-size: calc(1.9rem * var(--editor-scale));
+  padding-bottom: calc(0.3rem * var(--editor-scale));
+  color: var(--brand);
+}
+
+.comn-tiptap-editor .tiptap h2 {
+  font-size: calc(1.4rem * var(--editor-scale));
+}
+
+.comn-tiptap-editor .tiptap h3 {
+  font-size: calc(1.15rem * var(--editor-scale));
+}
+
+.comn-tiptap-editor .tiptap h4 {
+  font-size: calc(1.05rem * var(--editor-scale));
+}
+
+/* 行高相关公式统一走 var(--app-font-size) × var(--app-line-height):
+ *  - 用 1rem 是错的 — 那是根 html 字号 (16px), 跟 --app-font-size (15px) 脱节,
+ *    用户在 Preferences 改字号时 p 的下边距 / 空 p 的 min-height 不会跟着缩放。
+ *  - 三处共享同一基线 → 空 p / 非空 p / 单 item 列表行盒等高 (24px),
+ *    下边距也等宽 (12px), 互相对齐。 */
+
+.comn-tiptap-editor .tiptap p {
+  /* 半行 box, 作为块间节奏 */
+  margin: 0 0 calc(var(--app-font-size, 15px) * var(--app-line-height, 1.6) * 0.5) 0;
+}
+
+.comn-tiptap-editor .tiptap p:empty,
+.comn-tiptap-editor .tiptap p:has(> br.ProseMirror-trailingBreak:only-child) {
+  /* 1 行 box, 与非空 <p> 等高 */
+  min-height: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.6));
+}
+
+.comn-tiptap-editor .tiptap p:empty::before {
+  content: "\00a0";
+}
+
+.comn-tiptap-editor .tiptap strong {
+  font-weight: 700;
+}
+
+.comn-tiptap-editor .tiptap em {
+  font-style: italic;
+  font-weight: 300;
+}
+
+.comn-tiptap-editor .tiptap p code {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0rem 0.4rem;
+  font-family: inherit;
+  font-size: 0.78rem;
+}
+
+.comn-tiptap-editor .tiptap pre  {
+  background: var(--code-block-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem 1rem;
+  margin: 1rem 0;
+  font-family: inherit;
+  /* em: 跟随父级段落字号 */
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: visible;
+  line-height: var(--app-line-height, 1.6);
+}
+
+.comn-tiptap-editor .tiptap pre code {
+  padding: 0;
+}
+
+
+.comn-tiptap-editor .tiptap blockquote {
+  border-left: 0.1875rem solid #ddd;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  color: #666;
+  font-style: italic;
+}
+
+.comn-tiptap-editor .tiptap ul,
+.comn-tiptap-editor .tiptap ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.comn-tiptap-editor .tiptap li {
+  margin: 0.25rem 0;
+  line-height: var(--app-line-height, 1.6);
+}
+
+/* 单 item 列表: 收掉 ul/ol + li 的多余 margin, 与单行 <p> 等高 (36px)。
+ *  ul/li margin 在 ul 无 padding/border 时穿过父级合并, 单 item 场景下
+ *  合并为 8 + 24 + 8 = 40px, 比 <p> 的 0 + 24 + 12 = 36px 高 4px,
+ *  上下不对称 (上 +8 / 下 -4) → 视觉上"下面内容向上偏移"。
+ *  多 item 列表不受影响, 仍保留原本的项间/段间节奏。
+ *  仅作用于 .tiptap 直接子列表 — 嵌套在 <li> 内的二级及更深列表维持
+ *  正常的 0.5rem / 0.25rem 节奏, 不被压缩。 */
+.comn-tiptap-editor .tiptap > ul:has(> li:only-child),
+.comn-tiptap-editor .tiptap > ol:has(> li:only-child) {
+  margin-top: 0;
+  margin-bottom: calc(var(--app-font-size, 15px) * var(--app-line-height, 1.6) * 0.5);
+}
+
+.comn-tiptap-editor .tiptap > ul > li:only-child,
+.comn-tiptap-editor .tiptap > ol > li:only-child {
+  margin: 0;
+}
+
+.comn-tiptap-editor .tiptap table td p,
+.comn-tiptap-editor .tiptap table th p {
+  margin-bottom: 0;
+}
+
+.comn-tiptap-editor .tiptap li p {
+  margin: 0;
+}
+
+.comn-tiptap-editor .tiptap ul {
+  list-style-type: disc;
+}
+
+.comn-tiptap-editor .tiptap ul ul {
+  list-style-type: circle;
+}
+
+.comn-tiptap-editor .tiptap mark {
+  background-color: var(--document-highlight-bg);
+  /* 文字色继承 document-foreground, 不另设 token */
+  border-radius: 0.15rem;
+  padding: 0.1rem 0.2rem;
+}
+
+.comn-tiptap-editor .tiptap table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: auto;
+  width: 100%;
+  min-width: 60px;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+}
+
+.comn-tiptap-editor .tiptap table td,
+.comn-tiptap-editor .tiptap table th {
+  border: 1px solid var(--border);
+  border-top: none;
+  border-left: none;
+  padding: 0.5rem;
+  min-width: 60px;
+  max-width: 600px;
+  width: auto;
+  vertical-align: top;
+}
+
+.comn-tiptap-editor .tiptap table th {
+  background: var(--muted);
+  font-weight: 600;
+  text-align: left;
+}
+
+.comn-tiptap-editor .tiptap table tr td:first-child,
+.comn-tiptap-editor .tiptap table tr th:first-child {
+  border-left: 1px solid var(--border);
+}
+
+.comn-tiptap-editor .tiptap table tr:first-child td,
+.comn-tiptap-editor .tiptap table tr:first-child th {
+  border-top: 1px solid var(--border);
+}
+
+.comn-tiptap-editor .tiptap table tr:first-child th:first-child {
+  border-top-left-radius: 8px;
+}
+
+.comn-tiptap-editor .tiptap table tr:first-child th:last-child {
+  border-top-right-radius: 8px;
+}
+
+.comn-tiptap-editor .tiptap table tr:last-child td:first-child {
+  border-bottom-left-radius: 8px;
+}
+
+.comn-tiptap-editor .tiptap table tr:last-child td:last-child {
+  border-bottom-right-radius: 8px;
+}
+
+.comn-tiptap-editor .tiptap .selectedCell {
+  background-color: rgba(82, 98, 220, 0.15) !important;
+}
+
+/* prosemirror-tables 为列中每个 cell 插入一个 .column-resize-handle widget,
+ * 默认在离列边 ~5px 时显示; 由于同一列所有 cell 共用右边线, 这些 widget
+ * 像素对齐, 视觉上形成一条连续竖线。这里把默认态设为可见, 让用户靠近列边
+ * 时整条边即高亮, 不必等直接 hover。 */
+.comn-tiptap-editor .tiptap .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  cursor: col-resize !important;
+  background: #5262DC;
+  opacity: 0.8;
+  z-index: 10;
+  pointer-events: auto !important;
+}
+
+/* prosemirror-tables 在鼠标进入列边检测区时给 editor 根节点加 `resize-cursor`。
+ * 默认 cursor 规则来自 prosemirror-tables/style/tables.css, 但本项目未引入,
+ * 故在此声明, 让整个编辑器区域(而非仅 2px handle)在靠近列边时都显示调整光标。 */
+.comn-tiptap-editor .tiptap.resize-cursor,
+.comn-tiptap-editor .tiptap.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+/* prosemirror-tables 在拖拽期间会给 cell 加 `column-resize-dragging` 装饰类;
+ * 故意不样式化 — 列边高亮由 .column-resize-handle widget 自身形成连续线。 */
+
+.comn-tiptap-editor .tiptap .tableWrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+  position: relative;
+  display: block;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* relative 定位: 作为 column-resize-handle 的定位上下文 */
+.comn-tiptap-editor .tiptap table td,
+.comn-tiptap-editor .tiptap table th {
+  position: relative;
+}
+
+.comn-tiptap-editor .tiptap ul li::marker {
+  color: var(--brand);
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  /* margin-top: 3px 之前用来把 checkbox 视觉下移对齐文字 baseline,
+   * 但在 flex 容器里 margin 会进 outer size, 给 <li> 多撑 3px。
+   * 现在用 input 上的 transform: translateY(3px) 替代, 视觉一致,
+   * 但 transform 不参与 box model, 不会撑高 <li>。 */
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li > label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  appearance: none;
+  background-color: transparent;
+  border: 1px solid var(--brand);
+  border-radius: 6px;
+  position: relative;
+  transform: translateY(3px);
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li > label input[type="checkbox"]:checked {
+  background-color: transparent;
+  border-color: #999;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #999;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li > div {
+  flex: 1;
+}
+
+/* text-decoration 是可继承属性，原本写在 > div 上会经由继承作用到嵌套的
+ * 子 todo，所以选择器要限定到本级文本所在的 <p>，避免子级被划线。 */
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li[data-checked="true"] > div > p {
+  text-decoration: line-through;
+  color: #999;
+}
+
+/* todo 切到已完成态时, 标签底色跟着文本一起走灰, 视觉上"这条 todo 已经
+ * 收尾, 标签也一并沉寂"。复用与文本同色的 #999, 保持和上方 li > p 的
+ * color 一致 — 改 li 文字色时这里要同步。 */
+.comn-tiptap-editor .tiptap ul[data-type="taskList"] li[data-checked="true"] .tag-node {
+  background: #999;
+}
+
+.comn-tiptap-editor .tiptap ol {
+  list-style-type: decimal;
+}
+
+.comn-tiptap-editor .tiptap ol li::marker {
+  color: var(--brand);
+}
+
+.comn-tiptap-editor .tiptap img {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+
+.comn-tiptap-editor .tiptap img.error {
+  border: 1px dashed var(--muted-foreground);
+  border-radius: 8px;
+  opacity: 1 !important;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-link-selection-highlight {
+  /* 链接选区高亮: 与 .is-block-selected 同思路, 用 --brand 派生透明底,
+   * 在三套主题 (light / dark / rock) 下都能融入品牌色相, 避免硬编码 indigo. */
+  background: color-mix(in oklch, var(--brand) 18%, transparent);
+  border-radius: 2px;
+}
+
+
+.comn-tiptap-editor .tiptap hr {
+  border: none;
+  border-top: 0.0625rem solid var(--divider);
+  margin: 1rem 0 2rem 0;
+}
+
+.comn-tiptap-editor .tag-node {
+  color: var(--primary-foreground);
+  font-weight: 400;
+  font-size: 0.78rem;
+  cursor: pointer;
+  background: var(--document-tag-bg);
+  border-radius: 8px;
+  line-height: 1.2;
+  padding: 2px 6px;
+  caret-color: var(--primary-foreground);
+}
+
+.comn-tiptap-editor .tag-node:hover {
+  /* hover = 底色与 brand 强调色轻混, 往 indigo 偏一档 */
+  background: color-mix(in oklch, var(--document-tag-bg) 70%, var(--brand) 30%);
+}
+
+.comn-tiptap-editor .tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: #aaa;
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* 块级选中态: 由 drag context menu 在用户点击 handle 后切换, 用来指示
+ * 浮动菜单的 transform / delete 操作作用于哪一段。柔背景 + 圆角 + 左侧
+ * 强调色, 视觉上读作"行指示", 不抢文本。
+ * transition 只动画会被改动的属性, 避免影响光标闪烁等 ProseMirror 内部更新。 */
+.comn-tiptap-editor .ProseMirror .is-block-selected {
+  position: relative;
+  background-color: color-mix(in oklch, var(--brand) 6%, transparent);
+  border-radius: 6px;
+  box-shadow: inset 3px 0 0 0 var(--brand);
+  transition:
+    background-color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+
+.comn-tiptap-editor .ProseMirror .is-block-selected:hover {
+  background-color: color-mix(in oklch, var(--brand) 10%, transparent);
+}
+
+/* 节点级选中 (image / videoAttachment / fileAttachment 等
+ * atom 节点被 NodeSelection 选中时): 用品牌色 outline 替代 Tiptap 默认
+ * 的浅蓝 #8cf, 与 .is-block-selected 左侧描边、::selection 文字底色共
+ * 同收口到 var(--brand), 三主题下视觉一致。 */
+.comn-tiptap-editor .ProseMirror .ProseMirror-selectednode {
+  /* outline: 2px solid var(--brand);
+  outline-offset: 2px; */
+  border-radius: 6px;
+  /* border: none; */
+  outline: none;
+  transition: outline-color 120ms ease-out;
+}
+
+/* 编辑器内文本选区: 比全局 ::selection 更显眼, 配合块高亮读作"这段
+ * 文字被选中了"。限定在 .comn-tiptap-editor 内, 避免影响侧栏 / 输入
+ * 框等非编辑区域的选区色。 */
+.comn-tiptap-editor .ProseMirror ::selection {
+  background: color-mix(in oklch, var(--brand) 26%, transparent) !important;
+  color: inherit !important;
+}
+
+/* 工具栏容器: 始终位于编辑器底部, 可见性由 collapsed 状态决定
+ * (而非 focus 状态)。不再使用 opacity/visibility/pointer-events 的隐式
+ * 切换 —— 这避免了在折叠/展开切换时与子元素 (toolbar-content /
+ * toolbar-expand-handle) 之间的层叠上下文冲突。 */
+.comn-tiptap-toolbar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding: 1px 0;
+  z-index: 100;
+}
+
+.comn-tiptap-toolbar .toolbar-content {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* 表面色: 用 --card 充当浮层底, 与编辑器/侧栏面板保持一致的"卡片"语义 */
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  /* 阴影: 各方向均匀扩散, 不带方向偏置; 外圈柔光 + 内圈贴近的薄环,
+   * 让工具条在 3 套主题下都像"漂"在编辑器之上, 而非"压"在底面上。
+   * 透明度较初版减半 (6%→3% / 14%→7%), 进一步弱化, 避免压重视觉。 */
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--foreground) 3%, transparent),
+    0 0 14px color-mix(in oklch, var(--foreground) 7%, transparent);
+  padding: 4px 8px;
+}
+
+/* 折叠态的展开按钮 — 与 toolbar-content 共用卡片语义, 但去掉多按钮布局
+ * 所需的 gap / padding-x, 收敛为一个紧凑的 chip 形态, 减少视觉重量。 */
+.comn-tiptap-toolbar .toolbar-expand-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  /* 与 .toolbar-content 同步: 阴影透明度较初版减半 (6%→3% / 14%→7%) */
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--foreground) 3%, transparent),
+    0 0 14px color-mix(in oklch, var(--foreground) 7%, transparent);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.comn-tiptap-toolbar .toolbar-expand-handle:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+/* 时间戳行: 不可编辑, 随编辑器滚动 */
+.comn-tiptap-editor .timestamp-row {
+  font-size: 0.75rem;
+  color: #999;
+  padding: 0.5rem 0;
+  pointer-events: none;
+  user-select: none;
+  background: transparent;
+}
+
+.comn-tiptap-toolbar .toolbar-item-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.comn-tiptap-toolbar .toolbar-button {
+  padding: 6px 6px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  transition: background-color 0.15s ease, color 0.15s ease;
+  min-width: 28px;
+  text-align: center;
+}
+
+.comn-tiptap-toolbar .toolbar-button:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.comn-tiptap-toolbar .toolbar-button.active {
+  /* 激活态: 用 --brand 派生浅底 + 品牌色文字, 避免硬编码的紫蓝 */
+  background: color-mix(in oklch, var(--brand) 12%, transparent);
+  color: var(--brand);
+}
+
+.comn-tiptap-toolbar .toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--divider);
+  margin: 0 4px;
+}
+
+
+
+
+.comn-tiptap-editor .ProseMirror .search-result {
+  background-color: rgba(255, 213, 79, 0.4);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.comn-tiptap-editor .ProseMirror .search-result-current {
+  background-color: rgba(255, 193, 7, 0.6);
+  outline: 1px solid rgba(255, 152, 0, 0.8);
+}
+
+

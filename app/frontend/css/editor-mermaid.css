@@ -1,0 +1,107 @@
+.comn-tiptap-editor .mermaid-diagram-wrapper {
+  position: relative;
+  margin: 1rem 0;
+  border-radius: 0.5rem;
+  border: 1px solid #e5e7ebe2;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.comn-tiptap-editor .mermaid-svg-container {
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.comn-tiptap-editor .mermaid-svg-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.comn-tiptap-editor .mermaid-toolbar {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 4px;
+  z-index: 10;
+}
+
+.comn-tiptap-editor .mermaid-edit-btn,
+.comn-tiptap-editor .mermaid-view-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.comn-tiptap-editor .mermaid-edit-btn:hover,
+.comn-tiptap-editor .mermaid-view-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.comn-tiptap-editor .mermaid-loading {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.comn-tiptap-editor .mermaid-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 1rem;
+  margin: 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 0.5rem;
+  color: #dc2626;
+  font-size: 0.85rem;
+}
+
+.comn-tiptap-editor .mermaid-error-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #fff;
+  font-weight: bold;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.comn-tiptap-editor .mermaid-editor {
+  width: 100%;
+  min-height: 120px;
+  padding: 1rem;
+  font-family: 'SF Mono', 'Menlo', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border: none;
+  background: #ffffff;
+  color: #1f2937;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.comn-tiptap-editor .mermaid-editor:focus {
+  outline: none;
+}
+
+.comn-tiptap-editor .mermaid-diagram-wrapper.mermaid-editing {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}

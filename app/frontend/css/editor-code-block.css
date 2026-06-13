@@ -1,0 +1,93 @@
+.code-block-wrapper {
+  position: relative;
+  display: block;
+  background: transparent;
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+  position: relative;
+  z-index: 10;
+}
+
+.code-block-language-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0 0.5rem;
+  background: transparent;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: #666;
+  position: relative;
+}
+
+.code-block-language-selector:hover {
+  color: #949292;
+}
+
+.code-block-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  color: #888;
+}
+
+.code-block-copy-btn:hover {
+  background: #eee;
+  color: #333;
+}
+
+.code-block-language-dropdown {
+  position: absolute;
+  top: 36px !important;
+  left: 16px !important;
+  z-index: 100;
+  min-width: 120px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d0d0d0;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 0.25rem;
+}
+
+.code-block-language-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 0.8rem;
+  color: #333;
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: 0.5rem !important;
+}
+
+.code-block-language-dropdown-item:hover {
+  background: #f0f0f0;
+}
+
+.code-block-language-dropdown-item.active {
+  background: #e6e6e6;
+  font-weight: 500;
+}
+
+.code-block-copy-btn.copied {
+  color: #22c55e;
+  border-color: #22c55e;
+}

@@ -1,0 +1,74 @@
+/* Source Editor (Monaco) — 样式 */
+
+.srceditor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.srceditor-toolbar {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.srceditor-toolbar button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.srceditor-toolbar button:hover {
+  background: var(--hover);
+  color: var(--foreground);
+}
+
+.srceditor-toolbar button.active {
+  background: var(--active-bg);
+  color: var(--active-color);
+}
+
+.srceditor-editor {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.srceditor .monaco-editor {
+  padding-top: 0;
+  max-width: 100%;
+}
+
+/* 去掉 Monaco 顶部的内阴影, 与无边框编辑器风格一致 */
+.srceditor-editor .monaco-editor .scroll-decoration {
+  box-shadow: none;
+}
+
+.srceditor-editor .monaco-editor .line-numbers {
+  opacity: 0.3 !important;
+}
+.srceditor-editor .monaco-editor,
+.srceditor-editor .monaco-editor-background,
+.srceditor-editor .monaco-editor .margin,
+.srceditor-editor .monaco-scrollable-element {
+  background: transparent !important;
+}

@@ -1,0 +1,207 @@
+/* Tiptap 附件 & 文档内链接样式
+ *
+ * 覆盖以下四类视觉, 它们共享 --document-link token 设计:
+ *   - 视频附件  (.tiptap-video-attachment)
+ *   - 文件附件  (.tiptap-file-attachment)
+ *   - 图片附件  (.tiptap-image-attachment)
+ *   - 上传卡片  (.tiptap-upload-file*)
+ *   - 正文链接  (.tiptap a, .tiptap a:hover)
+ */
+
+
+.comn-tiptap-editor .tiptap .tiptap-video-attachment {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-video-attachment.is-selected {
+  outline: 1px solid #5262DC;
+  outline-offset: 0px;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-video-attachment video {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment {
+  display: inline;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__card {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 0.9em;
+  vertical-align: baseline;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__card:hover {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__card:hover .tiptap-file-attachment__name {
+  /* 与正文链接 hover 走同一条派生公式 (color-mix --document-link × white 20%),
+   * 保证附件卡片的 "可点击" 视觉权重和正文 a:hover 完全一致. */
+  color: color-mix(in oklch, var(--document-link), white 20%);
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  /* 附件图标颜色统一到 --document-link, 与正文链接和 .tiptap a 完全同源:
+   *  - light: 紫 (273) / dark: 亮紫 / rock: 熔岩橙 (22)
+   *  - 不再硬编码 #5262DC (hue 240 indigo) → 跨主题脱节 */
+  color: var(--document-link);
+  flex-shrink: 0;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment,
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__card,
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__card * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment__name {
+  /* 附件名称文字颜色统一到 --document-link token, 与正文 <a> 同源:
+   * - 基色一致 → "这是链接" 的视觉信号强度统一
+   * - hover 派生公式一致 → 鼠标悬停时和正文链接同步提亮
+   * - 跨主题 → 随 --document-link 走, 三个主题都能融入
+   *   此前 #5262DC 在 dark/rock 主题下既不融入也不警示, 显得是"未主题化的孤儿色" */
+  color: var(--document-link);
+  font-weight: 500;
+  cursor: default;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-file-attachment.is-selected .tiptap-file-attachment__card {
+  /* 节点被 NodeSelection 选中: 与卡片图标/文字同源派生自 --document-link,
+   * 走 color-mix × transparent 的统一公式 (同 .is-block-selected:hover 10%,
+   * ::selection 26% 一族), 三主题下随 --document-link 自动适配,
+   * 取代原硬编码 #dee1ff 在 dark/rock 主题下与底色脱节的问题. */
+  background-color: color-mix(in oklch, var(--document-link) 18%, transparent);
+}
+
+.comn-tiptap-editor .tiptap .tiptap-image-attachment {
+  display: block;
+}
+
+.comn-tiptap-editor .tiptap a {
+  /* 链接文字: 改用 --document-link token 化, 颜色随主题切换:
+   * - light: 紫 (273) → 与品牌同色相
+   * - dark:  亮紫 → 高对比可读
+   * - rock:  熔岩橙 (22) → 适配岩灰底
+   * 此前硬编码 #5262DC (hue 240 indigo) 跟任何主题都脱节. */
+  color: var(--document-link);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.comn-tiptap-editor .tiptap a:hover {
+  /* hover 状态不单独维护 token, 直接基于 --document-link 与白色 20% 混色提亮:
+   * - 单一来源: --document-link 决定基色, hover 由派生公式统一管理
+   * - 跨主题一致: 三套主题共享同一公式, 不会有"某主题的 hover 没设计"的问题 */
+  color: color-mix(in oklch, var(--document-link), white 20%);
+}
+
+.comn-tiptap-editor .tiptap-upload-file {
+  margin: 1rem 0;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__card:hover {
+  background: #f1f3f5;
+  border-color: #dee2e6;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__card--selected {
+  border-color: #5262DC;
+  box-shadow: 0 0 0 2px rgba(82, 98, 220, 0.15);
+}
+
+.comn-tiptap-editor .tiptap-upload-file__icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e9ecef;
+  border-radius: 6px;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__icon-inner {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6c757d;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__meta {
+  font-size: 12px;
+  color: #6c757d;
+  margin-top: 2px;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__download {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #6c757d;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap-upload-file__download:hover {
+  background: #e9ecef;
+  color: #5262DC;
+}

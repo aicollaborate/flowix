@@ -1,0 +1,17 @@
+.markdown-source-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: #ffffff;
+}
+
+.markdown-source-view .monaco-editor {
+  height: 100% !important;
+}
+
+.markdown-source-view .monaco-editor .overflow-guard {
+  border-radius: 0;
+}

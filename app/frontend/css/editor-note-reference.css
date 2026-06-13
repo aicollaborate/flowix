@@ -1,0 +1,167 @@
+/* Note Reference — 行内笔记卡片
+ *
+ * 形态: [📄 notebookName/title]  (单行, inline-flex, baseline 对齐周围文本)
+ * 状态: 正常 / hover / 选中 / stale (链接失效)
+ *
+ * 完全对照 .tiptap-file-attachment 的结构 / 配色 token:
+ *   - 透明底 (无边框/无阴影) — 跟文件附件卡片视觉权重一致
+ *   - 颜色统一到 --document-link, 跨三主题 (light/dark/rock) 自动适配
+ *   - 选中态背景走 color-mix(--document-link 18%, transparent) 派生公式
+ *   - hover 时 name 颜色与正文 a:hover 同步提亮
+ *
+ * 与 file attachment 的差异: 名称用 `notebookName/title` 拼接, stale 状态
+ * 整卡片降饱和 + 删除线 (链接失效语义)。 */
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference {
+  display: inline;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 0.9em;
+  vertical-align: baseline;
+  transition: background-color 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card:hover {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* hover 时整组切到手型 cursor, 跟 __card 自身的 cursor: pointer 一致。
+ * 默认态 __name 仍是 default (避免光标在文字上从箭头变 I 形后再变 pointer 的
+ * 三态闪烁), 仅在用户主动 hover 卡片时统一发出"可点"的视觉信号。 */
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card:hover,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card:hover * {
+  cursor: pointer;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card:hover .tiptap-note-reference__name {
+  color: color-mix(in oklch, var(--document-link), white 20%);
+}
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference__icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  /* 图标与 __title 严格同色同源: --document-link
+   *   - light: 紫 (273) / dark: 亮紫 / rock: 熔岩橙 (22)
+   *   - hover / stale 与 __title 走完全相同的派生公式, 保证视觉同步 */
+  color: var(--document-link);
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -moz-user-drag: none;
+  -ms-user-drag: none;
+  user-drag: none;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference__name {
+  /* 名称文字颜色与 file-attachment 同源: --document-link token
+   * hover 派生公式一致 → 鼠标悬停时和文件附件卡片同步提亮
+   * 内部 __notebook / __title 由各自 className 覆写, 这里给兜底色 */
+  color: var(--document-link);
+  font-weight: 500;
+  cursor: default;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference__notebook {
+  /* notebook 名 + chevron 跟笔记标题同色同源: --document-link
+   * 整条引用视为"一个语义单元", 视觉权重统一, 不再让前缀/分隔抢焦点
+   * font-weight 跟 __title 保持 500, 让用户一眼把整段当链接看 */
+  color: var(--document-link);
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference__chevron {
+  /* chevron 跟 notebook/title 完全同色, opacity 微微弱化仅做"路径层级"提示,
+   * 不再降色 — 颜色信号统一, 视觉上"notebook > title"是一条连贯的链接 */
+  display: inline-flex;
+  align-items: center;
+  color: var(--document-link);
+  opacity: 0.65;
+  vertical-align: -0.05em;
+  margin: 0 2px;
+  flex-shrink: 0;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference__title {
+  /* 笔记标题: 跟原 file-attachment 的 __name 一致 — --document-link 强权重
+   * 让用户一眼锁定"这是哪个笔记", notebook 名只是定位上下文 */
+  color: var(--document-link);
+  font-weight: 500;
+}
+
+/* hover 时整组同步提亮: notebook / chevron / title / icon 一并走
+ * color-mix(--document-link, white 20%) 与 file-attachment 同源 */
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card:hover .tiptap-note-reference__title,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card:hover .tiptap-note-reference__notebook,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card:hover .tiptap-note-reference__chevron,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card:hover .tiptap-note-reference__icon {
+  color: color-mix(in oklch, var(--document-link), white 20%);
+}
+
+/* 节点被 NodeSelection 选中 — 与 .tiptap-file-attachment.is-selected 同源
+ * 走 color-mix(--document-link × transparent) 派生公式, 跨主题自动适配。
+ * 浓度从 18% 降到 10%, 与 .is-block-selected:hover 同浓度, 选中态更"轻",
+ * 避免在文本行内突然铺一大块色块喧宾夺主, 视觉权重对齐 hover 反馈。 */
+.comn-tiptap-editor .tiptap .tiptap-note-reference.is-selected .tiptap-note-reference__card {
+  background-color: color-mix(in oklch, var(--document-link) 10%, transparent);
+}
+
+/* ─── Stale state (链接失效) ──────────────────────────────────────────────────
+ * NodeView mount 后 IPC 校验失败时打上 data-stale="true"。
+ * 视觉上: 整卡片降饱和 + 删除线 + 灰色, 跟 file-attachment 的"链接失效"语义一致。
+ * 鼠标 cursor 切到 not-allowed, 提示用户这条引用已无法跳转。 */
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* stale 态 hover 时整组也锁定 not-allowed, 不被上方 hover * 的 pointer 覆盖 */
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"]:hover,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"]:hover * {
+  cursor: not-allowed;
+}
+
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"] .tiptap-note-reference__name,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"] .tiptap-note-reference__notebook,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"] .tiptap-note-reference__chevron,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"] .tiptap-note-reference__title,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"] .tiptap-note-reference__icon {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* 失效态 hover: 全组锁定 muted-foreground, 不再提亮 */
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"]:hover .tiptap-note-reference__name,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"]:hover .tiptap-note-reference__notebook,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"]:hover .tiptap-note-reference__chevron,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"]:hover .tiptap-note-reference__title,
+.comn-tiptap-editor .tiptap .tiptap-note-reference__card[data-stale="true"]:hover .tiptap-note-reference__icon {
+  color: var(--muted-foreground);
+}
