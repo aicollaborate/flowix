@@ -1,6 +1,7 @@
 import type { Editor } from '@tiptap/core';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { SparkleIcon } from '@phosphor-icons/react';
+import { useEffect } from 'react';
 import { useSettingsStore } from '../../../lib/store';
 import { useChatStore } from '../../../lib/store/chat-store';
 
@@ -32,6 +33,47 @@ export function SelectionBubbleMenu({ editor }: SelectionBubbleMenuProps) {
   const setAgentPanelVisible = useSettingsStore((state) => state.setAgentPanelVisible);
   const setPendingPrompt = useChatStore((state) => state.setPendingPrompt);
   const setPendingCitation = useChatStore((state) => state.setPendingCitation);
+
+  // IME 输入结束时 (Enter 确认候选词、Esc 取消、点击外部等) 主动清理 selection
+  // 并 hide 气泡菜单 ── 修"输入法 enter 替换选中文本后气泡不消失"的 bug。
+  //
+  // 根因: Tiptap BubbleMenu 的 updateHandler 在 view.composing === true 时直接
+  // return,既不 show 也不 hide。在 IME 期间 / compositionend 触发的那个事务里,
+  // 文本被替换、selection 应收敛成 caret,本应让 shouldShow({from, to}) 返回
+  // false → hide(),但 composing 短路把它挡掉了,导致气泡定格在显示状态,
+  // 直到下一个真正命中 updateHandler 的事务才更新。
+  //
+  // 修复: 监听 ProseMirror view 根节点上的 compositionend,在下一个 rAF 里
+  // (此时 view.composing 已被 ProseMirror 翻成 false) 主动做两件事 ──
+  //   1. 若 range selection 仍在 (某些 IME 不收缩 selection),手动 collapse
+  //      到 to 位置并清空浏览器原生 Selection,杜绝高亮残留。
+  //   2. 通过 pluginKey 派发 'hide' meta,让 BubbleMenuPlugin 立刻 hide ──
+  //      这与 transactionHandler 监听的 meta 协议一致 (bubble-menu-plugin.ts)。
+  useEffect(() => {
+    const view = editor.view;
+    const dom = view.dom;
+
+    const handleCompositionEnd = () => {
+      requestAnimationFrame(() => {
+        if (editor.isDestroyed) return;
+
+        const { from, to } = editor.state.selection;
+        if (from !== to) {
+          editor.commands.setTextSelection(to);
+          window.getSelection()?.removeAllRanges();
+        }
+
+        view.dispatch(
+          view.state.tr.setMeta('selectionAIBubbleMenu', 'hide'),
+        );
+      });
+    };
+
+    dom.addEventListener('compositionend', handleCompositionEnd);
+    return () => {
+      dom.removeEventListener('compositionend', handleCompositionEnd);
+    };
+  }, [editor]);
 
   const handleAskAI = () => {
     const { from, to } = editor.state.selection;

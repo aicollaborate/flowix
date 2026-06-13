@@ -56,7 +56,10 @@ pub use types::{
     Notebook, NotebookConfig, TodoItem,
 };
 // 显式 keep 一些以防宏的 wanding
-pub(crate) use derivation::{apply_derived_memo_fields, extract_title_and_preview};
+pub(crate) use derivation::{
+    apply_derived_memo_fields, extract_tags_from_body, extract_title_and_preview,
+    extract_todos_from_body,
+};
 #[allow(unused_imports)]
 pub(crate) use types::MemoFrontmatter;
 

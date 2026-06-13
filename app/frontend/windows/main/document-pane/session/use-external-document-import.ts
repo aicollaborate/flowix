@@ -10,7 +10,7 @@ interface UseExternalDocumentImportOptions {
   isExternalDocument: boolean;
   selectedNotebook: Notebook | null;
   clearSaveTimer: () => void;
-  saveDoc: (content: string, path: string, options?: { refreshList?: boolean }) => Promise<void>;
+  saveDoc: (content: string, path: string) => Promise<void>;
   setSelectedMemo: (memo: MemoItem | null) => void;
   loadMemos: (params?: { notebookId?: string }) => Promise<void>;
   openMemoDocument: (params: {

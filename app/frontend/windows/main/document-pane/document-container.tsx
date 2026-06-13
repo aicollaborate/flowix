@@ -49,11 +49,11 @@ export function DocumentContainer({
     reloadDocument,
   } = useDocumentContent({ memoId, isExternalDocument });
 
-  const { syncMemoMetadata } = useMemoMetadataSync({
-    memoId,
-    isExternalDocument,
-    upsertMemo,
-  });
+  // `useMemoMetadataSync` 在后端整合前是 `onSaved` 回调里调 `syncMemoMetadata`
+  // 的来源 ── 现在 `useDocumentAutosave.onSaved` 不再需要它, 解构丢弃即可。
+  // hook 本身保留作为外部场景 (例如外部工具改盘后业务方主动同步) 的兜底
+  // 入口; 默认路径不调。
+  useMemoMetadataSync({ memoId, isExternalDocument, upsertMemo });
   const {
     clearSaveTimer,
     handleChange,
@@ -63,7 +63,6 @@ export function DocumentContainer({
     filePath,
     setState,
     reloadDocument,
-    syncMemoMetadata,
   });
   const { finalizeMemoRename } = useDocumentFinalize({
     filePath,

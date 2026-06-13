@@ -21,7 +21,8 @@ use tauri::{AppHandle, State};
 
 use crate::memo_events::{self, MemoChangeSource, MemoEvent};
 use crate::memo_file::{
-    apply_derived_memo_fields, extract_title_and_preview, Memo, MemoColor, MemoFile, TodoItem,
+    apply_derived_memo_fields, extract_tags_from_body, extract_title_and_preview,
+    extract_todos_from_body, Memo, MemoColor, MemoFile, TodoItem,
 };
 use crate::search::MemoSearchHit;
 
@@ -63,6 +64,205 @@ fn generate_memo_id(memo_file: &MemoFile) -> String {
         }
     }
 }
+
+/// 写盘 / 改 metadata 后的"派生字段同步"收口 ── 一处完成
+/// "读 memo → 应用派生 → 写 list.json → 重建搜索索引 → emit Updated"。
+///
+/// 共享给两条调用路径:
+/// - [`update_memo_db`] 的 `defer_rename=true` 分支 (前端 metadata 同步)
+/// - [`write_document`] 写盘成功且路径命中注册 memo 时 (前端编辑保存主路径)
+///
+/// 设计动机: 历史上 `update_memo_db` 派生 + `write_document` 写盘 是两条
+/// 独立的 IPC, 前端 `useMemoMetadataSync` 在 `onSaved` 回调里"二次同步",
+/// 引入双 IPC / 双 emit / 双 list.json 写。整合后写盘一侧自带派生同步,
+/// list.json 一致性由后端单点保证, 前端 metadata 同步 hook 降级为兜底
+/// (兼容性保留, 默认路径不再调)。
+///
+/// 入参:
+/// - `content`: 调用方已知最新内容, 直接用作派生源 (写盘主路径, 避免再
+///   `fs::read_to_string` 一次)。`None` 时回退到 `find_memo_file_by_id`
+///   找盘上文件并读出 (兼容 `update_memo_db` 不带 content 的纯 metadata
+///   路径)。
+/// - `caller_filename` / `caller_preview`: 调用方显式提供的 filename /
+///   preview (例如 `update_memo_db` 的 `Some(filename)` 路径)。非 None 时
+///   直接写入, 跳开 `apply_derived_memo_fields` 内部 "filename 仅在空时
+///   覆盖" 的保护。写盘主路径两个都传 None, 走默认派生语义。
+///
+/// 出参: 成功 + 派生 / emit 完成返回 `Ok(())`; 找不到 memo 或写 list.json
+/// 失败返回 `Err` (调用方按"派生同步失败但不影响主路径"语义自行处理)。
+fn sync_derived_fields_for_memo(
+    state: &AppState,
+    app: &AppHandle,
+    id: &str,
+    content: Option<&str>,
+    caller_filename: Option<&str>,
+    caller_preview: Option<&str>,
+    sync_to_disk: bool,
+) -> Result<Option<String>, String> {
+    // 返回:
+    // - `Ok(Some(content))` = 写盘成功, content 是磁盘上的最终内容
+    //   (含 frontmatter + 派生 filename 写入的字段)。`write_document` 把
+    //   它包进 `Option<String>` 返回前端, 让前端 `lastSavedContent` 跟磁盘
+    //   严格一致 ── 修"rename 后下次保存 CAS 失败"的隐患 (caller 给的
+    //   content 不含 frontmatter, 不能直接做 CAS 比对)。
+    // - `Ok(None)` = metadata-only 路径 (`sync_to_disk=false`, 不动磁盘)。
+    // - `Err(e)` = 写盘失败 (rename / fs::write 错误)。
+    // 1. 读现有 memo + 找磁盘路径, 在锁内完成 list.json 读, 不持锁做 IO。
+    let (mut memo, old_abs_path) = {
+        let memo_file = state.memo_file.read().unwrap();
+        let memo = memo_file
+            .read_memo(id)
+            .ok_or_else(|| format!("memo {id} not in list.json"))?;
+        let abs_path = memo_file.find_memo_file_by_id(id);
+        (memo, abs_path)
+    };
+
+    // 2. 拿派生源 content: 调用方已知优先, 否则读盘。
+    let full_content: Option<String> = match content {
+        Some(c) => Some(c.to_string()),
+        None => old_abs_path
+            .as_ref()
+            .and_then(|path| fs::read_to_string(path).ok()),
+    };
+
+    // 3. 派生: 按 B 方案, filename / 物理文件名 / frontmatter 三个拷贝
+    //    始终一致, 都跟 body 首行走。`caller_filename` 路径 (`update_memo_db`
+    //    显式传 Some) 仍然优先: 给 `finalizeMemoFilename` 这类"用户显式锁
+    //    定 title"的流程留口子, 不破坏其语义。
+    if let Some(ref full) = full_content {
+        // preview 总是重算 (B 方案下, "filename / 物理文件名 / frontmatter"
+        // 三拷贝外的 preview / tags / todos 也是 body 派生源, 同样不享受
+        // "仅空覆盖" 保护 ── 这些字段跟 body 内容强相关, 跟着内容走)。
+        let (derived_title, derived_preview) = extract_title_and_preview(full);
+        if let Some(f) = caller_filename {
+            memo.filename = f.to_string();
+        } else if !derived_title.is_empty() {
+            memo.filename = derived_title;
+        }
+        if let Some(p) = caller_preview {
+            memo.preview = p.to_string();
+        } else {
+            memo.preview = derived_preview;
+        }
+        memo.tags = extract_tags_from_body(full);
+        memo.todos = extract_todos_from_body(full);
+    } else if caller_filename.is_some() || caller_preview.is_some() {
+        if let Some(f) = caller_filename {
+            memo.filename = f.to_string();
+        }
+        if let Some(p) = caller_preview {
+            memo.preview = p.to_string();
+        }
+        memo.updated_at = chrono::Utc::now().timestamp_millis();
+    } else {
+        memo.updated_at = chrono::Utc::now().timestamp_millis();
+    }
+
+    // 4. 三拷贝同步: 当 `sync_to_disk=true` (写盘主路径 `write_document` 走)
+    //    时, 算 storage_title → target_filename, 必要时 rename + 重写
+    //    frontmatter + 更新 list.json `path` 字段。"filename / 物理文件名 /
+    //    frontmatter 三个拷贝始终一致" 在这一步收口。
+    let new_abs_path: Option<std::path::PathBuf> = if sync_to_disk {
+        let storage_title = MemoFile::storage_title_from_filename(&memo.filename);
+        memo.filename = storage_title.clone();
+        let target_filename = MemoFile::generate_memo_filename(&storage_title, id);
+        let base = state.memo_file.read().unwrap().get_memo_base();
+        let target_abs = base.join(&target_filename);
+
+        // 把 caller 提供的 content 当 body ── 前端默认路径不写 frontmatter,
+        // 但已经有 `useMemoMetadataSync` / `use-document-finalize` 兜底流程
+        // 会写, 这里先剥掉 caller content 的前导 frontmatter, 再拼新 frontmatter。
+        let body: String = if let Some(ref full) = full_content {
+            strip_markdown_frontmatter(full).to_string()
+        } else {
+            String::new()
+        };
+        let fm = crate::memo_file::MemoFrontmatter {
+            filename: storage_title.clone(),
+        };
+        let fm_yaml = serde_yaml::to_string(&fm).unwrap_or_default();
+        let new_file_content = format!("---\n{}\n---\n{}", fm_yaml.trim(), body);
+
+        // rename 旧 → 新 (如果需要)
+        if let Some(ref old_path) = old_abs_path {
+            if old_path != &target_abs && old_path.exists() {
+                // mark 自写抑制新旧双侧, 避免 watcher notify 回响
+                mark_self_write_for(app, old_path);
+                mark_self_write_for(app, &target_abs);
+                if let Err(e) = fs::rename(old_path, &target_abs) {
+                    return Err(format!(
+                        "rename {} -> {} failed: {e}",
+                        old_path.display(),
+                        target_abs.display()
+                    ));
+                }
+            }
+        }
+
+        // 写文件 (新路径). 内容已包含新 frontmatter.
+        if let Err(e) = fs::write(&target_abs, &new_file_content) {
+            // 写失败时, 如果之前 rename 过, 尝试回滚
+            if let Some(ref old_path) = old_abs_path {
+                if old_path != &target_abs && target_abs.exists() {
+                    let _ = fs::rename(&target_abs, old_path);
+                }
+            }
+            return Err(format!(
+                "write {} failed: {e}",
+                target_abs.display()
+            ));
+        }
+
+        memo.path = Some(target_filename.clone());
+        Some(target_abs)
+    } else {
+        old_abs_path.clone()
+    };
+
+    // 5. 写 list.json + 同步 memo.json todos 索引。
+    {
+        let memo_file = state.memo_file.read().unwrap();
+        memo_file
+            .sync_to_list_json_only(&memo)
+            .map_err(|e| format!("sync list.json failed: {e}"))?;
+    }
+
+    // 6. 重建搜索索引 + emit 一次 Updated (用新 path)。
+    try_index_upsert(state, id);
+    let path_str = new_abs_path
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    memo_events::emit(
+        app,
+        MemoEvent::Updated {
+            id: id.to_string(),
+            path: path_str,
+            source: MemoChangeSource::UserEdit,
+        },
+    );
+    // 把 "已写盘的最终内容" 沿调用栈返回, 让 IPC 端能透传给前端。
+    // metadata-only 路径 (sync_to_disk=false) 返回 None, 不暴露任何内容。
+    if sync_to_disk {
+        // sync_to_disk=true 块里 new_file_content 是 String, 这里需要
+        // 把它也搬出来 ── 重新从盘读最稳 (rename 后路径可能已变), 避免
+        // 持有 stale 引用。
+        let on_disk = new_abs_path
+            .as_ref()
+            .and_then(|p| fs::read_to_string(p).ok());
+        Ok(on_disk)
+    } else {
+        Ok(None)
+    }
+}
+
+// 测试覆盖说明 ── "派生 + 写 list.json" 这一段契约由 `memo_file` 模块
+// 的现有测试覆盖 (典型如 `reload_memo_from_disk_refreshes_preview` /
+// `sync_list_json_on_write_does_not_create_duplicates`)。本 helper 没有
+// 单独的 cargo test: 它强依赖 `tauri::State<AppState>` + `AppHandle`,
+// 起一个真 IPC 端到端测的设置成本与价值不匹配 ── 在 dev 环境跑一次
+// 编辑器保存, 观察 list.json preview 立即更新, 即可验证本 helper 在
+// `write_document` 路径下被正确调用。
 
 fn resolve_document_path_for_io(file_path: &str, state: &AppState) -> std::path::PathBuf {
     let requested_path = Path::new(file_path);
@@ -128,10 +328,16 @@ pub fn write_document(
     expectedContent: Option<String>,
     state: State<AppState>,
     app: AppHandle,
-) -> bool {
+) -> Option<String> {
+    // 返回值:
+    // - `Some(content)` = 写盘成功, content 是磁盘上的最终内容 (含 frontmatter
+    //   / 派生 filename 写回的字段)。前端 `runOne` 用它更新 `lastSavedContent`,
+    //   下次 saveDoc 的 CAS 跟磁盘一致 ── 修复 "rename 后下次保存 CAS 失败"
+    //   的隐患 (caller 给的 content 不含 frontmatter, 不能直接做 CAS 比对)。
+    // - `None` = 写盘失败 (路径非法 / CAS refuse / 写盘 error)。
     if !super::helpers::can_access_document_path(Path::new(&file_path), &state) {
         eprintln!("[write_document] refused out-of-scope path: {}", file_path);
-        return false;
+        return None;
     }
     if let Some(parent) = std::path::Path::new(&file_path).parent() {
         let _ = fs::create_dir_all(parent);
@@ -148,46 +354,71 @@ pub fn write_document(
                     "[write_document] Refused stale write because {} changed on disk",
                     file_path
                 );
-                return false;
+                return None;
             }
             Err(e) => {
                 eprintln!(
                     "[write_document] Failed to verify current content for {}: {}",
                     file_path, e
                 );
-                return false;
+                return None;
             }
         }
     }
     // CAS 校验通过, 写盘前先 mark — 关掉 notify 事件先于 mark 到达的 race
     // window。哪怕这里写盘失败, mark 留下的 2s TTL 是无害的 (watcher 命中
     // 即吞一个 noop 事件, 不会影响别的)。
-    if extract_memo_id_from_path(&file_path).is_some() {
+    //
+    // 路径命中 memo id (注册的 memo `.md`) 时, 不直接 fs::write, 交给
+    // `sync_derived_fields_for_memo(sync_to_disk=true)` 统一收口:
+    // 派生 title → 计算新物理文件名 → 必要时 rename 旧文件 → 写新 frontmatter
+    // + body → 同步 list.json 三拷贝 (filename / path / 物理文件名 一致)。
+    // 路径不命中 memo id (外部 .md 文件) 时, 走原 fs::write 路径, 不动
+    // list.json / frontmatter / 物理文件名 (与"通用 markdown 写盘"语义一致)。
+    let memo_id_for_sync = if extract_memo_id_from_path(&file_path).is_some() {
         mark_self_write_for(&app, Path::new(&file_path));
         mark_self_write_for(&app, &io_path);
-    }
-    match fs::write(&io_path, &content) {
-        Ok(_) => {
-            // 如果写入的是当前 notebook 下的 memo .md 文件, 解析文件名拿到 id
-            // (格式 `{title}#xxxxxx.md`), 同步增量更新索引. 写入 `expectedContent`
-            // 校验失败或写盘错误都走不到这里.
-            if let Some(memo_id) = extract_memo_id_from_path(&file_path) {
-                try_index_upsert(state.inner(), &memo_id);
-                // memo-event: 通知前端编辑器 + list 同步
-                memo_events::emit(
-                    &app,
-                    MemoEvent::Updated {
-                        id: memo_id,
-                        path: io_path.display().to_string(),
-                        source: MemoChangeSource::UserEdit,
-                    },
-                );
+        extract_memo_id_from_path(&file_path)
+    } else {
+        None
+    };
+
+    if let Some(ref memo_id) = memo_id_for_sync {
+        // 注册 memo 主路径: 由 helper 决定写到哪里 (旧 / 新路径) ── 它
+        // 内部会先 rename 再 fs::write, 一次完成。caller content 是
+        // editor 序列化出来的 markdown body, helper 内部 strip 前导
+        // frontmatter 并拼上新 frontmatter。helper 返回磁盘最终内容
+        // (含 frontmatter), 沿 IPC 透传前端做 lastSavedContent。
+        return match sync_derived_fields_for_memo(
+            state.inner(),
+            &app,
+            memo_id,
+            Some(&content),
+            None,
+            None,
+            true,
+        ) {
+            Ok(Some(on_disk)) => Some(on_disk),
+            Ok(None) => {
+                // 不应发生: sync_to_disk=true 路径必返回 Some
+                eprintln!("[write_document] helper returned None unexpectedly");
+                None
             }
-            true
-        }
+            Err(e) => {
+                eprintln!(
+                    "[write_document] derived sync failed for {memo_id}: {e}"
+                );
+                None
+            }
+        };
+    }
+
+    // 非 memo 路径: 原 fs::write。返回磁盘上的内容 (caller 写的).
+    match fs::write(&io_path, &content) {
+        Ok(_) => Some(content),
         Err(e) => {
             eprintln!("[write_document] Failed to write to {}: {}", file_path, e);
-            false
+            None
         }
     }
 }
@@ -400,56 +631,16 @@ pub fn update_memo_db(
     let defer_rename = defer_rename.unwrap_or(true);
 
     if defer_rename {
-        let (ok, abs_path) = {
-            let memo_file = state.memo_file.read().unwrap();
-            let mut memo = match memo_file.read_memo(&id) {
-                Some(m) => m,
-                None => return false,
-            };
-
-            let abs_path = memo_file.find_memo_file_by_id(&id);
-
-            let filename_was_provided = filename.is_some();
-            if let Some(t) = filename {
-                memo.filename = t;
-            }
-            if let Some(p) = preview {
-                memo.preview = p;
-            }
-            memo.updated_at = chrono::Utc::now().timestamp_millis();
-
-            let current_content = content.or_else(|| {
-                abs_path
-                    .as_ref()
-                    .and_then(|path| fs::read_to_string(path).ok())
-            });
-            if let Some(full_content) = current_content.as_deref() {
-                if !filename_was_provided {
-                    let (derived_title, _) = extract_title_and_preview(full_content);
-                    if !derived_title.is_empty() {
-                        memo.filename = derived_title;
-                    }
-                }
-                apply_derived_memo_fields(&mut memo, full_content);
-            }
-
-            (memo_file.sync_to_list_json_only(&memo).is_ok(), abs_path)
-        };
-
-        if ok {
-            try_index_upsert(state.inner(), &id);
-            memo_events::emit(
-                &app,
-                MemoEvent::Updated {
-                    id,
-                    path: abs_path
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default(),
-                    source: MemoChangeSource::UserEdit,
-                },
-            );
-        }
-        return ok;
+        return sync_derived_fields_for_memo(
+            state.inner(),
+            &app,
+            &id,
+            content.as_deref(),
+            filename.as_deref(),
+            preview.as_deref(),
+            false,  // 不动磁盘: 这条路径仅更新 list.json, 物理文件名 / frontmatter 维持原样
+        )
+        .is_ok();
     }
 
     let (current_memo, current_abs_path) = {

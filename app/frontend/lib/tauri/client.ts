@@ -116,8 +116,11 @@ export const memos = {
   }),
   readMemo: (id: string) => invoke<any | null>('read_memo', { id }),
   readDocument: (filePath: string) => invoke<string | null>('read_document', { filePath }),
+  // 写盘 IPC。返回值为 null = 写盘失败 (路径非法 / CAS refuse / fs error),
+  // 否则返回磁盘上的最终内容 (含 frontmatter)。前端用这个值更新
+  // `lastSavedContent` 以匹配磁盘, 避免 "rename 后下次 saveDoc CAS 失败"。
   writeDocument: (filePath: string, content: string, expectedContent?: string) =>
-    invoke<boolean>('write_document', { filePath, content, expectedContent }),
+    invoke<string | null>('write_document', { filePath, content, expectedContent }),
   getLaunchOpenFiles: () => invoke<string[]>('get_launch_open_files'),
   addDocument: (tag?: string, notebookId?: string) => invoke<any>('add_document', { tag, notebookId }),
   importExternalDocumentToMemo: (sourcePath: string, content: string, notebookId?: string) =>

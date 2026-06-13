@@ -583,7 +583,7 @@ class AgentThreadCardView implements ProseMirrorNodeView {
 
     this.input = document.createElement('textarea');
     this.input.rows = 1;
-    this.input.placeholder = '问 AI...';
+    this.input.placeholder = '问 AI 处理任务';
     this.input.addEventListener('keydown', (event) => {
       if (event.isComposing || event.key !== 'Enter' || event.shiftKey) return;
       event.preventDefault();
@@ -1033,7 +1033,7 @@ export const AgentThreadCard = Node.create({
       [
         'div',
         { class: 'agent-thread-card__composer' },
-        ['textarea', { placeholder: '问 AI...', rows: '1' }],
+        ['textarea', { placeholder: '问 AI 处理任务', rows: '1' }],
         [
           'button',
           {

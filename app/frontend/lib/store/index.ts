@@ -22,6 +22,7 @@ export {
 } from './document-store';
 export {
   getActiveDocumentDraft,
+  getCurrentPath,
   recordDocumentEdit,
   saveDocumentContent,
   flushDocumentPath,

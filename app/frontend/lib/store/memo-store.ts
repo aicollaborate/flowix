@@ -196,7 +196,7 @@ export interface MemoStore {
   // MemoList 里 [refreshTrigger] useEffect 的 loadData 管线, 避免在 store
   // 里维护两套排序逻辑。
   handleMemoCreated: (memo?: MemoItem, options?: { select?: boolean }) => void;
-  handleMemoUpdated: (id: string) => void;
+  handleMemoUpdated: (id: string) => Promise<MemoItem | null>;
   handleMemoDeleted: (id: string) => void;
 }
 
@@ -344,23 +344,22 @@ export const useMemoStore = create<MemoStore>()(
         }
       },
 
-      handleMemoUpdated: (id) => {
-        // 事件里没有完整 memo payload。先动 updatedAt 让列表有即时反馈,
-        // 再只读取这一篇 memo 合并, 避免单篇保存触发整页列表重拉。
-        set((state) => ({
-          memos: state.memos.map((m) =>
-            m.id === id ? { ...m, updatedAt: Date.now() } : m
-          ),
-          selectedMemo:
-            state.selectedMemo?.id === id
-              ? { ...state.selectedMemo, updatedAt: Date.now() }
-              : state.selectedMemo,
-        }));
-        void memos.readMemo(id).then((memo) => {
-          if (memo) {
-            get().upsertMemo(memo as MemoItem);
-          }
-        });
+      handleMemoUpdated: async (id) => {
+        // 事件 payload 只带 id, 权威值要走 readMemo 拿。等真实值回来一次性
+        // upsertMemo (走 upsertSortedMemo 自然按 updatedAt 排序), 不再乐观
+        // 占位 Date.now() ── 避免 "占位时间排一次, 真值时间又排一次" 的视觉闪。
+        // 改前: set(updatedAt: Date.now()) + readMemo().then(upsertMemo) ──
+        // 占位期间排序抖动, 且与 useMemoEvents.syncActiveDocumentPathIfRenamed
+        // 走第二次 readMemo 重复 IPC。
+        // 改后: 直接 readMemo 拿权威 memo, 调 upsertMemo 合并。
+        //
+        // 返回拿到的 memo 给 `useMemoEvents` 复用 ── `syncActiveDocumentPathIfRenamed`
+        // 之前会再 readMemo 一次, 现在用这个 prefetchedMemo 跳过第二次 IPC。
+        const memo = await memos.readMemo(id);
+        if (memo) {
+          get().upsertMemo(memo as MemoItem);
+        }
+        return memo as MemoItem | null;
       },
 
       handleMemoDeleted: (id) => {

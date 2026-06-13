@@ -180,11 +180,16 @@ async function runOne(ctx: SaveContext, content: string): Promise<boolean> {
   // updated to, not the stale value from when the caller scheduled.
   const expected = ctx.readExpected();
   try {
+    // `result` 是磁盘最终内容 (含 frontmatter) 或 null。拿它更新
+    // `lastSavedContent` ── 修"rename 后下次 saveDoc CAS 失败"的核心点:
+    // caller 写的 content 不含 frontmatter, 不能直接做 CAS 比对。
     const result = await memosClient.writeDocument(ctx.path, content, expected);
-    if (result) {
-      ctx.onSaved(content);
+    if (result !== null) {
+      ctx.onSaved(result);
       return true;
     }
+    // 写盘失败 ── 自愈: 如果磁盘内容恰好等于 caller 写的 (例如我们刚写
+    // 的 frontmatter 跟 caller 写的完全一致), 视为成功, 否则 CAS refused。
     const currentContent = await memosClient.readDocument(ctx.path).catch(() => null);
     if (currentContent === content) {
       ctx.onSaved(content);

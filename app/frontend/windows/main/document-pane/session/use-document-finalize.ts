@@ -100,7 +100,7 @@ export function useDocumentFinalize({
       clearSaveTimer();
 
       if (hasContentChanges) {
-        await saveDoc(content, path, { refreshList });
+        await saveDoc(content, path);
       }
 
       if (!needsFilenameFinalize) return;

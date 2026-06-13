@@ -409,7 +409,7 @@ function StaticGroups({ onClose }: StaticGroupsProps) {
                   {nb.name}
                 </span>
                 {nb.isDefault && (
-                  <span className="rounded-lg px-1.5 py-[0px] text-[10px] bg-[var(--secondary)] text-[var(--primary)]">
+                  <span className="rounded-lg px-1.5 py-[0px] text-[10px] bg-[var(--accent)] text-[var(--primary)]">
                     默认
                   </span>
                 )}

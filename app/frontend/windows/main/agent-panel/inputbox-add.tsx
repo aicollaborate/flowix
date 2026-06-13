@@ -240,7 +240,7 @@ export function InputboxAdd() {
 											/>
 										)}
 										{isDefault && (
-											<span className="shrink-0 rounded px-1.5 text-[10px] bg-[var(--muted)] text-[var(--primary)]">
+											<span className="shrink-0 inline-flex items-center leading-none h-5 rounded-lg px-1.5 text-[10px] bg-[var(--accent)] text-[var(--primary)]">
 												默认
 											</span>
 										)}
