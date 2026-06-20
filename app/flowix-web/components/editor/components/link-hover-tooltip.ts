@@ -1,7 +1,7 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { Editor } from '@tiptap/core';
 import { normalizePlainLinkHref } from '../extensions/markdown-link';
-import { openLinkBubbleMenu } from './link-bubble-menu';
+import { openLinkEditPopup } from './link-edit-popup';
 
 interface LinkRange {
   from: number;
@@ -72,7 +72,7 @@ export function attachLinkHoverTooltip(editor: Editor, root: HTMLElement): () =>
 
     hide();
     editor.chain().focus().setTextSelection({ from: range.from, to: range.to }).run();
-    openLinkBubbleMenu(editor, () => undefined, {
+    openLinkEditPopup(editor, () => undefined, {
       from: range.from,
       to: range.to,
       selectedText: range.text,

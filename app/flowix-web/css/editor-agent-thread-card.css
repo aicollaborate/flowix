@@ -1,7 +1,8 @@
 .markdown-editor {
   --atc-send-size: 28px;
   --atc-bottom-pad: 10px;
-  --atc-max-height: 480px;
+  --atc-min-height: 13rem;
+  --atc-max-height: 30rem;
   --atc-composer-max-h: 200px;
   --atc-header-h: 40px;
 }
@@ -58,6 +59,7 @@
   display: grid;
   grid-template-rows: var(--atc-header-h) 1fr auto;
   margin: 0;
+  min-height: var(--atc-min-height);
   max-height: var(--atc-max-height);
   padding: 0;
   border: 1px solid var(--border);

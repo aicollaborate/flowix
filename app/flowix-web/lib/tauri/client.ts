@@ -256,6 +256,8 @@ export const dialogs = {
     invoke<boolean>('write_export_file', { filePath, content }),
   saveAttachment: (sourcePath: string, notebookId?: string) =>
     invoke<string | null>('save_attachment', { sourcePath, notebookId }),
+  copyAttachmentFile: (sourcePath: string, targetPath: string) =>
+    invoke<boolean>('copy_attachment_file', { sourcePath, targetPath }),
 };
 
 // Windows

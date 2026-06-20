@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
 } from '../../ui/dropdown-menu';
 import { Tooltip } from '../../ui/tooltip';
-import { openLinkBubbleMenu } from './link-bubble-menu';
+import { openLinkEditPopup } from './link-edit-popup';
 
 interface EditorToolbarProps {
   editor: Editor | null;
@@ -233,7 +233,7 @@ export function EditorToolbar({ editor, collapsed, onCollapsedChange }: EditorTo
           <button
             className={`toolbar-button ${state.link ? 'active' : ''}`}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => openLinkBubbleMenu(editor, () => undefined)}
+            onClick={() => openLinkEditPopup(editor, () => undefined)}
             type="button"
             style={iconButtonStyle}
           >

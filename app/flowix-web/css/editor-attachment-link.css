@@ -70,9 +70,18 @@
   box-shadow: none;
 }
 
+.markdown-editor .tiptap .editor-file-attachment__card:hover,
+.markdown-editor .tiptap .editor-file-attachment__card:hover * {
+  cursor: pointer;
+}
+
 .markdown-editor .tiptap .editor-file-attachment__card:hover .editor-file-attachment__name {
   /* 与正文链接 hover 走同一条派生公式 (color-mix --document-link × white 20%),
    * 保证附件卡片的 "可点击" 视觉权重和正文 a:hover 完全一致. */
+  color: color-mix(in oklch, var(--document-link), white 20%);
+}
+
+.markdown-editor .tiptap .editor-file-attachment__card:hover .editor-file-attachment__icon {
   color: color-mix(in oklch, var(--document-link), white 20%);
 }
 
@@ -114,11 +123,7 @@
 }
 
 .markdown-editor .tiptap .editor-file-attachment.is-selected .editor-file-attachment__card {
-  /* 节点被 NodeSelection 选中: 与卡片图标/文字同源派生自 --document-link,
-   * 走 color-mix × transparent 的统一公式, 三主题下随 --document-link 自动适配.
-   * 浓度 10% 与 .editor-note-reference.is-selected 对齐, 选中态统一为"轻量"——
-   * inline 卡片在文本行内不应铺大色块喧宾夺主, 视觉权重对齐 hover 反馈. */
-  background-color: color-mix(in oklch, var(--document-link) 10%, transparent);
+  background-color: transparent;
 }
 
 .markdown-editor .tiptap .editor-image-attachment {
@@ -179,4 +184,3 @@
    * - 跨主题一致: 三套主题共享同一公式, 不会有"某主题的 hover 没设计"的问题 */
   color: color-mix(in oklch, var(--document-link), white 20%);
 }
-

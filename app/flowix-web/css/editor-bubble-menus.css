@@ -133,7 +133,7 @@
  * 边框/文字统一基于 --floating-foreground (柔和白) 派生半透明, 跟浮层底色配对;
  * 不要再误用 --primary-foreground — 它在 dark 主题下是深色, 套到深色浮层上
  * 会出现"深在深上"→ 黑边/黑字. */
-.link-bubble-popup {
+.link-edit-popup {
   background: var(--floating-bg);
   border: 1px solid color-mix(in oklch, var(--floating-foreground) 8%, transparent);
   border-radius: 10px;
@@ -142,19 +142,19 @@
   box-shadow: 0 8px 20px oklch(0 0 0 / 0.18);
 }
 
-.link-bubble-row {
+.link-edit-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.link-bubble-row + .link-bubble-row {
+.link-edit-row + .link-edit-row {
   margin-top: 6px;
 }
 
 /* 输入框底色: --floating-foreground 派生半透明白叠在深色浮层上, 模拟"玻璃内嵌"质感. */
-.link-bubble-text,
-.link-bubble-href {
+.link-edit-text,
+.link-edit-href {
   flex: 1;
   padding: 4px 8px;
   border: none;
@@ -167,23 +167,23 @@
 
 /* 文案输入是"次要"信息 (placeholder-like), 用专用 muted token 比 80% 透明白更稳:
  * muted-foreground 在三套主题下都为该主题的中性弱化色, 自动适配. */
-.link-bubble-text {
+.link-edit-text {
   color: var(--muted-foreground);
 }
 
-.link-bubble-href {
+.link-edit-href {
   background: color-mix(in oklch, var(--floating-foreground) 4%, transparent);
   border: 1px solid color-mix(in oklch, var(--floating-foreground) 16%, transparent);
 }
 
-.link-bubble-href:focus {
+.link-edit-href:focus {
   border-color: var(--ring);
 }
 
 /* 保存按钮: 与 .ui/button.tsx 的 default variant 同源, 用 --primary + --floating-foreground.
  * 注意: 这里用 floating-foreground 而非 primary-foreground — 后者在 dark 主题
  * 是深色, 但本按钮永远在深色浮层上, 必须用浅色文字. */
-.link-bubble-save {
+.link-edit-save {
   padding: 4px 12px;
   border: none;
   background: var(--primary);
@@ -196,7 +196,7 @@
   transition: background-color 0.12s ease;
 }
 
-.link-bubble-save:hover {
+.link-edit-save:hover {
   background: color-mix(in oklch, var(--primary) 80%, transparent);
 }
 

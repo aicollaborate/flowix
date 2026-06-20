@@ -10,11 +10,11 @@
    * → 黑图标/黑文字. --floating-foreground 在三主题下都是浅色, 配对
    * 始终深色的 --floating-bg 形成稳定的高对比文本对. */
   color: var(--floating-foreground);
-  /* padding 缩到 4/6/4/8 (上/右/下/左):
+  /* padding 缩到 4/4/4/8 (上/右/下/左):
    * - 上下各 4px → 浮层高度从 34px 降到 30px, 减少对正文的遮挡压迫感
-   * - 右侧 6px → 与 22px 按钮 + hover 时 14% 亮色背景留出微呼吸
+   * - 右侧 4px → 与 22px 按钮贴合更紧, hover 时 14% 亮色背景覆盖到按钮边缘
    * - 左侧保留 8px → URL 文字距圆角边更远, 视觉上不被"压角" */
-  padding: 4px 6px 4px 8px;
+  padding: 4px 4px 4px 8px;
   /* 圆角从 4px 提到 8px: 让浮层视觉上读作"气泡/胶囊"而非"矩形",
    * 配合 30px 高度, 圆角比 ≈ 27%, 接近 iOS/macOS 系统气泡的视觉风格. */
   border-radius: 8px;

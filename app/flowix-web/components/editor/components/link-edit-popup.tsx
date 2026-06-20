@@ -8,12 +8,12 @@ interface SavedLinkSelection {
   selectedText: string;
 }
 
-interface LinkBubbleMenuState {
+interface LinkEditPopupState {
   editor: Editor;
   onClose: () => void;
 }
 
-interface OpenLinkBubbleMenuOptions {
+interface OpenLinkEditPopupOptions {
   from?: number;
   to?: number;
   selectedText?: string;
@@ -22,7 +22,7 @@ interface OpenLinkBubbleMenuOptions {
 
 let popupContainer: HTMLDivElement | null = null;
 let popupRoot: Root | null = null;
-let popupState: LinkBubbleMenuState | null = null;
+let popupState: LinkEditPopupState | null = null;
 let clickOutsideHandler: ((e: MouseEvent) => void) | null = null;
 let repositionHandler: (() => void) | null = null;
 let repositionFrame: number | null = null;
@@ -97,7 +97,7 @@ function schedulePopupReveal(editor: Editor, selection: SavedLinkSelection) {
       revealFrame = null;
       updatePopupPosition(editor, selection);
       revealPopup();
-      (popupContainer?.querySelector('.link-bubble-href') as HTMLInputElement | null)?.focus();
+      (popupContainer?.querySelector('.link-edit-href') as HTMLInputElement | null)?.focus();
     });
   });
 }
@@ -162,8 +162,8 @@ function handleSave() {
   const popup = popupContainer;
   if (!popup) return;
 
-  const textInput = popup.querySelector('.link-bubble-text') as HTMLInputElement;
-  const hrefInput = popup.querySelector('.link-bubble-href') as HTMLInputElement;
+  const textInput = popup.querySelector('.link-edit-text') as HTMLInputElement;
+  const hrefInput = popup.querySelector('.link-edit-href') as HTMLInputElement;
 
   const text = textInput?.value.trim() ?? '';
   const href = normalizePlainLinkHref(hrefInput?.value);
@@ -214,7 +214,7 @@ function handleClose() {
   onClose();
 }
 
-function openLinkBubbleMenu(editor: Editor, onClose: () => void, options: OpenLinkBubbleMenuOptions = {}) {
+function openLinkEditPopup(editor: Editor, onClose: () => void, options: OpenLinkEditPopupOptions = {}) {
   closePopup();
 
   popupState = { editor, onClose };
@@ -240,7 +240,7 @@ function openLinkBubbleMenu(editor: Editor, onClose: () => void, options: OpenLi
 
   if (!popupContainer) {
     popupContainer = document.createElement('div');
-    popupContainer.className = 'link-bubble-popup';
+    popupContainer.className = 'link-edit-popup';
     hidePopupUntilPositioned();
     document.body.appendChild(popupContainer);
     popupRoot = createRoot(popupContainer);
@@ -255,10 +255,10 @@ function openLinkBubbleMenu(editor: Editor, onClose: () => void, options: OpenLi
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="link-bubble-row">
+      <div className="link-edit-row">
         <input
           type="text"
-          className="link-bubble-text"
+          className="link-edit-text"
           defaultValue={selectedText}
           placeholder="选择的文案"
           onKeyDown={(e) => {
@@ -273,10 +273,10 @@ function openLinkBubbleMenu(editor: Editor, onClose: () => void, options: OpenLi
           }}
         />
       </div>
-      <div className="link-bubble-row">
+      <div className="link-edit-row">
         <input
           type="text"
-          className="link-bubble-href"
+          className="link-edit-href"
           defaultValue={options.href ?? ''}
           placeholder="输入链接地址..."
           onKeyDown={(e) => {
@@ -291,8 +291,8 @@ function openLinkBubbleMenu(editor: Editor, onClose: () => void, options: OpenLi
           }}
         />
       </div>
-      <div className="link-bubble-row link-bubble-row-btn">
-        <button className="link-bubble-save" onClick={handleSave}>保存</button>
+      <div className="link-edit-row link-edit-row-btn">
+        <button className="link-edit-save" onClick={handleSave}>保存</button>
       </div>
     </div>
   );
@@ -314,4 +314,4 @@ function openLinkBubbleMenu(editor: Editor, onClose: () => void, options: OpenLi
   }, 100);
 }
 
-export { openLinkBubbleMenu, closePopup };
+export { openLinkEditPopup };

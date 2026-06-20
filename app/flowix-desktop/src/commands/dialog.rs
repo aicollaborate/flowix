@@ -1,8 +1,9 @@
 //! Dialog IPC — 原生 dialog + 附件保存 + 导出文件。
 //!
-//! 6 个 IPC:
+//! 7 个 IPC:
 //! - `select_directory` / `select_files` / `save_file_dialog` — 走 tauri-plugin-dialog
 //! - `save_attachment` / `save_attachment_content` — 拷贝到 `<notebook>/attachments/`
+//! - `copy_attachment_file` — 把附件复制到保存对话框选中的目标路径
 //! - `write_export_file` — 写任意路径 (无 scope guard, 风险点)
 //!
 //! 4 个域内 helper: `sanitize_attachment_file_name` / `unique_attachment_path`
@@ -265,6 +266,31 @@ pub async fn save_attachment_content(
     fs::write(&dest_path, decoded).map_err(|e| e.to_string())?;
 
     Ok(Some(dest_path.to_str().unwrap().to_string()))
+}
+
+#[tauri::command]
+pub async fn copy_attachment_file(
+    source_path: String,
+    target_path: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    use crate::path_scope::path_is_inside;
+
+    let attachments_dir = read_lock(&state.memo_file, "memo_file")
+        .get_memo_base()
+        .join("attachments");
+    let source = Path::new(&source_path);
+
+    if !path_is_inside(source, &attachments_dir) {
+        return Err("Source is not an attachment".to_string());
+    }
+
+    if !source.is_file() {
+        return Err("Attachment does not exist".to_string());
+    }
+
+    fs::copy(source, Path::new(&target_path)).map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 // ==================== IPC: 导出 ====================

@@ -5,6 +5,8 @@ import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeSelection, Plugin } from '@tiptap/pm/state';
 import { assetUrl } from '../utils';
 import { readMarkdownLinkDestination } from '../../shared/markdown-link-destination';
+import { setInlineAtomTextSelectionFromMouse } from '../../shared/inline-atom-selection';
+import { dialogs } from '../../../../../lib/tauri/client';
 import {
     isAttachmentMarkdownUrl,
     parseFileAttachmentMarkdown,
@@ -19,8 +21,16 @@ const ATTACHMENT_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="15" 
 
 // 鈹€鈹€鈹€ FileView (Pure Render) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-function removeHardBreaksBeforeFileAttachments(state: any) {
+function removeHardBreaksAroundFileAttachments(state: any) {
     const deletions: Array<{ from: number; to: number }> = [];
+    const seen = new Set<string>();
+
+    const pushDeletion = (from: number, to: number) => {
+        const key = `${from}:${to}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        deletions.push({ from, to });
+    };
 
     state.doc.descendants((node: ProseMirrorNode, pos: number) => {
         if (node.type.name !== 'fileAttachment') return;
@@ -28,7 +38,14 @@ function removeHardBreaksBeforeFileAttachments(state: any) {
         const $pos = state.doc.resolve(pos);
         const nodeBefore = $pos.nodeBefore;
         if (nodeBefore?.type.name === 'hardBreak') {
-            deletions.push({ from: pos - nodeBefore.nodeSize, to: pos });
+            pushDeletion(pos - nodeBefore.nodeSize, pos);
+        }
+
+        const afterPos = pos + node.nodeSize;
+        const $after = state.doc.resolve(afterPos);
+        const nodeAfter = $after.nodeAfter;
+        if (nodeAfter?.type.name === 'hardBreak') {
+            pushDeletion(afterPos, afterPos + nodeAfter.nodeSize);
         }
     });
 
@@ -49,6 +66,7 @@ class FileView implements ProseMirrorNodeView {
     getPos: (() => number) | undefined;
     decorations: readonly Decoration[];
     selected = false;
+    private suppressNextClickSelection = false;
 
     constructor(node: ProseMirrorNode, view: EditorView, getPos: () => number, decorations: readonly Decoration[]) {
         this.node = node;
@@ -60,11 +78,7 @@ class FileView implements ProseMirrorNodeView {
     }
 
     private createCard(): HTMLElement {
-        const { url, name, storageMode, storageKey } = this.node.attrs;
-
-        const fileUrl = storageMode === 'attachment' && storageKey
-            ? assetUrl(String(storageKey))
-            : url ?? '';
+        const { name, storageMode, storageKey } = this.node.attrs;
 
         const wrapper = document.createElement('span');
         wrapper.className = 'editor-file-attachment';
@@ -88,18 +102,8 @@ class FileView implements ProseMirrorNodeView {
         filenameSpan.className = 'editor-file-attachment__name';
         filenameSpan.textContent = name ?? '';
 
-        const link = document.createElement('a');
-        link.href = fileUrl || '#';
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.style.display = 'none';
-        link.addEventListener('click', (e) => {
-            if (!e.metaKey && !e.ctrlKey) e.preventDefault();
-        });
-
         card.appendChild(icon);
         card.appendChild(filenameSpan);
-        card.appendChild(link);
 
         // 节点首部 caret 占位:
         //  inline atom node 位于段落行首时, 浏览器把 caret 贴到
@@ -116,21 +120,43 @@ class FileView implements ProseMirrorNodeView {
         wrapper.appendChild(caretSpacer);
         wrapper.appendChild(card);
 
-        card.addEventListener('mousedown', (e) => {
+        wrapper.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
             e.preventDefault();
             e.stopPropagation();
+
+            const pos = this.getPos?.();
+            if (pos === undefined) return;
+
+            setInlineAtomTextSelectionFromMouse({
+                view: this.view,
+                node: this.node,
+                pos,
+                event: e,
+                referenceElement: card,
+            });
+            this.suppressNextClickSelection = true;
         });
 
-        card.addEventListener('click', (e) => {
+        wrapper.addEventListener('click', (e) => {
+            e.preventDefault();
             e.stopPropagation();
-            if (e.metaKey || e.ctrlKey) {
-                window.open(fileUrl, '_blank', 'noopener,noreferrer');
-            } else {
-                const pos = this.getPos?.();
-                if (pos !== undefined) {
-                    const selection = NodeSelection.create(this.view.state.doc, pos);
-                    this.view.dispatch(this.view.state.tr.setSelection(selection));
-                }
+
+            if (e.detail >= 2) {
+                this.suppressNextClickSelection = false;
+                void this.saveAttachmentAs();
+                return;
+            }
+
+            if (this.suppressNextClickSelection) {
+                this.suppressNextClickSelection = false;
+                return;
+            }
+
+            const pos = this.getPos?.();
+            if (pos !== undefined) {
+                const selection = NodeSelection.create(this.view.state.doc, pos);
+                this.view.dispatch(this.view.state.tr.setSelection(selection));
             }
         });
 
@@ -139,6 +165,20 @@ class FileView implements ProseMirrorNodeView {
         });
 
         return wrapper;
+    }
+
+    private async saveAttachmentAs(): Promise<void> {
+        const { name, fileName, storageMode, storageKey } = this.node.attrs;
+        if (storageMode !== 'attachment' || !storageKey) return;
+
+        const suggestedName = String(name || fileName || 'attachment');
+        try {
+            const targetPath = await dialogs.saveFile(suggestedName);
+            if (!targetPath) return;
+            await dialogs.copyAttachmentFile(String(storageKey), targetPath);
+        } catch (error) {
+            console.error('[file-attachment] failed to save attachment:', error);
+        }
     }
 
     private refreshCard(): void {
@@ -293,7 +333,7 @@ export const FileAttachment = Node.create({
     },
 
     onCreate() {
-        const tr = removeHardBreaksBeforeFileAttachments(this.editor.state);
+        const tr = removeHardBreaksAroundFileAttachments(this.editor.state);
         if (tr?.docChanged) {
             this.editor.view.dispatch(tr);
         }
@@ -304,7 +344,7 @@ export const FileAttachment = Node.create({
             new Plugin({
                 appendTransaction: (transactions, _oldState, newState) => {
                     if (!transactions.some(transaction => transaction.docChanged)) return null;
-                    return removeHardBreaksBeforeFileAttachments(newState);
+                    return removeHardBreaksAroundFileAttachments(newState);
                 },
             }),
         ];

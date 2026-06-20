@@ -165,18 +165,29 @@ function attrsFromMarkdownNoteLink(titleText: string, href: string): NoteReferen
 // ─── HardBreak 清理 ───────────────────────────────────────────────────────────
 
 /**
- * 删掉 noteReference 节点之前紧邻的 hardBreak 节点。
+ * 删掉 noteReference 节点前后紧邻的 hardBreak 节点。
  *
  * 触发场景:用户在编辑器里按 Shift+Enter 硬换行(产生 hardBreak),然后在下一
  * 行粘贴物理路径 → 落盘 markdown 形如 `foo  \n<note ...>...</note>`。再次打
  * 开时,marked 把 hardBreak 和 noteReference 还原成 ProseMirror 节点,渲染时
  * hardBreak 强制占一行,视觉上卡片"头顶"多出一行空白。
  *
+ * 另一类场景是卡片已经在块末尾,后面残留同块 hardBreak,视觉上表现为
+ * "卡片末尾多一行"。这类同样需要清掉,否则重新打开/粘贴后仍会复现。
+ *
  * 完全对照 fileAttachment 节点(`attachment-link/nodes/file-attachment.ts` 同名函数)
  * 的处理方式 — 二者都是 inline atom 节点,同样受 hardBreak 残留影响。
  */
-function removeHardBreaksBeforeNoteReferences(state: any) {
+function removeHardBreaksAroundNoteReferences(state: any) {
   const deletions: Array<{ from: number; to: number }> = [];
+  const seen = new Set<string>();
+
+  const pushDeletion = (from: number, to: number) => {
+    const key = `${from}:${to}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    deletions.push({ from, to });
+  };
 
   state.doc.descendants((node: ProseMirrorNode, pos: number) => {
     if (node.type.name !== 'noteReference') return;
@@ -184,7 +195,14 @@ function removeHardBreaksBeforeNoteReferences(state: any) {
     const $pos = state.doc.resolve(pos);
     const nodeBefore = $pos.nodeBefore;
     if (nodeBefore?.type.name === 'hardBreak') {
-      deletions.push({ from: pos - nodeBefore.nodeSize, to: pos });
+      pushDeletion(pos - nodeBefore.nodeSize, pos);
+    }
+
+    const afterPos = pos + node.nodeSize;
+    const $after = state.doc.resolve(afterPos);
+    const nodeAfter = $after.nodeAfter;
+    if (nodeAfter?.type.name === 'hardBreak') {
+      pushDeletion(afterPos, afterPos + nodeAfter.nodeSize);
     }
   });
 
@@ -700,10 +718,10 @@ export const NoteReference = Node.create({
   // ─── HardBreak 清理 ───────────────────────────────────────────────────────
   // 与 fileAttachment 同源(`attachment-link/nodes/file-attachment.ts:onCreate / addProseMirrorPlugins`):
   // 编辑器刚创建时扫一遍,后续每次文档变动也扫一遍,防止用户手动在卡片
-  // 前插入换行(Shift+Enter)导致卡片头部出现空行。
+  // 前后插入换行(Shift+Enter)导致卡片头部或末尾出现同块空行。
 
   onCreate() {
-    const tr = removeHardBreaksBeforeNoteReferences(this.editor.state);
+    const tr = removeHardBreaksAroundNoteReferences(this.editor.state);
     if (tr?.docChanged) {
       this.editor.view.dispatch(tr);
     }
@@ -714,7 +732,7 @@ export const NoteReference = Node.create({
       new Plugin({
         appendTransaction: (transactions, _oldState, newState) => {
           if (!transactions.some(transaction => transaction.docChanged)) return null;
-          return removeHardBreaksBeforeNoteReferences(newState);
+          return removeHardBreaksAroundNoteReferences(newState);
         },
       }),
     ];

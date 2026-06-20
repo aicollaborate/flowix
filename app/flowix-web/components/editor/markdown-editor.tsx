@@ -24,7 +24,7 @@ import { MentionNote, NoteReference } from './extensions/note-reference';
 import { DateTimeWidget, updateDateTimeWidget } from './extensions/datetime-widget';
 import { CodeBlockShiki } from './extensions/codeblock-shiki/codeblock-shiki';
 import { SearchAndReplace } from './extensions/search-replace';
-import { SearchReplacePanel } from './extensions/search-replace-panel';
+import { SearchReplacePanel } from './components/search-replace-panel';
 import Frontmatter from './extensions/frontmatter';
 import { MenuPinExtension } from './extensions/menu-pin';
 import { SlashMenu } from './extensions/slash-menu';

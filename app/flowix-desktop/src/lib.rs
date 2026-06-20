@@ -716,6 +716,7 @@ pub fn run() {
             commands::dialog::write_export_file,
             commands::dialog::save_attachment,
             commands::dialog::save_attachment_content,
+            commands::dialog::copy_attachment_file,
             // agent
             commands::agent::chat_with_agent_stream,
             commands::agent::stop_agent_stream,
