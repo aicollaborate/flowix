@@ -26,13 +26,13 @@
  *          短窗口内同 id 的连续事件 (last-write-wins), 减少 rerender。
  */
 
-import { subscribe } from './tauri/event-bus';
-import { EventDispatcher, type DispatcherMiddleware } from './event-dispatcher';
-import { joinNotebookMemoPath } from './path';
-import { useDocumentStore } from './store/document-store';
-import { useMemoStore } from './store/memo-store';
-import { createMemoDedupMiddleware } from './memo-dispatcher-dedup';
-import type { MemoEvent } from '../types/memo';
+import { subscribe } from '@platform/tauri/event-bus';
+import { EventDispatcher, type DispatcherMiddleware } from '@/lib/event-dispatcher';
+import { joinNotebookMemoPath } from '@/lib/path';
+import { useDocumentStore } from '@features/document/store/document-store';
+import { useMemoStore } from '@features/memo/store/memo-store';
+import { createMemoDedupMiddleware } from '@/lib/memo-dispatcher-dedup';
+import type { MemoEvent } from '@/types/memo';
 
 /**
  * 全局 memoDispatcher 单例 (per-webview)。 各 webview (主窗口 / 偏好

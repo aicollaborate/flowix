@@ -5,9 +5,9 @@
  * 实际色板在 css/theme/*.css; 本文件保留非颜色 / 通用 / 偏好设置结构。
  */
 
-import { SUPPORTED_TEXT_EXTENSIONS } from '../types';
-import { DEFAULT_THEME_ID, type ThemeId } from './theme';
-import type { ShortcutOverrides } from './shortcuts/types';
+import { SUPPORTED_TEXT_EXTENSIONS } from '@/types';
+import { DEFAULT_THEME_ID, type ThemeId } from '@features/theme';
+import type { ShortcutOverrides } from '@features/shortcuts';
 
 // 文件类型
 export const BINARY_EXTENSIONS = [

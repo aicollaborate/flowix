@@ -35,8 +35,8 @@
  * 真正派发的事件。
  */
 
-import type { DispatcherMiddleware } from './event-dispatcher';
-import type { MemoEvent } from '../types/memo';
+import type { DispatcherMiddleware } from '@/lib/event-dispatcher';
+import type { MemoEvent } from '@/types/memo';
 
 /**
  * 取 MemoEvent 的 dedup key。 三种 kind 都能拿到 memo id:
@@ -58,8 +58,8 @@ function memoEventKey(event: MemoEvent): string | undefined {
  *
  * 用法 (在应用启动早期调一次):
  *
- *   import { installMemoMiddleware } from './memo-dispatcher';
- *   import { createMemoDedupMiddleware } from './memo-dispatcher-dedup';
+ *   import { installMemoMiddleware } from '@/lib/memo-dispatcher';
+ *   import { createMemoDedupMiddleware } from '@/lib/memo-dispatcher-dedup';
  *
  *   installMemoMiddleware(createMemoDedupMiddleware({ delay: 50 }));
  */

@@ -42,6 +42,19 @@ pub struct SearchMemosResponse {
     pub index_ready: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MentionNoteSearchItem {
+    pub id: String,
+    pub filename: String,
+    pub title: String,
+    pub updated_at: i64,
+    pub notebook_id: String,
+    pub notebook_name: String,
+    pub notebook_path: String,
+    pub original_path: Option<String>,
+}
+
 // ==================== 鍩熷唴 helper ====================
 
 /// Read a memo from index.json; returns None when the id is missing.
@@ -131,6 +144,14 @@ fn cas_content_matches(current: &str, expected: &str, incoming: &str) -> bool {
     normalize_markdown_for_cas(current) == normalize_markdown_for_cas(expected)
 }
 
+fn note_title(filename: &str) -> String {
+    filename
+        .strip_suffix(".md")
+        .or_else(|| filename.strip_suffix(".MD"))
+        .unwrap_or(filename)
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::cas_content_matches;
@@ -200,6 +221,64 @@ pub fn get_memos(
         tag_id.as_deref(),
     );
     GetMemosResponse { memos }
+}
+
+#[tauri::command]
+pub fn search_mention_notes(
+    query: Option<String>,
+    limit: Option<usize>,
+    state: State<AppState>,
+) -> Vec<MentionNoteSearchItem> {
+    let normalized_query = query.unwrap_or_default().trim().to_lowercase();
+    let max_items = limit.unwrap_or(200).max(1);
+
+    let mut memo_file = write_lock(&state.memo_file, "memo_file");
+    let previous_notebook_id = memo_file.current_notebook_id_value();
+    let notebooks = memo_file.read_notebook_configs().unwrap_or_default();
+
+    let mut ordered_notebooks = notebooks.clone();
+    if let Some(current_id) = previous_notebook_id.as_deref() {
+        ordered_notebooks.sort_by(|a, b| {
+            let a_current = a.id == current_id;
+            let b_current = b.id == current_id;
+            b_current.cmp(&a_current)
+        });
+    }
+
+    let mut items = Vec::new();
+    for notebook in ordered_notebooks {
+        memo_file.set_current_notebook(Some(notebook.id.clone()));
+        for memo in memo_file.read_all_memos_filtered("all", "updatedAt", None) {
+            let title = note_title(&memo.filename);
+            if !normalized_query.is_empty() && !title.to_lowercase().contains(&normalized_query) {
+                continue;
+            }
+
+            let original_path = Path::new(&notebook.path)
+                .join(&memo.filename)
+                .to_str()
+                .map(|path| path.to_string());
+
+            items.push(MentionNoteSearchItem {
+                id: memo.id,
+                filename: memo.filename,
+                title,
+                updated_at: memo.updated_at,
+                notebook_id: notebook.id.clone(),
+                notebook_name: notebook.name.clone(),
+                notebook_path: notebook.path.clone(),
+                original_path,
+            });
+
+            if items.len() >= max_items {
+                memo_file.set_current_notebook(previous_notebook_id);
+                return items;
+            }
+        }
+    }
+
+    memo_file.set_current_notebook(previous_notebook_id);
+    items
 }
 
 #[tauri::command]

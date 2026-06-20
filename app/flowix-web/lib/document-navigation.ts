@@ -1,13 +1,13 @@
-import { canonicalPath } from './path';
+import { canonicalPath } from '@/lib/path';
 import {
   useDocumentHistoryStore,
   type DocumentHistoryEntry,
   type MemoHistoryEntry,
-} from './store/document-history-store';
-import { useDocumentStore } from './store/document-store';
-import { useMemoStore, type Notebook } from './store/memo-store';
-import { notebooks as notebooksClient } from './tauri/client';
-import type { MemoItem } from '../types/memo-item';
+} from '@features/document/store/document-history-store';
+import { useDocumentStore } from '@features/document/store/document-store';
+import { useMemoStore, type Notebook } from '@features/memo/store/memo-store';
+import { notebooks as notebooksClient } from '@platform/tauri/client';
+import type { MemoItem } from '@/types/memo-item';
 
 export type DocumentHistoryDirection = 'back' | 'forward';
 

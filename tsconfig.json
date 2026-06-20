@@ -8,6 +8,14 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["app/flowix-web/*"],
+      "@app/*": ["app/flowix-web/app/*"],
+      "@features/*": ["app/flowix-web/features/*"],
+      "@platform/*": ["app/flowix-web/platform/*"],
+      "@shared/*": ["app/flowix-web/shared/*"]
+    },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,

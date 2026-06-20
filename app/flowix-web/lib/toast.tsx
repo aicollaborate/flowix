@@ -3,7 +3,7 @@
 import type { ComponentType } from 'react';
 import { CheckCircleIcon, InfoIcon, WarningCircleIcon, XCircleIcon } from '@phosphor-icons/react';
 import { toast as sonnerToast } from 'sonner';
-import { TOAST_BG, TOAST_COLORS, TOAST_DURATION_MS, TOAST_SHADOW } from './constants';
+import { TOAST_BG, TOAST_COLORS, TOAST_DURATION_MS, TOAST_SHADOW } from '@/lib/constants';
 
 /** Toast 视觉 tone */
 export type ToastTone = 'success' | 'error' | 'info' | 'warning';

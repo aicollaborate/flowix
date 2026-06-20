@@ -21,6 +21,15 @@ export default defineConfig(async () => ({
   },
 
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@": frontendRoot,
+      "@app": resolve(frontendRoot, "app"),
+      "@features": resolve(frontendRoot, "features"),
+      "@platform": resolve(frontendRoot, "platform"),
+      "@shared": resolve(frontendRoot, "shared"),
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

@@ -8,7 +8,7 @@
 // `lib/event-dispatcher.ts` 的 middleware 提供 (last-write-wins 同 id 合并),
 // 不依赖后端发批量事件。
 
-import type { MemoItem } from './memo-item';
+import type { MemoItem } from '@/types/memo-item';
 
 export type MemoChangeSource =
   | 'user_new'

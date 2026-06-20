@@ -31,7 +31,7 @@
  * 使用范式 (MemoEvent 场景):
  *
  *   // lib/memo-dispatcher.ts (side-effect module)
- *   import { memoDispatcher } from './event-dispatcher';
+ *   import { memoDispatcher } from '@/lib/event-dispatcher';
  *   subscribe<MemoEvent>('memo-event', (e) => memoDispatcher.dispatch(e));
  *
  *   memoDispatcher.subscribe(

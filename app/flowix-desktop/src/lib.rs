@@ -669,6 +669,7 @@ pub fn run() {
             commands::kv::delete_setting,
             // 笔记 / Doc (13 个, 合并 section 3+4+5+Doc)
             commands::memo::get_memos,
+            commands::memo::search_mention_notes,
             commands::memo::read_memo,
             commands::memo::read_document,
             commands::memo::write_document,
