@@ -31,6 +31,13 @@ function getMemoSnapshot(memoId: string | null | undefined) {
   return findMemoById(useMemoStore.getState(), memoId);
 }
 
+function logOpenDocPerf(label: string, startedAt: number, meta?: Record<string, unknown>) {
+  console.info('[perf:open-doc]', label, {
+    elapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
+    ...meta,
+  });
+}
+
 export function useDocumentContent({
   identity,
   memoId,
@@ -48,6 +55,7 @@ export function useDocumentContent({
 
   const applyLoadedContent = useCallback(
     (path: string, fullContent: string, options?: Pick<LoadContentOptions, 'preservePending'>) => {
+      const startedAt = performance.now();
       const buf = applyLoadedDocumentContent(identity, path, fullContent, { preservePending: options?.preservePending });
       const memo = isExternalDocument ? null : getMemoSnapshot(memoId);
       const createdAt = memo?.createdAt ? formatDateTime(memo.createdAt) : '';
@@ -73,13 +81,20 @@ export function useDocumentContent({
         isFavorited,
         frontmatterMeta: {},
       });
+      logOpenDocPerf('applyLoadedContent', startedAt, {
+        memoId,
+        transitionId,
+        bytes: fullContent.length,
+        chars: initialCharCount,
+      });
     },
-    [identity, isExternalDocument, memoId],
+    [identity, isExternalDocument, memoId, transitionId],
   );
 
   const reloadDocument = useCallback(
     async (path: string, options?: LoadContentOptions) => {
       if (!path) return;
+      const startedAt = performance.now();
 
       // Switch the active buffer up-front so any in-flight writes from
       // the previous document that resolve after this point still
@@ -97,7 +112,18 @@ export function useDocumentContent({
       }
 
       try {
+        logOpenDocPerf('reloadDocument:start', startedAt, {
+          memoId,
+          transitionId,
+          path,
+        });
+        const readStartedAt = performance.now();
         const fullContent = await memosClient.readDocument(path);
+        logOpenDocPerf('readDocument', readStartedAt, {
+          memoId,
+          transitionId,
+          bytes: fullContent?.length ?? 0,
+        });
 
         if (fullContent === null || fullContent === undefined) {
           if (currentLoadId !== counter.current) return;
@@ -110,19 +136,28 @@ export function useDocumentContent({
 
         if (currentLoadId !== counter.current) return;
         applyLoadedContent(path, fullContent, { preservePending: options?.preservePending });
+        logOpenDocPerf('reloadDocument:loaded', startedAt, {
+          memoId,
+          transitionId,
+          bytes: fullContent.length,
+        });
         if (transitionId !== null) {
           useDocumentStore.getState().finishDocumentTransition(transitionId);
         }
       } catch (err) {
         if (currentLoadId !== counter.current) return;
         setState((prev) => ({ ...prev, isLoading: false, error: '读取失败' }));
+        logOpenDocPerf('reloadDocument:error', startedAt, {
+          memoId,
+          transitionId,
+        });
       } finally {
         if (currentLoadId === counter.current && transitionId !== null) {
           useDocumentStore.getState().finishDocumentTransition(transitionId);
         }
       }
     },
-    [applyLoadedContent, identity, transitionId],
+    [applyLoadedContent, identity, memoId, transitionId],
   );
 
   return {

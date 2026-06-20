@@ -1,5 +1,6 @@
 import type { ChatMessage } from "@/types";
-import { extractFileName, formatToolName } from "@features/agent/message/format";
+import { extractFileName } from "@features/agent/message/format";
+import { getToolLabel } from "@features/agent/message/tools";
 import { stripSystemBlock } from "@features/agent/message/system";
 import { isEmptyAssistantMessage } from "@features/agent/message/empty";
 
@@ -73,7 +74,7 @@ export function createAgentMessageViewModel(message: ChatMessage): AgentMessageV
     visibleContent: getAgentMessageVisibleContent(message),
     shouldRender: shouldRenderAgentMessage(message),
     reasoningLabel: getAgentReasoningLabel(message),
-    toolLabel: formatToolName(message.toolName),
+    toolLabel: getToolLabel(message.toolName),
     toolSummary: getAgentToolInputSummary(message.toolInput),
     endTimeText: getAgentMessageEndTimeText(message),
   };

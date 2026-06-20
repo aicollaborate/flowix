@@ -117,6 +117,13 @@ function isSameExternalTarget(
   );
 }
 
+function logOpenDocPerf(label: string, startedAt: number, meta?: Record<string, unknown>) {
+  console.info('[perf:open-doc]', label, {
+    elapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
+    ...meta,
+  });
+}
+
 let transitionChain: Promise<void> = Promise.resolve();
 
 function enqueueTransition<T>(work: () => Promise<T>): Promise<T> {
@@ -163,27 +170,41 @@ export const useDocumentStore = create<DocumentStore>()(
       });
     },
     openMemoDocument: async ({ memoId, path, notebookId = null, notebookPath = null, history = 'push' }) => {
+      const startedAt = performance.now();
       const canonicalNewPath = path ? canonicalPath(path) : null;
       if (isSameMemoTarget(get(), memoId, canonicalNewPath)) {
+        logOpenDocPerf('openMemoDocument:same-target', startedAt, { memoId });
         return;
       }
 
       const transitionId = get().documentTransitionId + 1;
+      logOpenDocPerf('openMemoDocument:start', startedAt, {
+        memoId,
+        transitionId,
+        hasPrevious: !!(get().activeMemoSession ?? get().activeExternalSession),
+      });
       set({ isDocumentTransitioning: true, documentTransitionId: transitionId });
       return enqueueTransition(async () => {
+        const queuedAt = performance.now();
         try {
           if (isSameMemoTarget(get(), memoId, canonicalNewPath)) {
             get().finishDocumentTransition(transitionId);
+            logOpenDocPerf('openMemoDocument:queued-same-target', startedAt, { memoId, transitionId });
             return;
           }
 
           const prev = get().activeMemoSession ?? get().activeExternalSession;
           const prevMemo = get().activeMemoSession;
           if (prev) {
+            const flushStartedAt = performance.now();
             // Flush pending edits on the outgoing document before
             // committing the new session. All document transitions are
             // queued here, so rapid clicks cannot overlap flush/set phases.
             await flushDocumentPath(sessionIdentity(prev), prev.path);
+            logOpenDocPerf('openMemoDocument:flush-previous', flushStartedAt, {
+              transitionId,
+              previousPath: prev.path,
+            });
           }
           if (
             history === 'push' &&
@@ -212,8 +233,14 @@ export const useDocumentStore = create<DocumentStore>()(
               isDocumentTransitioning: true,
             };
           });
+          logOpenDocPerf('openMemoDocument:commit-session', startedAt, {
+            memoId,
+            transitionId,
+            queuedMs: Math.round((queuedAt - startedAt) * 10) / 10,
+          });
         } catch (err) {
           get().finishDocumentTransition(transitionId);
+          logOpenDocPerf('openMemoDocument:error', startedAt, { memoId, transitionId });
           throw err;
         }
       });

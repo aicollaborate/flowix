@@ -10,6 +10,7 @@ import {
   createAgentMessageViewModel,
   shouldRenderAgentMessage,
 } from '@features/agent/message';
+import { getToolIconPath } from '@features/agent/message/tools';
 import { openNoteByDeepLink } from '@platform/open-target';
 import { isWindowsPlatform } from '@features/shortcuts';
 import { DEFAULT_AGENT_ROLE_KEY, getAgentRole, normalizeAgentRoleKey } from '@/lib/agent-roles';
@@ -76,104 +77,9 @@ const ICON_CHECK_PATH = 'M20 6 9 17 4 12';
 const ICON_TRASH_PATH = 'M216,48H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM192,208H64V64H192ZM80,24a8,8,0,0,1,8-8h80a8,8,0,0,1,0,16H88A8,8,0,0,1,80,24Z';
 const ICON_FULLSCREEN_PATH = 'M40,96a8,8,0,0,1-8-8V48A16,16,0,0,1,48,32H88a8,8,0,0,1,0,16H48V88A8,8,0,0,1,40,96ZM208,32H168a8,8,0,0,0,0,16h40V88a8,8,0,0,0,16,0V48A16,16,0,0,0,208,32ZM88,208H48V168a8,8,0,0,0-16,0v40a16,16,0,0,0,16,16H88a8,8,0,0,0,0-16Zm128-48a8,8,0,0,0-8,8v40H168a8,8,0,0,0,0,16h40a16,16,0,0,0,16-16V168A8,8,0,0,0,216,160Z';
 const ICON_FULLSCREEN_EXIT_PATH = 'M96,40V80A16,16,0,0,1,80,96H40a8,8,0,0,1,0-16H80V40a8,8,0,0,1,16,0Zm120,40H176V40a8,8,0,0,0-16,0V80a16,16,0,0,0,16,16h40a8,8,0,0,0,0-16ZM80,176v40a8,8,0,0,0,16,0V176a16,16,0,0,0-16-16H40a8,8,0,0,0,0,16Zm136-16H176a16,16,0,0,0-16,16v40a8,8,0,0,0,16,0V176h40a8,8,0,0,0,0-16Z';
-// 工具消息图标 ── 对齐面板 lib/message/icons.ts 的 TOOL_ICONS, 但
-// 卡片是纯 DOM, 不能用 lucide React 组件, 改用 Phosphor 同语义图标的
-// SVG 路径内联。viewBox 256x256, 用 regular weight, 与面板 h-3.5 w-3.5
-// (14×14px) 渲染尺寸对应。未命中映射 → Terminal 通用回退。
-//
-// 命名 → 图标对照 (与面板 icons.ts 同步):
-//   ls / list_directory / list_notebooks → Folder
-//   read / read_file                      → FileText
-//   write / write_file / create_file      → FilePlus
-//   edit / edit_file                      → FilePlus
-//   delete_file                           → Trash
-//   search_files / glob / grep            → MagnifyingGlass
-//   execute_command / bash / shell        → Terminal
-//   code                                  → Code
-//   git_*                                 → GitBranch
-//   db_query / database                   → Database
-//   server / api                          → Globe
-//   settings                              → Gear
-//   run                                   → Play
-//   stop                                  → Pause
-//   restart                               → ArrowsClockwise
-//   view                                  → Eye
-//   default                               → Terminal
-const TOOL_ICON_PATHS: Record<string, string> = {
-  // Folder
-  folder: 'M219.43,182.86,166.86,232H40a8,8,0,0,1-8-8V48A16,16,0,0,1,48,32h66.21a16,16,0,0,1,11.31,4.69L144.51,56H216A16,16,0,0,1,232,72V168A16,16,0,0,1,219.43,182.86Z',
-  // FileText
-  fileText: 'M213.69,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V88A8,8,0,0,0,213.69,82.34ZM152,160H104a8,8,0,0,1,0-16h48a8,8,0,0,1,0,16Zm0-32H104a8,8,0,0,1,0-16h48a8,8,0,0,1,0,16Zm45.66,117.66-5.66,5.66a8,8,0,0,1-11.31,0L168,240H56a8,8,0,0,1-8-8V51.31L63.31,36H152V88a8,8,0,0,0,8,8h52Z',
-  // FilePlus
-  filePlus: 'M213.66,82.34l-56-56A8,8,0,0,0,152,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V88A8,8,0,0,0,213.66,82.34ZM160,51.31,188.69,80H160ZM200,216H56V40h88V88a8,8,0,0,0,8,8h48Zm-72-72a8,8,0,0,1-8,8H112v8a8,8,0,0,1-16,0v-8H88a8,8,0,0,1,0-16h8V128a8,8,0,0,1,16,0v8h8A8,8,0,0,1,128,144Z',
-  // Trash
-  trash: 'M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM104,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm64,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z',
-  // MagnifyingGlass
-  magnify: 'M229.66,218.34,179.6,168.28a88.21,88.21,0,1,0-11.32,11.32l50.06,50.06a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z',
-  // Terminal
-  terminal: 'M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-33.66-77.66L68,121.66l26.34-26.34a8,8,0,0,0-11.32-11.32l-32,32a8,8,0,0,0,0,11.32l32,32a8,8,0,0,0,11.32-11.32Zm64,3.66H128a8,8,0,0,1,0-16h30.34a8,8,0,0,1,0,16Z',
-  // Code
-  code: 'M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,82.81l-32,96a8,8,0,1,1-15.46-4.82l32-96a8,8,0,0,1,15.46,4.82Z',
-  // GitBranch
-  gitBranch: 'M224,64a32,32,0,1,0-40,31v9a16,16,0,0,1-16,16H104a32,32,0,0,0-32,32v9a32,32,0,1,0,16,0V152a16,16,0,0,1,16-16h64a32,32,0,0,0,32-32V95A32.06,32.06,0,0,0,224,64ZM88,216a16,16,0,1,1,16-16A16,16,0,0,1,88,216ZM224,96a16,16,0,1,1,16-16A16,16,0,0,1,224,96Z',
-  // Database
-  database: 'M128,24C74.8,24,32,42.2,32,64v48c0,21.8,42.8,40,96,40s96-18.2,96-40V64C224,42.2,181.2,24,128,24Zm0,176c-44.2,0-80-12.3-80-28V150.4c17.4,8.6,40.7,13.6,80,13.6s62.6-5,80-13.6V172C208,187.7,172.2,200,128,200Zm0,32c-44.2,0-80-12.3-80-28V182.4c17.4,8.6,40.7,13.6,80,13.6s62.6-5,80-13.6V204C208,219.7,172.2,232,128,232Z',
-  // Globe (server/api)
-  globe: 'M128,24A104,104,0,1,0,232,128,104.12,104.12,0,0,0,128,24Zm0,16a88.07,88.07,0,0,1,76.94,45.06c-1.69,28.84-18,53.55-42.94,67.16V144a8,8,0,0,0-16,0v8.6A88,88,0,0,1,99.31,144c-.41-1.83-.31-3.7-.31-5.6a44,44,0,0,1,88,0c0,1.9.1,3.77-.31,5.6a88,88,0,0,1-46.69,8.6V144a8,8,0,0,0-16,0v8.22c-24.94-13.61-41.25-38.32-42.94-67.16A88.07,88.07,0,0,1,128,40Zm0,176a88,88,0,0,1-27.06-171.42c4.07,32.62,29.43,57.7,62.06,61.31A44,44,0,0,1,99,138.4,88,88,0,0,0,128,216Zm0-176a88,88,0,0,0-27.06,171.42c4.07-32.62,29.43-57.7,62.06-61.31A44,44,0,0,1,99,138.4,88,88,0,0,0,128,40Z',
-  // Gear (settings)
-  gear: 'M128,80a48,48,0,1,0,48,48A48,48,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm109.94-58.66-22.05-4.42a86,86,0,0,0-6.59-15.91l12.7-19.07a8,8,0,0,0-1.49-10.59L197.86,32.69a8,8,0,0,0-10.59,1.49L167.92,53.45a86,86,0,0,0-15.91-6.59L147.43,24.6A8,8,0,0,0,139.6,18H116.4a8,8,0,0,0-7.83,6.6l-4.58,22.26a86,86,0,0,0-15.91,6.59L68.66,40.18A8,8,0,0,0,58.07,38.69L35.43,61.35a8,8,0,0,0,1.49,10.59L50.06,91.4a86,86,0,0,0-6.59,15.91L21.32,112a8,8,0,0,0-6.6,7.83v23.2a8,8,0,0,0,6.6,7.83l22.15,4.51a86,86,0,0,0,6.59,15.91L37,189.06a8,8,0,0,0,1.49,10.59l22.62,22.66a8,8,0,0,0,10.59-1.49L88.08,202.55a86,86,0,0,0,15.91,6.59l4.58,22.26a8,8,0,0,0,7.83,6.6h23.2a8,8,0,0,0,7.83-6.6l4.58-22.26a86,86,0,0,0,15.91-6.59l19.16,19.27a8,8,0,0,0,10.59,1.49l22.63-22.63a8,8,0,0,0,1.49-10.59L205.94,170a86,86,0,0,0,6.59-15.91l22.15-4.51a8,8,0,0,0,6.6-7.83v-23.2A8,8,0,0,0,237.94,101.34Z',
-  // Play
-  play: 'M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,40V216a15.86,15.86,0,0,0,8.12,13.95,16,16,0,0,0,16.2-.3L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.14V40.86L215.88,128Z',
-  // Pause
-  pause: 'M216,48V208a16,16,0,0,1-16,16H160a16,16,0,0,1-16-16V48a16,16,0,0,1,16-16h40A16,16,0,0,1,216,48ZM96,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V48A16,16,0,0,0,96,32Z',
-  // ArrowsClockwise (restart)
-  arrowsClockwise: 'M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1,0-16h35L197.66,74.34a88,88,0,0,0-124.92,0,8,8,0,0,1-11.32-11.32,104,104,0,0,1,147.58,0L232,85V56a8,8,0,0,1,16,0Zm-32.92,110.62a8,8,0,0,0-10.74,3.32,88,88,0,0,1-124.92,0,8,8,0,0,0-11.32,11.32,104,104,0,0,0,147.58,0A8,8,0,0,0,207.08,166.62ZM72,152H24a8,8,0,0,0,0,16H72a8,8,0,0,0,0-16Z',
-  // Eye (view)
-  eye: 'M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.94,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z',
-};
-
-// 工具名 → icon 路径 key (与面板 icons.ts 的 lucide 组件映射 1:1)。
-// 增加新 toolName 时, 在此表加一行, 同时面板同步 ── 面板用 React
-// 组件, 卡片用 Phosphor 路径, 名称(key)保持一致便于核对。
-const TOOL_ICON_KEY_BY_NAME: Record<string, keyof typeof TOOL_ICON_PATHS> = {
-  ls: 'folder',
-  list_directory: 'folder',
-  list_notebooks: 'folder',
-  read: 'fileText',
-  read_file: 'fileText',
-  write: 'filePlus',
-  write_file: 'filePlus',
-  create_file: 'filePlus',
-  edit: 'filePlus',
-  edit_file: 'filePlus',
-  delete_file: 'trash',
-  search_files: 'magnify',
-  glob: 'magnify',
-  grep: 'magnify',
-  execute_command: 'terminal',
-  bash: 'terminal',
-  shell: 'terminal',
-  code: 'code',
-  git_branch: 'gitBranch',
-  git_commit: 'gitBranch',
-  git_status: 'gitBranch',
-  db_query: 'database',
-  database: 'database',
-  server: 'globe',
-  api: 'globe',
-  settings: 'gear',
-  run: 'play',
-  stop: 'pause',
-  restart: 'arrowsClockwise',
-  view: 'eye',
-};
-
-function toolIconPathFor(toolName: string | undefined): string {
-  if (!toolName) return TOOL_ICON_PATHS.terminal;
-  const key = TOOL_ICON_KEY_BY_NAME[toolName];
-  if (key) return TOOL_ICON_PATHS[key];
-  return TOOL_ICON_PATHS.terminal;
-}
+// 工具消息图标 ── 走 @features/agent/message/tools 的单源 registry。
+// 卡片是纯 DOM (Tiptap NodeView), 用 SVG path 字符串 (与 panel inline
+// SVG 共享同一份 data, 视觉完全一致)。getToolIconPath 已带 Terminal fallback。
 
 // 发送 / 停止图标 ── send 走 lucide ArrowRight (stroke 风格), stop
 // 走 Phosphor 矩形 (fill 风格)。两种渲染风格在按钮上'看'起来重量
@@ -318,7 +224,7 @@ function createToolIcon(toolName?: string): SVGSVGElement {
   svg.classList.add('agent-thread-card__message-tool-icon');
 
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', toolIconPathFor(toolName));
+  path.setAttribute('d', getToolIconPath(toolName));
   path.setAttribute('fill', 'currentColor');
   svg.append(path);
   return svg;

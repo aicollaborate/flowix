@@ -1,5 +1,6 @@
 mod agent;
 mod agent_access;
+mod cli_link;
 mod codex_cli;
 mod codex_history;
 mod commands;
@@ -271,6 +272,12 @@ pub fn run() {
     // / user_config 初始化, 否则 UserConfigStore 会建一个空的 ~/.flowix/,
     // migrate 检测到新目录已存在就跳过, 旧 ~/.woop/ 数据被遗漏。
     migrate_legacy_woop_dirs(&home_dir, &app_data_path);
+
+    // 启动时在 `~/.local/bin/flowix-cli` 建一个 symlink ── 跟 migrate
+    // 同类的"一次性启动 hook", 跟 user_config_dir 初始化解耦。 详情见
+    // `cli_link` 模块: 幂等 (每次启动都跑, 已存在就不动), 失败只 warn
+    // 不阻塞 GUI 启动, 范围 macOS + Linux (cfg(unix))。
+    cli_link::ensure_cli_symlink();
 
     let user_config_dir = get_user_config_dir(&home_dir);
     let user_config = Arc::new(user_config::UserConfigStore::new(home_dir.clone()));

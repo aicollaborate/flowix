@@ -1,25 +1,9 @@
-﻿export function formatToolName(name: string | undefined): string {
-  if (!name) return "未知";
-
-  const labels: Record<string, string> = {
-    read: "读取",
-    write: "写入",
-    edit: "编辑",
-    ls: "列出目录",
-    glob: "通配匹配",
-    grep: "内容搜索",
-    bash: "执行命令",
-    command_execution: "cmd",
-    list_notebooks: "列出笔记本",
-  };
-
-  if (labels[name]) return labels[name];
-
-  return name
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
-}
+﻿// format.ts ── 字符串 / 时间格式化工具, 非工具元数据。
+//
+// 历史: formatToolName 一度在此文件 ── 它是工具元数据, 已迁到 ./tools.tsx
+// (单源真源, getToolLabel)。本文件保留 truncateStart / extractFileName /
+// formatRelativeTime 三个工具, 被 message-tool.tsx / message-user.tsx /
+// agent-message.ts 共用 ── 不归"工具元数据", 保留。
 
 export function truncateStart(path: string, maxChars: number = 20): string {
   if (path.length <= maxChars) return path;

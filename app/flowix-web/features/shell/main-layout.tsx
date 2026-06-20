@@ -26,6 +26,7 @@ import { useDocumentCommands } from '@features/document';
 import { useExternalDocumentOpen } from '@features/document';
 import { useNotebookTodoCount } from '@features/memo/components/use-notebook-todo-count';
 import { useResizablePanels } from '@features/shell/hooks/use-resizable-panels';
+import { useMacosTrackpadSwipe, type MacosTrackpadSwipeDirection } from '@features/shell/hooks/use-macos-trackpad-swipe';
 import backgroundImage from '@/assets/bg.document.png';
 
 function isWindowsPlatform(): boolean {
@@ -39,6 +40,28 @@ function isDifferentHistoryTarget(entry: DocumentHistoryEntry, activeMemoSession
     entry.memoId !== activeMemoSession.memoId ||
     canonicalPath(entry.path) !== canonicalPath(activeMemoSession.path)
   );
+}
+
+type PanelVisibilityState = {
+  memoListVisible: boolean;
+  agentPanelVisible: boolean;
+};
+
+type PanelVisibilityTransition = Partial<PanelVisibilityState>;
+
+function resolvePanelSwipeTransition(
+  state: PanelVisibilityState,
+  direction: MacosTrackpadSwipeDirection,
+): PanelVisibilityTransition | null {
+  if (direction === 'left') {
+    if (state.memoListVisible) return { memoListVisible: false };
+    if (!state.agentPanelVisible) return { agentPanelVisible: true };
+    return null;
+  }
+
+  if (state.memoListVisible) return null;
+  if (state.agentPanelVisible) return { agentPanelVisible: false };
+  return { memoListVisible: true };
 }
 
 export function MainLayout() {
@@ -103,6 +126,7 @@ export function MainLayout() {
     agentColWidth,
     setMemoListVisible,
     toggleMemoListVisible,
+    setAgentPanelVisible,
     toggleAgentPanelVisible,
     setAgentColWidth,
   } = useSettingsStore(
@@ -112,6 +136,7 @@ export function MainLayout() {
       agentColWidth: s.agentColWidth,
       setMemoListVisible: s.setMemoListVisible,
       toggleMemoListVisible: s.toggleMemoListVisible,
+      setAgentPanelVisible: s.setAgentPanelVisible,
       toggleAgentPanelVisible: s.toggleAgentPanelVisible,
       setAgentColWidth: s.setAgentColWidth,
     })),
@@ -149,6 +174,36 @@ export function MainLayout() {
     setAgentColWidth,
     setMemoListVisible,
   });
+
+  const handlePanelSwipe = useCallback((direction: MacosTrackpadSwipeDirection) => {
+    const transition = resolvePanelSwipeTransition(
+      { memoListVisible, agentPanelVisible },
+      direction,
+    );
+    if (!transition) return;
+    if (transition.memoListVisible !== undefined && transition.memoListVisible !== memoListVisible) {
+      setMemoListVisible(transition.memoListVisible);
+    }
+    if (transition.agentPanelVisible !== undefined && transition.agentPanelVisible !== agentPanelVisible) {
+      setAgentPanelVisible(transition.agentPanelVisible);
+    }
+  }, [
+    agentPanelVisible,
+    memoListVisible,
+    setAgentPanelVisible,
+    setMemoListVisible,
+  ]);
+
+  // 双指横向滑动 → 切换侧栏 / Agent 面板 (macOS only, hook 内部已判定平台)。
+  //
+  // 手势矩阵 (memolist × agent):
+  //   开 × *    左滑 → 关闭 memolist; 右滑 → no-op (memolist 已开)
+  //   关 × 开   左滑 → no-op; 右滑 → 关闭 agent
+  //   关 × 关   左滑 → 打开 agent; 右滑 → 打开 memolist (回落原手势)
+  //
+  // 守卫防止 set 在已是目标值时仍触发订阅者重渲 ── useSettingsStore
+  // 没有 subscribeWithSelector, set 会通知所有订阅者。
+  useMacosTrackpadSwipe({ onSwipe: handlePanelSwipe });
 
   const currentMemo = currentDocumentPath && currentDocumentSource === 'memo' && activeMemoSession
     ? memos.find((memo) => memo.id === activeMemoSession.memoId)

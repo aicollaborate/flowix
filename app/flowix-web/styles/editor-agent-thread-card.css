@@ -531,13 +531,14 @@
  * 面板 message-tool 容器 = `w-full pr-1 py-1.5` 内部
  *   `flex items-center gap-2`:
  *     - ToolIcon (h-3.5 w-3.5 text-muted-foreground, 按 toolName 切换)
- *     - 工具名 (text-sm text-agent-foreground) ── 走 formatToolName
+ *     - 工具名 (text-sm text-agent-foreground) ── 走 getToolLabel
  *       做中英映射, e.g. read → 读取, bash → 执行命令
  *     - summary (text-xs font-mono text-muted-foreground) ── pathLike 字段
  *
- * 卡片场景没有 React Phosphor, 改用内联 SVG 路径表 ── toolName → 图标
- * key 映射与面板 lib/message/icons.ts 的 TOOL_ICONS 1:1, 视觉等价
- * (同样 14×14 渲染, 同样 muted-foreground 颜色)。未命中 → Terminal。 */
+ * 卡片场景没有 React 组件, 改用内联 SVG 路径 ── toolName → 图标
+ * 走 features/agent/message/tools 单源 registry (getToolIconPath),
+ * 与面板 (inline SVG 同样 path) 共用 TOOL_ICON_PATHS regular weight 数据,
+ * 视觉完全一致 (同样 14×14 渲染, 同样 muted-foreground 颜色)。未命中 → terminal。 */
 .markdown-editor .agent-thread-card__message--tool {
   display: flex;
   align-items: center;
@@ -675,12 +676,15 @@
   border-bottom-color: var(--brand);
 }
 
-/* 引用块 ── 面板走 border-l-4 border-primary pl-4 italic
- * text-muted-foreground, 卡片映射到 3px 左边框 + 12px 左 padding。 */
+/* 引用块 ── 颜色对齐编辑器内的 quote (tiptap blockquote border-left:
+ * 0.1875rem solid #ddd), 用 var(--border) token 做三主题自适应
+ * (与右栏面板 markdown-renderer 同源, 不硬编码 #ddd)。卡片
+ * 映射到 3px 左边框 + 12px 左 padding, italic + muted-foreground
+ * 跟编辑器一致。 */
 .markdown-editor .agent-thread-card__message-content blockquote {
   margin: 6px 0;
   padding: 2px 0 2px 12px;
-  border-left: 3px solid var(--brand);
+  border-left: 3px solid var(--border);
   color: var(--muted-foreground);
   font-style: italic;
 }
@@ -692,41 +696,79 @@
   border-top: 1px solid color-mix(in oklch, var(--muted-foreground) 12%, transparent);
 }
 
-/* 内联 code: 面板走 bg-[var(--code-bg)] px-1.5 rounded-md border
- * border-border text-[0.78rem]; 卡片保持同节奏 (12px, muted 背景)。 */
-.markdown-editor .agent-thread-card__message-content code {
-  /* 行内 code: 对齐 .markdown-editor .tiptap p code 的视觉口径 —
-   * padding: 0 0.4rem / 0.4rem 圆角 / 0.78rem 字号 / var(--code-bg) 底色,
-   * 颜色与边框仍走 --foreground / --border token. */
-  padding: 0 0.4rem;
-  border: 1px solid var(--border);
+/* 内联 code ── 严格对齐 .markdown-editor .tiptap p code 的视觉口径:
+ *   border: 1px solid color-mix(in oklch, var(--border) 90%, transparent)
+ *   border-radius: 0.4rem
+ *   padding: 0 0.3rem
+ *   color:   color-mix(in oklch, var(--foreground) 80%, transparent)
+ *   font-family: inherit; font-size: 0.84rem
+ *
+ * 选择器用 :not(pre) > code ── 让 inline code 规则只命中"pre 之外
+ * 的直接子 code", <pre><code> 内的 code 不会被这条规则命中, 避免
+ * 与下面 pre 块样式叠加 (双重 border / 双重 border-radius / 字色
+ * 被 color-mix 改写 等)。
+ *  - <p><code>foo</code></p>              命中 (p 不是 pre)
+ *  - <li>foo <code>bar</code></li>        命中 (li 不是 pre)
+ *  - <h1>foo <code>bar</code></h1>        命中 (h1 不是 pre)
+ *  - <pre><code>foo</code></pre>          不命中 (pre 是 pre)
+ * 编辑器正文也不带背景色 ── 仅靠 1px 边框 + 字色 80% 透明弱化做区分。
+ * 卡片跨三处 (Tiptap 正文 / 卡片 / 右栏面板) 走同一套 token。 */
+.markdown-editor .agent-thread-card__message-content :not(pre) > code {
+  padding: 0 0.3rem;
+  border: 1px solid color-mix(in oklch, var(--border) 90%, transparent);
   border-radius: 0.4rem;
-  background: var(--code-bg);
-  color: var(--foreground);
+  color: color-mix(in oklch, var(--foreground) 80%, transparent);
   font-family: inherit;
-  font-size: 0.78rem;
+  font-size: 0.84rem;
 }
 
-/* fenced code 块 ── marked 输出 <pre><code class="language-x">,
- * 我们重置 pre 自身的 padding/border (pre 是 code 的外层, 默认
- * 已有 margin + 4px padding, 与内嵌 code 的边框重叠), 把所有
- * 样式集中到 code 上。 */
+/* fenced code 块 ── 严格对齐 .markdown-editor .tiptap pre / pre code
+ * 的视觉口径: 把"边框 / 底色 / 圆角 / padding / 字号 / 行高"全部
+ * 挂在 pre 上 (跟编辑器一致), pre code 只还原 padding 与透明背景
+ * (让内层 code 不再叠加边框/底色 ── 避免双层视觉)。
+ *
+ *   pre:     background  color-mix(--code-block-bg 60%, transparent)
+ *            border      var(--border)
+ *            radius      0.5rem
+ *            padding     0.5rem 1rem 1rem
+ *            margin      1rem 0
+ *            font-size   0.85em  (相对父级 message-content 14px ≈ 12px)
+ *            line-height var(--app-line-height, 1.6)
+ *            white-space pre-wrap (跟编辑器一致, 长代码在卡片宽度下自动换行)
+ *   pre code: padding 0 / background transparent (还原内层, 让 pre
+ *            的样式不被 code 覆盖)
+ *
+ * 卡片之前把样式挂在 pre code 上 ── 与编辑器结构相反, 这里收口到
+ * pre。pre-wrap + 卡片宽度窄, 代码块天然按卡片宽换行, 不需要
+ * overflow-x: auto (编辑器是 overflow-x: visible, 同源)。 */
 .markdown-editor .agent-thread-card__message-content pre {
-  margin: 8px 0;
-  padding: 0;
-  overflow-x: auto;
-  font-family: var(--font-sans);
-  font-size: 12px;
-  line-height: 1.5;
+  margin: 1rem 0;
+  padding: 0.5rem 1rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: color-mix(in oklch, var(--code-block-bg) 60%, transparent);
+  font-family: inherit;
+  font-size: 0.85em;
+  line-height: var(--app-line-height, 1.6);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .markdown-editor .agent-thread-card__message-content pre code {
-  display: block;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--muted);
-  color: var(--muted-foreground);
-  white-space: pre;
+  /* 还原: 1) 上方 :not(pre) > code 已经让 inline code 规则不命中
+   * pre code ── 但浏览器 UA stylesheet 默认给 code 元素
+   * font-family: monospace, 会盖过 pre 的 font-family: inherit,
+   * 这里显式把字体 / 字号 / 颜色全部按 pre 继承, 让 pre code 视觉
+   * 与 pre 完全一致; 2) 背景 / 边框 / 内边距全部归零, 防止任何
+   * 残留样式 ── 这条规则是"边界声明", 写在这里表达 pre code 故意
+   * 不带 inline code 视觉, 后续若改 inline code 选择器, 这条不需
+   * 跟着改。 */
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
 }
 
 /* 表格 ── 面板走 min-w-full border-collapse + thead transparent +

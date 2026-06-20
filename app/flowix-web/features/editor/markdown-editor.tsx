@@ -299,6 +299,14 @@ export function MarkdownEditor({
   onSearchPanelOpenChangeRef.current = onSearchPanelOpenChange;
   onEditingFinishedRef.current = onEditingFinished;
 
+  const logEditorPerf = useCallback((label: string, startedAt: number, meta?: Record<string, unknown>) => {
+    console.info('[perf:open-doc]', label, {
+      elapsedMs: Math.round((performance.now() - startedAt) * 10) / 10,
+      contentChars: contentRef.current.length,
+      ...meta,
+    });
+  }, []);
+
   // 注册 'editor' scope — 挂载期间 editor.undo / editor.redo 生效,
   // 卸载后 pop, 防止在 memo 列表/弹窗里按 ⌘Z 误触发。
   useShortcutScope('editor');
@@ -316,6 +324,7 @@ export function MarkdownEditor({
   }, []);
 
   const applyExternalContent = useCallback((nextContent: string) => {
+    const startedAt = performance.now();
     const editor = editorRef.current;
     const normalizedNextContent = normalizeMarkdownTableEmptyCells(nextContent);
     if (!editor || normalizedNextContent === contentRef.current) {
@@ -334,6 +343,9 @@ export function MarkdownEditor({
     } finally {
       isApplyingExternalContentRef.current = false;
     }
+    logEditorPerf('MarkdownEditor:setContent', startedAt, {
+      nextChars: normalizedNextContent.length,
+    });
 
     const docSize = editor.state.doc.content.size;
     const from = Math.min(selection.from, docSize);
@@ -343,12 +355,13 @@ export function MarkdownEditor({
       scrollEl.scrollTop = scrollTop;
       scrollEl.scrollLeft = scrollLeft;
     }
-  }, [findScrollable]);
+  }, [findScrollable, logEditorPerf]);
 
   useEffect(() => {
     if (!elementRef.current || !content) {
       return;
     }
+    const mountStartedAt = performance.now();
     const initialContent = normalizeMarkdownTableEmptyCells(content);
     contentRef.current = initialContent;
 
@@ -432,6 +445,10 @@ export function MarkdownEditor({
         if (nextTarget?.closest?.('.agent-thread-card')) return;
         onEditingFinishedRef.current?.();
       },
+    });
+    logEditorPerf('MarkdownEditor:create', mountStartedAt, {
+      initialChars: initialContent.length,
+      docSize: editor.state.doc.content.size,
     });
 
     onBeforeCreate?.(editor);
