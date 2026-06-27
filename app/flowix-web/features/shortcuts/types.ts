@@ -8,6 +8,8 @@
  * - `ShortcutOverrides` —— UserSettings 里存的覆盖层, 只记录与默认不同的部分。
  */
 
+import type { I18nKey } from '@features/i18n';
+
 /** 抽象平台。'unknown' 是兜底 — 通常只在测试或非 Tauri 环境出现。 */
 export type Platform = 'mac' | 'windows' | 'linux' | 'unknown';
 
@@ -73,10 +75,16 @@ export interface WhenContext {
 export interface ActionDefinition {
   /** 稳定 ID (跨版本不变), 形如 'memo.create'。Settings 覆盖层以此为 key。 */
   id: string;
-  /** 命令面板 / 偏好里展示给用户看的中文标签。 */
-  title: string;
-  /** 命令面板搜索的补充描述, 可选。 */
-  description?: string;
+  /**
+   * 命令面板 / 偏好里展示给用户看的标签的 i18n key。
+   * 解析走 `translate(language, titleKey)`，对应 `preferences.shortcuts.action.<id>.title`。
+   */
+  titleKey: I18nKey;
+  /**
+   * 命令面板搜索的补充描述的 i18n key，可选。
+   * 解析走 `translate(language, descriptionKey)`，对应 `preferences.shortcuts.action.<id>.description`。
+   */
+  descriptionKey?: I18nKey;
   /** 命令面板分组 (导航 / Memo / 笔记本 / 视图 / 代理 / 系统)。 */
   group: string;
   /** 触发域。 */

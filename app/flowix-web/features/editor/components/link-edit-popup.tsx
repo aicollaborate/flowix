@@ -1,6 +1,7 @@
 import { Editor, posToDOMRect } from '@tiptap/core';
 import { createRoot, type Root } from 'react-dom/client';
 import { linkSelectionHighlightPluginKey, normalizePlainLinkHref } from '@features/editor/extensions/markdown-link';
+import { useI18n } from '@features/i18n';
 
 interface SavedLinkSelection {
   from: number;
@@ -242,6 +243,78 @@ function handleClose() {
   onClose();
 }
 
+function LinkEditPopupContent({
+  mode,
+  initialHref,
+  selectedText,
+}: {
+  mode: LinkEditMode;
+  initialHref: string;
+  selectedText: string;
+}) {
+  const { t } = useI18n();
+  const isUpdate = mode === 'edit' && Boolean(initialHref);
+
+  return (
+    <div
+      role="dialog"
+      aria-label={mode === 'edit' ? t('editor.link.edit') : t('editor.link.add')}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="link-edit-row">
+        <input
+          type="text"
+          className="link-edit-text"
+          defaultValue={selectedText}
+          aria-label={t('editor.link.textLabel')}
+          placeholder={t('editor.link.textPlaceholder')}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.stopPropagation();
+              handleSave();
+            } else if (e.key === 'Escape') {
+              e.stopPropagation();
+              handleClose();
+            }
+          }}
+        />
+      </div>
+      <div className="link-edit-row">
+        <input
+          type="text"
+          className="link-edit-href"
+          defaultValue={initialHref}
+          aria-label={t('editor.link.urlLabel')}
+          placeholder={t('editor.link.urlPlaceholder')}
+          onInput={(e) => {
+            e.currentTarget.removeAttribute('aria-invalid');
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.stopPropagation();
+              handleSave();
+            } else if (e.key === 'Escape') {
+              e.stopPropagation();
+              handleClose();
+            }
+          }}
+        />
+      </div>
+      <div className="link-edit-row link-edit-row-btn">
+        <button className="link-edit-cancel" onClick={handleClose}>
+          {t('editor.link.cancel')}
+        </button>
+        <button className="link-edit-save" onClick={handleSave}>
+          {isUpdate ? t('editor.link.update') : t('editor.link.save')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function openLinkEditPopup(editor: Editor, onClose: () => void, options: OpenLinkEditPopupOptions = {}) {
   closePopup();
 
@@ -282,62 +355,11 @@ function openLinkEditPopup(editor: Editor, onClose: () => void, options: OpenLin
   setupRepositionListeners(editor, saved);
 
   popupRoot!.render(
-    <div
-      role="dialog"
-      aria-label={mode === 'edit' ? '编辑链接' : '添加链接'}
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="link-edit-row">
-        <input
-          type="text"
-          className="link-edit-text"
-          defaultValue={selectedText}
-          aria-label="链接文案"
-          placeholder="选择的文案"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              e.stopPropagation();
-              handleSave();
-            } else if (e.key === 'Escape') {
-              e.stopPropagation();
-              handleClose();
-            }
-          }}
-        />
-      </div>
-      <div className="link-edit-row">
-        <input
-          type="text"
-          className="link-edit-href"
-          defaultValue={popupState.initialHref}
-          aria-label="链接地址"
-          placeholder="输入链接地址..."
-          onInput={(e) => {
-            e.currentTarget.removeAttribute('aria-invalid');
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              e.stopPropagation();
-              handleSave();
-            } else if (e.key === 'Escape') {
-              e.stopPropagation();
-              handleClose();
-            }
-          }}
-        />
-      </div>
-      <div className="link-edit-row link-edit-row-btn">
-        <button className="link-edit-cancel" onClick={handleClose}>
-          取消
-        </button>
-        <button className="link-edit-save" onClick={handleSave}>
-          {mode === 'edit' && popupState.initialHref ? '更新' : '保存'}
-        </button>
-      </div>
-    </div>
+    <LinkEditPopupContent
+      mode={mode}
+      initialHref={popupState.initialHref}
+      selectedText={selectedText}
+    />
   );
 
   schedulePopupReveal(editor, saved);

@@ -18,6 +18,8 @@ import type {
   AgentAccessKind,
 } from "@/lib/types/agent-access";
 
+export type AgentAccessErrorCode = "not-selected" | "already-tracked" | "save-failed";
+
 export interface AgentAccessState {
   config: AgentAccessConfig;
   isLoading: boolean;
@@ -37,13 +39,13 @@ export interface AgentAccessState {
    * 然后 `agentAccess.set` 整份写回。 路径已存在 (notebook 同路径或
    * 已加的 folder) 时后端返回 `PathConflict`, UI 弹 toast 但不动 store。
    */
-  addFolderFromPicker: () => Promise<{ ok: true; entry: AgentAccessEntry } | { ok: false; reason: string }>;
+  addFolderFromPicker: () => Promise<{ ok: true; entry: AgentAccessEntry } | { ok: false; code: AgentAccessErrorCode }>;
 
   /**
    * 直接以给定路径加 folder ── 跳过 dialog picker, 给测试 / 偏好窗口
    * 等场景复用。 UI 层用 `addFolderFromPicker`。
    */
-  addFolder: (path: string, name?: string) => Promise<{ ok: true; entry: AgentAccessEntry } | { ok: false; reason: string }>;
+  addFolder: (path: string, name?: string) => Promise<{ ok: true; entry: AgentAccessEntry } | { ok: false; code: AgentAccessErrorCode }>;
 
   /** 删 folder ── kind != Folder 由后端 no-op。 */
   removeFolder: (id: string) => Promise<void>;
@@ -106,18 +108,18 @@ export const useAgentAccessStore = create<AgentAccessState>((set, get) => ({
         // 用户选了一个已经跟踪的路径, 不写盘也不留乐观条目 ── 回滚到
         // 真正的"没加"状态, 让用户看到原列表。
         set({ config: prev });
-        return { ok: false, reason: "该目录已被跟踪" };
+        return { ok: false, code: "already-tracked" };
       }
       console.error("agentAccess.addFolder failed, rolling back:", e);
       await get().loadInitial();
-      return { ok: false, reason: reason ?? "保存失败" };
+      return { ok: false, code: "save-failed" };
     }
   },
 
   addFolderFromPicker: async () => {
     const picked = await dialogs.selectDirectory();
     if (!picked) {
-      return { ok: false, reason: "未选择目录" };
+      return { ok: false, code: "not-selected" };
     }
     return get().addFolder(picked);
   },

@@ -46,6 +46,7 @@ import {
   loadMemoLibraryMetadata,
   loadTodoMetadata,
 } from '@features/memo/services/memo-list-metadata-service';
+import { useI18n, type I18nParams } from '@features/i18n';
 
 const LazyNotebookDialogs = lazy(() =>
   import('@features/memo/components/notebook-dialogs').then((module) => ({
@@ -130,9 +131,10 @@ function getTodoSelectionKey(todo: MemoTodoListEntry, index: number): string {
 }
 
 function EmptyState() {
+  const { t } = useI18n();
   return (
     <div className="flex flex-col items-center justify-center h-full gap-2 text-[var(--muted-foreground)]">
-      <span className="text-sm">未找到笔记</span>
+      <span className="text-sm">{t("memo.list.emptyNotFound")}</span>
     </div>
   );
 }
@@ -165,6 +167,7 @@ const MEMO_LIST_LOAD_MORE_THRESHOLD_PX = 720;
 
 export function MemoList() {
   const { request } = useTauriRpc();
+  const { t } = useI18n();
   const { registerCard, prepareForInsert, onListRendered } =
     useMemoInsertAnimation();
   // 滚动容器 ── 普通文档流, 内部 flex-col 让 row 高度由内容撑开。
@@ -376,7 +379,7 @@ export function MemoList() {
         notebook: currentNotebook,
         selectedTagId: currentSelectedTagId,
         beforeLargeParse: async () => {
-          setLibraryBlockingLoadingText('正在解析文档库');
+          setLibraryBlockingLoadingText(t('memo.list.loadingLibrary'));
           await waitForNextPaint();
           return parseTaskSeq === libraryParseTaskSeqRef.current;
         },
@@ -402,7 +405,7 @@ export function MemoList() {
   useEffect(() => {
     void loadData().catch((error) => {
       console.warn('[MemoList] Failed to load memo list data:', error);
-      toast.error('加载笔记列表失败');
+      toast.error(t('memo.list.loadFailed'));
     });
   }, [loadData, refreshTrigger, selectedNotebookId]);
 
@@ -435,7 +438,7 @@ export function MemoList() {
       } catch (error) {
         if (!cancelled) {
           console.warn('[MemoList] Failed to load memos:', error);
-          toast.error('加载笔记列表失败');
+          toast.error(t('memo.list.loadFailed'));
         }
       } finally {
         if (!cancelled) {
@@ -469,7 +472,7 @@ export function MemoList() {
           notebookId: selectedNotebook.id,
           sort: activeSort,
           beforeLargeParse: async () => {
-            setTodoBlockingLoadingText('正在解析待办');
+            setTodoBlockingLoadingText(t('memo.list.loadingTodos'));
             await waitForNextPaint();
             return !cancelled && parseTaskSeq === todoParseTaskSeqRef.current;
           },
@@ -503,7 +506,7 @@ export function MemoList() {
     activeTagId
   );
   const showMemoListLoading = isMemoListLoading || currentMemoListQueryKey !== loadedMemoListQueryKey;
-  const memoListLoadingText = showMemoListLoading ? '正在加载笔记' : null;
+  const memoListLoadingText = showMemoListLoading ? t('memo.list.loadingMemos') : null;
   const visibleLoadingText = blockingLoadingText;
   const selectedMemoIndex = useMemo(
     () => selectedMemo ? memos.findIndex((memo) => memo.id === selectedMemo.id) : -1,
@@ -629,7 +632,7 @@ export function MemoList() {
 
     let result: any;
     try {
-      result = await memoRepository.create(undefined, selectedNotebook.id);
+      result = await memoRepository.create(activeTagId ?? undefined, selectedNotebook.id);
     } catch (error) {
       setSelectedMemo(previousSelectedMemo);
       throw error;
@@ -643,6 +646,7 @@ export function MemoList() {
     const newMemo = result as MemoItem;
     const shouldSelectNewMemo =
       activeFilter === 'all' ||
+      (activeFilter === 'tagged' && Boolean(activeTagId)) ||
       activeFilter === 'thisWeek' ||
       activeFilter === 'thisMonth';
 
@@ -659,6 +663,7 @@ export function MemoList() {
     }
   }, [
     activeFilter,
+    activeTagId,
     handleMemoCreated,
     prepareForInsert,
     selectedNotebook,
@@ -686,7 +691,7 @@ export function MemoList() {
     const notebookPath = newNotebookPath.trim();
 
     setCreateNotebookOpen(false);
-    setLibraryBlockingLoadingText('正在扫描文档库');
+    setLibraryBlockingLoadingText(t('memo.list.scanningLibrary'));
     await waitForNextPaint();
 
     try {
@@ -697,7 +702,7 @@ export function MemoList() {
       ) as Notebook | null;
 
       if (!created) {
-        toast.error('创建失败');
+        toast.error(t('memo.list.createFailed'));
         return;
       }
 
@@ -743,7 +748,7 @@ export function MemoList() {
     try {
       const updated = await notebookRepository.update(editingNotebook.id, trimmed, nextIcon ?? '');
       if (updated) {
-        toast.success('已更新');
+        toast.success(t('memo.list.updated'));
         // 同步更新列表
         setNotebooks(
           useMemoStore.getState().notebooks.map((nb) => (nb.id === updated.id ? updated : nb))
@@ -757,85 +762,85 @@ export function MemoList() {
         setEditNotebookName('');
         setEditNotebookIcon(null);
       } else {
-        toast.error('更新失败');
+        toast.error(t('memo.list.updateFailed'));
       }
     } catch (error) {
       console.warn('[MemoList] Failed to update notebook:', error);
-      toast.error('更新失败');
+      toast.error(t('memo.list.updateFailed'));
     }
   };
 
   return (
     <div className="flex flex-col h-full bg-[var(--card)] relative">
       {/* Memo Tab */}
-      <div className="flex items-center justify-between pl-2 pr-4 py-2 gap-2">
+      <div className="flex items-center justify-between pl-2 pr-4 pb-2 gap-2">
         <div className="min-w-0 flex-1">
           <DropdownMenu open={notebookDropdownOpen} onOpenChange={setNotebookDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <button
                 className="group flex max-w-full min-w-0 items-center gap-1 overflow-hidden px-2 py-0.5 rounded-md transition-colors"
               >
-                <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-[var(--foreground)] transition-colors duration-150 group-hover:text-[color-mix(in_oklch,var(--foreground)_80%,white)]">{selectedNotebook?.name || '选择笔记本'}</span>
+                <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-[var(--foreground)] transition-colors duration-150 group-hover:text-[color-mix(in_oklch,var(--foreground)_80%,white)]">{selectedNotebook?.name || t('memo.list.selectNotebook')}</span>
                 <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] shrink-0" strokeWidth={2.5} />
               </button>
             </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="bottom" className="w-[200px] px-1 py-1.5 space-y-1">
             {/* Group 1: Filter Options */}
-            <DropdownMenuLabel className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] px-2 pb-1">筛选</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] px-2 pb-1">{t('memo.list.filterLabel')}</DropdownMenuLabel>
             <DropdownMenuItem
               onClick={() => handleFilterChange('all')}
               className="flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
             >
-              <span>全部</span>
+              <span>{t('memo.list.filterAll')}</span>
               {activeFilter === 'all' && <Check className="w-4 h-4 text-[var(--primary)]" />}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => handleFilterChange('thisWeek')}
               className="flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
             >
-              <span>只看本周</span>
+              <span>{t('memo.list.filterThisWeek')}</span>
               {activeFilter === 'thisWeek' && <Check className="w-4 h-4 text-[var(--primary)]" />}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => handleFilterChange('thisMonth')}
               className="flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
             >
-              <span>只看本月</span>
+              <span>{t('memo.list.filterThisMonth')}</span>
               {activeFilter === 'thisMonth' && <Check className="w-4 h-4 text-[var(--primary)]" />}
             </DropdownMenuItem>
 
             {/* Group 2: Sort Options */}
-            <DropdownMenuLabel className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] px-2 pb-1">排序</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] px-2 pb-1">{t('memo.list.sortLabel')}</DropdownMenuLabel>
             <DropdownMenuItem
               onClick={() => handleSortChange('createdAt')}
               className="flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
             >
-              <span>创建时间</span>
+              <span>{t('memo.list.sortCreated')}</span>
               {activeSort === 'createdAt' && <Check className="w-4 h-4 text-[var(--primary)]" />}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => handleSortChange('updatedAt')}
               className="flex items-center justify-between cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
             >
-              <span>更新时间</span>
+              <span>{t('memo.list.sortUpdated')}</span>
               {activeSort === 'updatedAt' && <Check className="w-4 h-4 text-[var(--primary)]" />}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Tooltip content="全文搜索" shortcut="palette.search">
+          <Tooltip content={t("memo.list.searchTooltip")} shortcut="palette.search">
             <Button
               size="icon"
               variant="outline"
               className={cn(HEADER_ICON_BTN_CLASS, 'bg-[var(--card)]')}
               onClick={() => setSearchCommandOpen(true)}
-              aria-label="搜索"
+              aria-label={t("memo.list.search")}
             >
               <Search className="w-4 h-4" />
             </Button>
           </Tooltip>
-          <Tooltip content="新建笔记" shortcut="memo.create">
+          <Tooltip content={t("memo.list.newMemoTooltip")} shortcut="memo.create">
             <Button
               size="icon"
               className="h-8 w-8 justify-center bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 rounded-full p-0 border border-transparent"
@@ -932,8 +937,8 @@ export function MemoList() {
       <Dialog open={!!deleteMemo} onOpenChange={(open) => !open && setDeleteMemo(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>确认是否删除</DialogTitle>
-            <DialogDescription>确定要删除 "{displayTitleFromFilename(deleteMemo?.filename)}" 吗？此操作无法撤销。</DialogDescription>
+            <DialogTitle>{t('memo.delete.title')}</DialogTitle>
+            <DialogDescription>{t('memo.delete.description', { name: displayTitleFromFilename(deleteMemo?.filename) } satisfies I18nParams)}</DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2 mt-4">
             <button
@@ -941,14 +946,14 @@ export function MemoList() {
               onClick={() => setDeleteMemo(null)}
               className="h-8 px-3 text-sm rounded-lg hover:bg-[var(--muted)]"
             >
-              取消
+              {t('memo.delete.cancel')}
             </button>
             <button
               type="button"
               onClick={handleDeleteConfirm}
               className="relative h-8 pl-3 pr-7 text-sm rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
             >
-              删除
+              {t('memo.delete.confirm')}
               <Kbd className="!text-primary-foreground border-0">↵</Kbd>
             </button>
           </div>

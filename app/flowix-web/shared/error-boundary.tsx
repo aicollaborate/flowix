@@ -1,4 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from "react";
+import { translate, type AppLanguage } from "@features/i18n";
+import { useUserSettingsStore } from "@features/preferences/store/user-settings-store";
 
 interface ErrorBoundaryProps {
 	children: ReactNode;
@@ -9,6 +11,10 @@ interface ErrorBoundaryProps {
 interface ErrorBoundaryState {
 	hasError: boolean;
 	error?: Error;
+}
+
+function getLanguage(): AppLanguage {
+	return useUserSettingsStore.getState().settings.language;
 }
 
 /**
@@ -39,6 +45,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 				return this.props.fallback;
 			}
 
+			const lang = getLanguage();
+
 			return (
 				<div className="flex flex-col items-center justify-center h-full p-8 text-center">
 					<div className="mb-4 text-destructive">
@@ -57,15 +65,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 							/>
 						</svg>
 					</div>
-					<h2 className="text-lg font-semibold text-foreground mb-2">出错了</h2>
+					<h2 className="text-lg font-semibold text-foreground mb-2">{translate(lang, "error.title")}</h2>
 					<p className="text-sm text-muted-foreground mb-4">
-						{this.state.error?.message || "发生了意外错误"}
+						{this.state.error?.message || translate(lang, "error.unexpected")}
 					</p>
 					<button
 						onClick={this.handleRetry}
 						className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-[color-mix(in_oklch,var(--primary)_90%,transparent)] transition-colors text-sm font-medium"
 					>
-						重试
+						{translate(lang, "error.retry")}
 					</button>
 				</div>
 			);

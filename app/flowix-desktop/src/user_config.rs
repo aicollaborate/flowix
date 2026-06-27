@@ -60,7 +60,7 @@ pub struct FormatConfig {
 ///
 /// 序列化形式是小写字符串 (`"system"` / `"light"` / ...), 与前端 `ThemeId` 联合
 /// 类型字面量一一对应; 老的 preference.json (字符串) 仍然兼容读取。
-/// 任何不在 4 个变体里的字符串 (例如用户手改磁盘 / 未来客户端加新主题) 会在
+/// 任何不在 5 个变体里的字符串 (例如用户手改磁盘 / 未来客户端加新主题) 会在
 /// 反序列化阶段直接报错, 不会写回内存 — 兜底由前端的 sanitizeTheme 兜底成 "system"。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -70,6 +70,7 @@ pub enum Theme {
     Light,
     Dark,
     Rock,
+    Mist,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

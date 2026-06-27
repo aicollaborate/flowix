@@ -11,6 +11,7 @@ import {
   ExternalSaveButton,
   MemoActions,
 } from '@features/document/components/document-titlebar-shared';
+import { useI18n } from '@features/i18n';
 
 interface DocumentTitlebarWinProps {
   currentMemo: MemoItem | null;
@@ -66,6 +67,7 @@ export function DocumentTitlebarWin({
   onSaveExternalToMemo,
   onCopyExternalPath,
 }: DocumentTitlebarWinProps) {
+  const { t } = useI18n();
   const documentState: DocumentState = currentMemo
     ? 'memo'
     : externalFilePath
@@ -80,34 +82,34 @@ export function DocumentTitlebarWin({
     >
       <div className="flex shrink-0 items-center gap-1">
         {isSidebarHidden && (
-          <Tooltip content="显示侧栏">
+          <Tooltip content={t("document.titlebar.showSidebarTooltip")}>
             <button
               type="button"
               onClick={onToggleSidebar}
-              aria-label="显示侧栏"
+              aria-label={t("document.titlebar.showSidebar")}
               className="w-7 h-7 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-lg transition-[opacity,transform,color] duration-[400ms] animate-in fade-in zoom-in-95"
             >
               <SidebarToggleIcon className="w-4 h-4" variant="collapsed" />
             </button>
           </Tooltip>
         )}
-        <Tooltip content="后退" shortcut="history.back">
+        <Tooltip content={t("document.titlebar.backTooltip")} shortcut="history.back">
           <button
             type="button"
             onClick={onNavigateBack}
             disabled={!canNavigateBack}
-            aria-label="后退"
+            aria-label={t("document.titlebar.back")}
             className={`${ICON_BTN} disabled:pointer-events-none disabled:opacity-35`}
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
         </Tooltip>
-        <Tooltip content="前进" shortcut="history.forward">
+        <Tooltip content={t("document.titlebar.forwardTooltip")} shortcut="history.forward">
           <button
             type="button"
             onClick={onNavigateForward}
             disabled={!canNavigateForward}
-            aria-label="前进"
+            aria-label={t("document.titlebar.forward")}
             className={`${ICON_BTN} disabled:pointer-events-none disabled:opacity-35`}
           >
             <ChevronRight className="h-4 w-4" />

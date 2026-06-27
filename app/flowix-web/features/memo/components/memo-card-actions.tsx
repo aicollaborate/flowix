@@ -2,6 +2,7 @@
 
 import { PushPin, TrashSimpleIcon } from "@phosphor-icons/react";
 import { cn } from '@/lib/utils';
+import { useI18n } from '@features/i18n';
 import type { MemoItem } from '@features/memo';
 
 // Minimal contract every shadcn-style item primitive in this app satisfies:
@@ -32,16 +33,17 @@ export function MemoCardActions({
   onDelete,
   Item,
 }: MemoCardActionsProps) {
+  const { t } = useI18n();
   return (
     <>
       <Item onClick={() => onFavoriteToggle(memo)} className={ITEM_BASE}>
         {memo.favorited ? (
           <>
-            <PushPin weight="fill" className="w-4 h-4 mr-2" /> 取消置顶
+            <PushPin weight="fill" className="w-4 h-4 mr-2" /> {t("memo.action.unpin")}
           </>
         ) : (
           <>
-            <PushPin className="w-4 h-4 mr-2" /> 置顶
+            <PushPin className="w-4 h-4 mr-2" /> {t("memo.action.pin")}
           </>
         )}
       </Item>
@@ -49,7 +51,7 @@ export function MemoCardActions({
         onClick={() => onDelete(memo)}
         className={cn(ITEM_BASE, "hover:text-[var(--destructive)]")}
       >
-        <TrashSimpleIcon className="w-4 h-4 mr-2" /> 删除
+        <TrashSimpleIcon className="w-4 h-4 mr-2" /> {t("memo.action.delete")}
       </Item>
     </>
   );

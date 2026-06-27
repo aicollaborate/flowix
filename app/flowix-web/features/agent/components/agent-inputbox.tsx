@@ -19,6 +19,7 @@ import { CitationCard } from "@features/agent/components/citation-card";
 import { useMemoStore, type MemoItem } from "@features/memo";
 import { useChatStore } from "@features/agent/store/chat-store";
 import { agent } from "@platform/tauri/client";
+import { useI18n } from "@features/i18n";
 import type { AgentCodexModel, AgentPermissionMode } from "@/types/agent";
 
 interface InputboxProps {
@@ -36,15 +37,25 @@ const MIN_HEIGHT = 44;
 const MAX_HEIGHT = 180;
 const MAX_MEMOS = 10;
 
-const PERMISSION_OPTIONS: Array<{
-	id: AgentPermissionMode;
-	label: string;
-}> = [
-	{ id: "inherit", label: "默认" },
-	{ id: "read-only", label: "可读" },
-	{ id: "workspace-write", label: "可编辑" },
-	{ id: "danger-full-access", label: "完全访问" },
+const PERMISSION_IDS: AgentPermissionMode[] = [
+	"inherit",
+	"read-only",
+	"workspace-write",
+	"danger-full-access",
 ];
+
+function getPermissionLabel(t: (key: import("@features/i18n").I18nKey) => string, id: AgentPermissionMode): string {
+	switch (id) {
+		case "inherit":
+			return t("agent.permission.default");
+		case "read-only":
+			return t("agent.permission.readOnly");
+		case "workspace-write":
+			return t("agent.permission.workspaceWrite");
+		case "danger-full-access":
+			return t("agent.permission.dangerFullAccess");
+	}
+}
 
 const CODEX_MODEL_OPTIONS: Array<{
 	id: AgentCodexModel;
@@ -56,10 +67,15 @@ const CODEX_MODEL_OPTIONS: Array<{
 ];
 
 function PermissionModeMenu() {
+	const { t } = useI18n();
 	const agentPermissionMode = useChatStore((state) => state.agentPermissionMode);
 	const setAgentPermissionMode = useChatStore((state) => state.setAgentPermissionMode);
+	const options = useMemo(
+		() => PERMISSION_IDS.map((id) => ({ id, label: getPermissionLabel(t, id) })),
+		[t],
+	);
 	const currentPermission =
-		PERMISSION_OPTIONS.find((option) => option.id === agentPermissionMode) ?? PERMISSION_OPTIONS[0];
+		options.find((option) => option.id === agentPermissionMode) ?? options[0];
 
 	return (
 		<DropdownMenu>
@@ -67,7 +83,7 @@ function PermissionModeMenu() {
 				<button
 					type="button"
 					className="flex h-8 items-center gap-1 rounded-full px-2 text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-					aria-label="权限模式"
+					aria-label={t("agent.permissionMode.menu")}
 				>
 					<Shield className="h-4 w-4" />
 					<span className="max-w-[64px] truncate">{currentPermission.label}</span>
@@ -75,9 +91,9 @@ function PermissionModeMenu() {
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" side="top" className="w-[200px] px-1 py-1.5 space-y-1">
 				<DropdownMenuLabel className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] px-2 pb-1">
-					权限模式
+					{t("agent.permissionMode.title")}
 				</DropdownMenuLabel>
-				{PERMISSION_OPTIONS.map((option) => (
+				{options.map((option) => (
 					<DropdownMenuItem
 						key={option.id}
 						onClick={() => setAgentPermissionMode(option.id)}
@@ -95,9 +111,10 @@ function PermissionModeMenu() {
 }
 
 function CodexModelMenu() {
+	const { t } = useI18n();
 	const agentCodexModel = useChatStore((state) => state.agentCodexModel);
 	const setAgentCodexModel = useChatStore((state) => state.setAgentCodexModel);
-	const [defaultModel, setDefaultModel] = useState("Codex 默认");
+	const [defaultModel, setDefaultModel] = useState("");
 
 	useEffect(() => {
 		let cancelled = false;
@@ -109,9 +126,7 @@ function CodexModelMenu() {
 				}
 			})
 			.catch(() => {
-				if (!cancelled) {
-					setDefaultModel("Codex 默认");
-				}
+				// keep defaultModel empty; rendered as t('agent.codexModel.default')
 			});
 		return () => {
 			cancelled = true;
@@ -119,10 +134,10 @@ function CodexModelMenu() {
 	}, []);
 
 	const options = useMemo(() => {
-		const base = [
-			{ id: "inherit", label: `默认 (${defaultModel})` },
-			...CODEX_MODEL_OPTIONS,
-		];
+		const inheritLabel = defaultModel
+			? t("agent.codexModel.defaultWith", { model: defaultModel })
+			: t("agent.codexModel.default");
+		const base = [{ id: "inherit", label: inheritLabel }, ...CODEX_MODEL_OPTIONS];
 		if (
 			agentCodexModel !== "inherit" &&
 			!base.some((option) => option.id === agentCodexModel)
@@ -130,7 +145,7 @@ function CodexModelMenu() {
 			base.push({ id: agentCodexModel, label: agentCodexModel });
 		}
 		return base;
-	}, [agentCodexModel, defaultModel]);
+	}, [agentCodexModel, defaultModel, t]);
 
 	const currentModel =
 		options.find((option) => option.id === agentCodexModel) ?? options[0];
@@ -141,7 +156,7 @@ function CodexModelMenu() {
 				<button
 					type="button"
 					className="flex h-8 items-center gap-1 rounded-full px-2 text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-					aria-label="模型"
+					aria-label={t("agent.model.menu")}
 				>
 					<Cpu className="h-4 w-4" />
 					<span className="max-w-[88px] truncate">{currentModel.label}</span>
@@ -149,7 +164,7 @@ function CodexModelMenu() {
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" side="top" className="w-[200px] px-1 py-1.5 space-y-1">
 				<DropdownMenuLabel className="text-xs uppercase tracking-wider text-[var(--muted-foreground)] px-2 pb-1">
-					模型
+					{t("agent.model.title")}
 				</DropdownMenuLabel>
 				{options.map((option) => (
 					<DropdownMenuItem
@@ -170,6 +185,7 @@ function CodexModelMenu() {
 
 const BaseInputbox = forwardRef<HTMLTextAreaElement, BaseInputboxProps>((props, ref) => {
 	const { onSend, isLoading, onStop, showPermissionMode = false, showModelMode = false } = props;
+	const { t } = useI18n();
 	const [input, setInput] = useState("");
 	const [selectedMemos, setSelectedMemos] = useState<MemoItem[]>([]);
 	const [inputboxMemos, setInputboxMemos] = useState<MemoItem[]>([]);
@@ -298,7 +314,7 @@ const BaseInputbox = forwardRef<HTMLTextAreaElement, BaseInputboxProps>((props, 
 										type="button"
 										onClick={() => removeMemo(memo.id)}
 										className="p-0.5 hover:bg-[var(--muted)] rounded"
-										aria-label="移除 Memo"
+										aria-label={t("agent.input.removeMemo")}
 									>
 										<X className="w-3 h-3" />
 									</button>
@@ -323,7 +339,7 @@ const BaseInputbox = forwardRef<HTMLTextAreaElement, BaseInputboxProps>((props, 
 									onKeyDown={handleKeyDown}
 									onCompositionStart={() => setIsComposing(true)}
 									onCompositionEnd={() => setIsComposing(false)}
-									placeholder="问 AI 进行写作"
+									placeholder={t("agent.input.placeholder")}
 									disabled={isLoading}
 									className="min-h-[44px] max-h-[180px] w-full overflow-auto resize-none border-0 p-0 bg-transparent placeholder:text-[var(--muted-foreground)] placeholder:opacity-60 focus:outline-none focus:ring-0 text-[15px]"
 									style={{ fontFamily: "var(--agent-font)" }}
@@ -334,7 +350,7 @@ const BaseInputbox = forwardRef<HTMLTextAreaElement, BaseInputboxProps>((props, 
 						<DropdownMenuContent align="start" side="top" className="w-[280px] max-h-[300px] overflow-y-auto">
 							<DropdownMenuLabel className="flex items-center gap-1">
 								<Hash className="w-3 h-3" />
-								选择 Memo
+								{t("agent.input.selectMemo")}
 								{memoQuery && <span className="text-muted-foreground">: {memoQuery}</span>}
 							</DropdownMenuLabel>
 							<DropdownMenuSeparator />
@@ -367,7 +383,7 @@ const BaseInputbox = forwardRef<HTMLTextAreaElement, BaseInputboxProps>((props, 
 									<button
 										type="button"
 										className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-										aria-label="添加上下文"
+										aria-label={t("agent.input.addContext")}
 									>
 										<Plus className="h-5 w-5" />
 									</button>
@@ -380,19 +396,19 @@ const BaseInputbox = forwardRef<HTMLTextAreaElement, BaseInputboxProps>((props, 
 							{showPermissionMode && <PermissionModeMenu />}
 						</div>
 						{isLoading ? (
-							<Tooltip content="停止生成">
+							<Tooltip content={t("agent.input.stopTooltip")}>
 								<Button
 									type="button"
 									size="icon"
 									onClick={onStop}
-									aria-label="停止生成"
+									aria-label={t("agent.input.stop")}
 									className="h-8 w-8 rounded-full bg-[var(--warning)] hover:bg-[var(--warning)] text-[var(--floating-foreground)]"
 								>
 									<Stop className="h-4 w-4" weight="fill" />
 								</Button>
 							</Tooltip>
 						) : (
-							<Tooltip content="发送">
+							<Tooltip content={t("agent.input.sendTooltip")}>
 								<Button
 									type="submit"
 									size="icon"
@@ -404,7 +420,7 @@ const BaseInputbox = forwardRef<HTMLTextAreaElement, BaseInputboxProps>((props, 
 											? "bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[color-mix(in_oklch,var(--primary)_85%,transparent)] cursor-pointer"
 											: "bg-[var(--muted)] text-[var(--muted-foreground)] cursor-not-allowed"
 									)}
-									aria-label="发送"
+									aria-label={t("agent.input.send")}
 								>
 									<ArrowRight className="h-5 w-5" />
 								</Button>

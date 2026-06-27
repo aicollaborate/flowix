@@ -45,6 +45,7 @@ import {
 } from '@platform/tauri/client';
 import { openMemoSession } from '@features/memo/use-cases/open-memo-session';
 import { ShortcutKbd } from '@shared/ui/shortcut-kbd';
+import { useI18n } from '@features/i18n';
 
 interface GlobalSearchCommandProps {
   open: boolean;
@@ -68,12 +69,19 @@ const PROPERTY_FILTER_FIELDS = [
   'tags',
 ];
 
-const PROPERTY_FILTER_OPERATORS: Array<{ value: PropertyFilterCondition['operator']; label: string }> = [
-  { value: 'equals', label: '等于' },
-  { value: 'notEquals', label: '不等于' },
-  { value: 'contains', label: '包含' },
-  { value: 'empty', label: '为空' },
-];
+const PROPERTY_FILTER_OPERATOR_KEYS: Record<PropertyFilterCondition['operator'], import("@features/i18n").I18nKey> = {
+  equals: "shell.commandPalette.operator.equals",
+  notEquals: "shell.commandPalette.operator.notEquals",
+  contains: "shell.commandPalette.operator.contains",
+  empty: "shell.commandPalette.operator.empty",
+};
+
+function getPropertyFilterOperatorLabel(
+  operator: PropertyFilterCondition['operator'],
+  t: (key: import("@features/i18n").I18nKey) => string,
+): string {
+  return t(PROPERTY_FILTER_OPERATOR_KEYS[operator]);
+}
 
 /**
  * 全局搜索 / 命令面板.
@@ -91,6 +99,7 @@ const PROPERTY_FILTER_OPERATORS: Array<{ value: PropertyFilterCondition['operato
  * - 操作: 新建 memo、新建笔记本、打开偏好设置
  */
 export function GlobalSearchCommand({ open, onOpenChange }: GlobalSearchCommandProps) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<MemoSearchHit[]>([]);
   const [indexReady, setIndexReady] = useState(true);
@@ -192,7 +201,7 @@ export function GlobalSearchCommand({ open, onOpenChange }: GlobalSearchCommandP
         // 剪掉时会触发 W() 重置到首条 — 用户正在打字, 重置是预期行为, 不算 bug.
       >
         <CommandInput
-          placeholder="搜索备忘录、笔记本、操作…"
+          placeholder={t('shell.commandPalette.placeholder')}
           value={query}
           onValueChange={setQuery}
           // 弹窗打开时自动 focus 到 input ── cmdk 在 cmdk-root 上监听 ArrowUp/Down,
@@ -208,7 +217,7 @@ export function GlobalSearchCommand({ open, onOpenChange }: GlobalSearchCommandP
                 filterPanelOpen && 'bg-[var(--muted)] text-[var(--foreground)]',
                 activePropertyFilterCount > 0 && 'text-[var(--primary)]'
               )}
-              aria-label="筛选"
+              aria-label={t('shell.commandPalette.filter')}
               aria-pressed={filterPanelOpen}
             >
               <Filter className="h-4 w-4" />
@@ -224,9 +233,9 @@ export function GlobalSearchCommand({ open, onOpenChange }: GlobalSearchCommandP
           <div className="border-b border-[var(--border)] bg-[color-mix(in_oklch,var(--muted)_28%,transparent)] px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-xs font-medium text-[var(--foreground)]">属性筛选</div>
+                <div className="text-xs font-medium text-[var(--foreground)]">{t('shell.commandPalette.propertyFilter.heading')}</div>
                 <div className="truncate text-[11px] text-[var(--muted-foreground)]">
-                  按属性字段添加条件，后端接口完成后会参与搜索
+                  {t('shell.commandPalette.propertyFilter.description')}
                 </div>
               </div>
               <button
@@ -235,7 +244,7 @@ export function GlobalSearchCommand({ open, onOpenChange }: GlobalSearchCommandP
                 className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 text-xs text-[var(--foreground)] hover:bg-[var(--muted)]"
               >
                 <Plus className="h-3.5 w-3.5" />
-                添加条件
+                {t('shell.commandPalette.propertyFilter.addCondition')}
               </button>
             </div>
 
@@ -250,7 +259,7 @@ export function GlobalSearchCommand({ open, onOpenChange }: GlobalSearchCommandP
                       value={filter.field}
                       onChange={(event) => updatePropertyFilter(filter.id, { field: event.target.value })}
                       className="h-7 min-w-0 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-xs text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
-                      aria-label="属性字段"
+                      aria-label={t('shell.commandPalette.propertyField')}
                     >
                       {PROPERTY_FILTER_FIELDS.map((field) => (
                         <option key={field} value={field}>{field}</option>
@@ -262,25 +271,25 @@ export function GlobalSearchCommand({ open, onOpenChange }: GlobalSearchCommandP
                         operator: event.target.value as PropertyFilterCondition['operator'],
                       })}
                       className="h-7 min-w-0 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-xs text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
-                      aria-label="筛选关系"
+                      aria-label={t('shell.commandPalette.filterRelation')}
                     >
-                      {PROPERTY_FILTER_OPERATORS.map((operator) => (
-                        <option key={operator.value} value={operator.value}>{operator.label}</option>
+                      {(['equals', 'notEquals', 'contains', 'empty'] as PropertyFilterCondition['operator'][]).map((value) => (
+                        <option key={value} value={value}>{getPropertyFilterOperatorLabel(value, t)}</option>
                       ))}
                     </select>
                     <input
                       value={filter.value}
                       disabled={filter.operator === 'empty'}
                       onChange={(event) => updatePropertyFilter(filter.id, { value: event.target.value })}
-                      placeholder={filter.operator === 'empty' ? '无需填写' : '输入值'}
+                      placeholder={filter.operator === 'empty' ? t('shell.commandPalette.noValueNeeded') : t('shell.commandPalette.inputValue')}
                       className="h-7 min-w-0 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-50"
-                      aria-label="筛选值"
+                      aria-label={t('shell.commandPalette.filterValue')}
                     />
                     <button
                       type="button"
                       onClick={() => removePropertyFilter(filter.id)}
                       className="flex h-7 w-6 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--destructive)]"
-                      aria-label="移除筛选条件"
+                      aria-label={t('shell.commandPalette.removeFilter')}
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -338,15 +347,16 @@ function memoFromSearchHit(hit: MemoSearchHit): MemoItem {
 }
 
 function SearchResultsGroup({ hits, indexReady, memosInStore, onPick }: SearchResultsGroupProps) {
+  const { t } = useI18n();
   if (hits.length === 0) {
     return (
       <CommandEmpty>
-        {!indexReady ? '索引构建中…稍后再试' : '没有匹配的结果'}
+        {!indexReady ? t('shell.commandPalette.empty.indexBuilding') : t('shell.commandPalette.empty.noMatches')}
       </CommandEmpty>
     );
   }
   return (
-    <CommandGroup heading="搜索结果">
+    <CommandGroup heading={t('shell.commandPalette.searchResults')}>
       {hits.map((h) => {
         // tag/filter 会让 store 里只保留当前列表子集; search hit 仍可来自
         // 当前 notebook 的其它 memo。找不到完整 MemoItem 时用 hit 合成最小
@@ -368,7 +378,7 @@ function SearchResultsGroup({ hits, indexReady, memosInStore, onPick }: SearchRe
               )}
             </div>
             <CommandShortcut className="w-8 shrink-0 text-right">
-              {h.matchedIn === 'title' ? '标题' : h.matchedIn === 'tag' ? '标签' : '正文'}
+              {h.matchedIn === 'title' ? t('shell.commandPalette.matchedIn.title') : h.matchedIn === 'tag' ? t('shell.commandPalette.matchedIn.tag') : t('shell.commandPalette.matchedIn.body')}
             </CommandShortcut>
           </CommandItem>
         );
@@ -427,6 +437,7 @@ interface StaticGroupsProps {
 }
 
 function StaticGroups({ onClose }: StaticGroupsProps) {
+  const { t } = useI18n();
   // 全部状态 / 动作从全局 store 拿 — StaticGroups 自身不持数据, 关闭后下次
   // 打开会随 store 当前值自然反映最新状态.
   const notebooks = useMemoStore((s) => s.notebooks);
@@ -549,10 +560,10 @@ function StaticGroups({ onClose }: StaticGroupsProps) {
   return (
     <>
 {/* 标签: 命令面板内 fetch */}
-      <CommandGroup heading="标签">
+      <CommandGroup heading={t('shell.commandPalette.tagsGroup')}>
         {tagList.length === 0 ? (
           <div className="px-3 py-2 text-xs text-[var(--muted-foreground)]">
-            暂无标签
+            {t('shell.commandPalette.emptyTags')}
           </div>
         ) : (
           tagList.map((tag) => (
@@ -569,24 +580,24 @@ function StaticGroups({ onClose }: StaticGroupsProps) {
       </CommandGroup>
 
       {/* 筛选: filter 切换 */}
-      <CommandGroup heading="筛选">
+      <CommandGroup heading={t('shell.commandPalette.filterGroup')}>
         <CommandItem value="filter-favorited" onSelect={() => handleFilter('favorited')}>
           <PushPin />
-          <span>置顶</span>
+          <span>{t('shell.commandPalette.filter.favorited')}</span>
           <span className="ml-auto flex items-center gap-2">
             {activeFilter === 'favorited' && <Check className="text-[var(--primary)]" />}
           </span>
         </CommandItem>
         <CommandItem value="filter-this-week" onSelect={() => handleFilter('thisWeek')}>
           <CalendarCheck />
-          <span>本周更新</span>
+          <span>{t('shell.commandPalette.filter.thisWeek')}</span>
           <span className="ml-auto flex items-center gap-2">
             {activeFilter === 'thisWeek' && <Check className="text-[var(--primary)]" />}
           </span>
         </CommandItem>
         <CommandItem value="filter-todos" onSelect={() => handleFilter('todos')}>
           <ListChecks />
-          <span>待办事项</span>
+          <span>{t('shell.commandPalette.filter.todos')}</span>
           <span className="ml-auto flex items-center gap-2">
             {activeFilter === 'todos' && <Check className="text-[var(--primary)]" />}
           </span>
@@ -594,10 +605,10 @@ function StaticGroups({ onClose }: StaticGroupsProps) {
       </CommandGroup>
 
 {/* 笔记本: 真实列表 */}
-      <CommandGroup heading="笔记本">
+      <CommandGroup heading={t('shell.commandPalette.notebooksGroup')}>
         {notebooks.length === 0 ? (
           <div className="px-3 py-2 text-xs text-[var(--muted-foreground)]">
-            暂无笔记本
+            {t('shell.commandPalette.emptyNotebooks')}
           </div>
         ) : (
           notebooks.map((nb) => {
@@ -618,12 +629,12 @@ function StaticGroups({ onClose }: StaticGroupsProps) {
                 </span>
                 {nb.isDefault && (
                   <span className="rounded-lg px-1.5 py-[0px] text-[10px] bg-[var(--accent)] text-[var(--primary)]">
-                    默认
+                    {t('shell.commandPalette.notebook.default')}
                   </span>
                 )}
                 {isCurrent && (
                   <span className="rounded-lg px-1.5 py-[0px] text-[10px] bg-[var(--accent)] text-[var(--primary)]">
-                    当前
+                    {t('shell.commandPalette.notebook.current')}
                   </span>
                 )}
               </CommandItem>
@@ -635,10 +646,10 @@ function StaticGroups({ onClose }: StaticGroupsProps) {
 {/* 操作: 快捷键段交给 ShortcutKbd, actionId 直接对到 actions.ts 注册表,
        改键 / 换平台会自动跟随 (无 binding 时 ShortcutKbd 内部返回 null,
       CommandShortcut 退化为空 span — CommandItem 布局不变)。 */}
-      <CommandGroup heading="操作">
+      <CommandGroup heading={t('shell.commandPalette.actionsGroup')}>
         <CommandItem value="action-new-memo" onSelect={handleNewMemo} disabled={!selectedNotebook}>
           <PencilSimpleLineIcon />
-          <span>新建笔记</span>
+          <span>{t('shell.commandPalette.action.newMemo')}</span>
           <CommandShortcut>
             <ShortcutKbd actionId="memo.create" className="text-[var(--muted-foreground)]" />
           </CommandShortcut>
@@ -651,19 +662,19 @@ function StaticGroups({ onClose }: StaticGroupsProps) {
             disabled={!selectedNotebook}
           >
             <PencilSimpleLineIcon />
-            <span className="truncate">从模板创建：{template.name}</span>
+            <span className="truncate">{t('shell.commandPalette.templatePrefix')}{template.name}</span>
           </CommandItem>
         ))}
         <CommandItem value="action-new-notebook" onSelect={handleNewNotebook}>
           <NotebookPhosphorIcon />
-          <span>新建笔记本</span>
+          <span>{t('shell.commandPalette.action.newNotebook')}</span>
           <CommandShortcut>
             <ShortcutKbd actionId="notebook.create" className="text-[var(--muted-foreground)]" />
           </CommandShortcut>
         </CommandItem>
         <CommandItem value="action-open-preferences" onSelect={handleOpenPreferences}>
           <FadersHorizontalIcon />
-          <span>打开偏好设置</span>
+          <span>{t('shell.commandPalette.action.openPreferences')}</span>
           <CommandShortcut>
             <ShortcutKbd actionId="menu.open" className="text-[var(--muted-foreground)]" />
           </CommandShortcut>

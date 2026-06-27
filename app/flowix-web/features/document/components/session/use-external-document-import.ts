@@ -3,6 +3,8 @@ import { useCallback, useState } from 'react';
 import { memos as memosClient } from '@platform/tauri/client';
 import type { MemoItem, Notebook } from '@features/memo';
 import { getActiveDocumentDraft, setActiveDocumentPath } from '@features/document';
+import { translate } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 import { resolveMemoDocumentPath } from '@features/document/components/session/document-utils';
 
 interface UseExternalDocumentImportOptions {
@@ -52,7 +54,8 @@ export function useExternalDocumentImport({
         selectedNotebook?.id,
       ) as MemoItem | null;
       if (!memo) {
-        setError('保存到 Memo 失败');
+        const language = useUserSettingsStore.getState().settings.language;
+        setError(translate(language, 'document.external.saveToMemoFailed'));
         return;
       }
 
@@ -70,7 +73,8 @@ export function useExternalDocumentImport({
       });
     } catch (error) {
       console.error('[DocumentContainer] Failed to import external document:', error);
-      setError('保存到 Memo 失败');
+      const language = useUserSettingsStore.getState().settings.language;
+      setError(translate(language, 'document.external.saveToMemoFailed'));
     } finally {
       setIsImportingExternal(false);
     }

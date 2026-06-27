@@ -1,4 +1,5 @@
 import { TOOL_ICON_PATHS } from "@features/agent/message/tool-icon-paths";
+import { translate, type AppLanguage, type I18nKey } from "@features/i18n";
 
 // Re-export 以保持旧 import 路径兼容 (@features/agent/message/tools)。
 // 新代码建议直接 import 自 @features/agent/message/tool-icon-paths。
@@ -57,8 +58,8 @@ export interface AgentToolMeta {
    *  查询走 getToolMeta(name) ── name 和所有 aliases 都命中同一条记录。
    *  Phase 3 起大小写不敏感 ── Rust 端大写 / 大小写混合也命中。 */
   aliases?: readonly string[];
-  /** 中文展示标签 ── 仅前端 */
-  label: string;
+  /** i18n key ── 通过 translate(language, labelKey) 取当前语言展示标签。 */
+  labelKey: I18nKey;
   /** Phosphor regular 路径 ── 256×256 viewBox, fill="currentColor" 渲染。
    *  14×14 渲染尺寸, 跨 panel (JSX inline SVG) 和 card (DOM inline SVG)
    *  共用同一份 path 字符串 ── 视觉完全统一。值必须来自 TOOL_ICON_PATHS
@@ -73,105 +74,105 @@ export const TOOLS: readonly AgentToolMeta[] = [
   {
     name: "read",
     aliases: ["read_file"],
-    label: "读取",
+    labelKey: "agent.tools.read",
     iconPath: TOOL_ICON_PATHS.fileText,
   },
   {
     name: "write",
     aliases: ["write_file", "create_file"],
-    label: "写入",
+    labelKey: "agent.tools.write",
     iconPath: TOOL_ICON_PATHS.filePlus,
   },
   {
     name: "edit",
     aliases: ["edit_file"],
-    label: "编辑",
+    labelKey: "agent.tools.edit",
     iconPath: TOOL_ICON_PATHS.filePlus,
   },
   {
     name: "ls",
     aliases: ["list_directory", "list_notebooks"],
-    label: "列出目录",
+    labelKey: "agent.tools.ls",
     iconPath: TOOL_ICON_PATHS.folder,
   },
   {
     name: "glob",
     aliases: ["search_files"],
-    label: "通配匹配",
+    labelKey: "agent.tools.glob",
     iconPath: TOOL_ICON_PATHS.magnify,
   },
   {
     name: "grep",
-    label: "内容搜索",
+    labelKey: "agent.tools.grep",
     iconPath: TOOL_ICON_PATHS.magnify,
   },
   {
     name: "bash",
     aliases: ["execute_command", "shell", "command_execution"],
-    label: "执行命令",
+    labelKey: "agent.tools.bash",
     iconPath: TOOL_ICON_PATHS.terminal,
   },
   {
     name: "available_dirs",
-    label: "列出笔记本",
+    labelKey: "agent.tools.availableDirs",
     iconPath: TOOL_ICON_PATHS.folder,
   },
   {
     name: "delete_file",
-    label: "删除文件",
+    labelKey: "agent.tools.deleteFile",
     iconPath: TOOL_ICON_PATHS.trash,
   },
   {
     name: "code",
-    label: "代码",
+    labelKey: "agent.tools.code",
     iconPath: TOOL_ICON_PATHS.code,
   },
   {
     name: "git_branch",
     aliases: ["git_commit", "git_status"],
-    label: "Git",
+    labelKey: "agent.tools.gitBranch",
     iconPath: TOOL_ICON_PATHS.gitBranch,
   },
   {
     name: "db_query",
     aliases: ["database"],
-    label: "数据库",
+    labelKey: "agent.tools.dbQuery",
     iconPath: TOOL_ICON_PATHS.database,
   },
   {
     name: "server",
     aliases: ["api"],
-    label: "服务",
+    labelKey: "agent.tools.server",
     iconPath: TOOL_ICON_PATHS.globe,
   },
   {
     name: "settings",
-    label: "设置",
+    labelKey: "agent.tools.settings",
     iconPath: TOOL_ICON_PATHS.gear,
   },
   {
     name: "run",
-    label: "运行",
+    labelKey: "agent.tools.run",
     iconPath: TOOL_ICON_PATHS.play,
   },
   {
     name: "stop",
-    label: "停止",
+    labelKey: "agent.tools.stop",
     iconPath: TOOL_ICON_PATHS.pause,
   },
   {
     name: "restart",
-    label: "重启",
+    labelKey: "agent.tools.restart",
     iconPath: TOOL_ICON_PATHS.arrowsClockwise,
   },
   {
     name: "view",
-    label: "查看",
+    labelKey: "agent.tools.view",
     iconPath: TOOL_ICON_PATHS.eye,
   },
   {
     name: "load_skill",
-    label: "加载技能",
+    labelKey: "agent.tools.loadSkill",
     iconPath: TOOL_ICON_PATHS.fileText,
   },
 ] as const;
@@ -215,11 +216,11 @@ export function getToolIconPath(toolName: string | undefined): string {
   return getToolMeta(toolName)?.iconPath ?? TOOL_ICON_PATHS.terminal;
 }
 
-/** 中文标签查询 ── 未命中时用 titleCase 兜底 (与 formatToolName 原行为一致) */
-export function getToolLabel(toolName: string | undefined): string {
+/** 标签查询 ── 未命中时用 titleCase 兜底 (与 formatToolName 原行为一致) */
+export function getToolLabel(toolName: string | undefined, language: AppLanguage = "zh-CN"): string {
   const meta = getToolMeta(toolName);
-  if (meta) return meta.label;
-  if (!toolName) return "未知";
+  if (meta) return translate(language, meta.labelKey);
+  if (!toolName) return translate(language, "agent.tools.unknown");
   return toolName
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())

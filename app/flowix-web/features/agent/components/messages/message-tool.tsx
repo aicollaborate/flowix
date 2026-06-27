@@ -5,11 +5,13 @@ import type { ChatMessage } from "@/types";
 import { getToolIconPath } from "@features/agent/message/tools";
 import { createAgentMessageViewModel } from "@features/agent/message/agent-message";
 import { Loader2 } from "lucide-react";
+import { useI18n } from "@features/i18n";
 
 function MessageToolInner({ message }: { message: ChatMessage }) {
+  const { language } = useI18n();
   const iconPath = getToolIconPath(message.toolName);
   const isLoading = Boolean(message.isLoading);
-  const messageView = createAgentMessageViewModel(message);
+  const messageView = createAgentMessageViewModel(message, language);
 
   return (
     <div className="flex gap-3">

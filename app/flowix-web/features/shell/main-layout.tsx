@@ -30,6 +30,7 @@ import { useNotebookTodoCount } from '@features/memo/components/use-notebook-tod
 import { useResizablePanels } from '@features/shell/hooks/use-resizable-panels';
 import { useMacosTrackpadSwipe, type MacosTrackpadSwipeDirection } from '@features/shell/hooks/use-macos-trackpad-swipe';
 import backgroundImage from '@/assets/bg.document.png';
+import { useI18n } from '@features/i18n';
 
 const NOTE_NAVIGATION_PANEL_WIDTH = 192;
 const NOTE_NAVIGATION_PANEL_MIN_WIDTH = 180;
@@ -74,6 +75,7 @@ function resolvePanelSwipeTransition(
 }
 
 export function MainLayout() {
+  const { t } = useI18n();
   // 切片订阅：每个 useStore 只取真正用到的字段，setter 走 useShallow 聚合。
   // 替代原来的 `useMemoStore()` / `useDocumentStore()` / `useSettingsStore()`
   // 全量订阅 —— 任何 set 都会让 MainLayout 整树重渲，跨菜单栏 / 状态栏 /
@@ -134,7 +136,6 @@ export function MainLayout() {
     agentColWidth,
     toolbarCollapsed,
     setMemoListVisible,
-    toggleMemoListVisible,
     setAgentPanelVisible,
     setAgentColWidth,
     setToolbarCollapsed,
@@ -145,7 +146,6 @@ export function MainLayout() {
       agentColWidth: s.agentColWidth,
       toolbarCollapsed: s.toolbarCollapsed,
       setMemoListVisible: s.setMemoListVisible,
-      toggleMemoListVisible: s.toggleMemoListVisible,
       setAgentPanelVisible: s.setAgentPanelVisible,
       setAgentColWidth: s.setAgentColWidth,
       setToolbarCollapsed: s.setToolbarCollapsed,
@@ -268,6 +268,27 @@ export function MainLayout() {
     setNoteNavigationVisible((visible) => !visible);
   }, []);
 
+  // 关闭 memo-list 侧栏时同步收起笔记导航 ── 避免左侧两列同时打开占满
+  // 视口宽度。手势 (左滑) 走 resolvePanelSwipeTransition, 不经过此路径,
+  // 不会触发级联关闭, 与手势的「只关一个」语义保持一致。
+  const closeMemoListAndNoteNavigation = useCallback(() => {
+    setMemoListVisible(false);
+    if (noteNavigationVisible) {
+      setNoteNavigationVisible(false);
+    }
+  }, [noteNavigationVisible, setMemoListVisible]);
+
+  // document 顶栏的侧栏 toggle: 打开走纯开, 关闭走级联 (带笔记导航),
+  // 行为与 memo-list 顶栏的折叠按钮对齐 ── 任一入口关闭都同步收起左侧
+  // 两列。
+  const handleToggleMemoList = useCallback(() => {
+    if (memoListVisible) {
+      closeMemoListAndNoteNavigation();
+    } else {
+      setMemoListVisible(true);
+    }
+  }, [closeMemoListAndNoteNavigation, memoListVisible, setMemoListVisible]);
+
   const currentMemo = currentDocumentPath && currentDocumentSource === 'memo' && activeMemoSession
     ? memos.find((memo) => memo.id === activeMemoSession.memoId)
       ?? (selectedMemo?.id === activeMemoSession.memoId ? selectedMemo : null)
@@ -384,7 +405,7 @@ export function MainLayout() {
   const handleDeleteNotebook = useCallback(
     (notebook: Notebook) => {
       if (notebook.isDefault) {
-        toast.error('默认笔记本不可删除');
+        toast.error(t('shell.notebook.cannotDeleteDefault'));
         return;
       }
       // Close the dropdown so the confirmation dialog isn't visually stacked
@@ -404,7 +425,7 @@ export function MainLayout() {
     try {
       const ok = await notebooksClient.delete(target.id);
       if (ok) {
-        toast.success('已删除');
+        toast.success(t('shell.notebook.deleted'));
         const nbList = await notebooksClient.getAll();
         if (nbList) {
           setNotebooks(nbList);
@@ -418,7 +439,7 @@ export function MainLayout() {
           }
         }
       } else {
-        toast.error('删除失败');
+        toast.error(t('shell.notebook.deleteFailed'));
       }
     } catch (error) {
       console.warn('[MainLayout] Failed to delete notebook:', error);
@@ -502,12 +523,12 @@ export function MainLayout() {
             >
               {isWindowsPlatform() ? (
                 <MemoListTitlebarWin
-                  onCollapseSidebar={() => setMemoListVisible(false)}
+                  onCollapseSidebar={closeMemoListAndNoteNavigation}
                   onOpenPreferences={() => windows.openPreferences()}
                 />
               ) : (
                 <MemoListTitlebarMac
-                  onCollapseSidebar={() => setMemoListVisible(false)}
+                  onCollapseSidebar={closeMemoListAndNoteNavigation}
                   onOpenPreferences={() => windows.openPreferences()}
                 />
               )}
@@ -531,7 +552,7 @@ export function MainLayout() {
                 currentMemo={currentMemo}
                 isSidebarHidden={isMemoListHidden}
                 isAgentPanelVisible={rightPanelVisible}
-                onToggleSidebar={toggleMemoListVisible}
+                onToggleSidebar={handleToggleMemoList}
                 canNavigateBack={canNavigateBack}
                 canNavigateForward={canNavigateForward}
                 onNavigateBack={handleNavigateBack}
@@ -555,7 +576,7 @@ export function MainLayout() {
               <DocumentTitlebarMac
                 currentMemo={currentMemo}
                 isSidebarHidden={isMemoListHidden}
-                onToggleSidebar={toggleMemoListVisible}
+                onToggleSidebar={handleToggleMemoList}
                 canNavigateBack={canNavigateBack}
                 canNavigateForward={canNavigateForward}
                 onNavigateBack={handleNavigateBack}
@@ -606,7 +627,7 @@ export function MainLayout() {
                     style={{ backgroundImage: `url(${backgroundImage})` }}
                   />
                   <span className="relative text-center text-[var(--muted-foreground)] text-sm">
-                    请选择一个文档
+                    {t('shell.emptyDocument')}
                   </span>
                 </div>
               )}

@@ -3,6 +3,7 @@
 import { CaretDoubleLeftIcon } from '@phosphor-icons/react';
 
 import { Tooltip } from '@shared/ui/tooltip';
+import { useI18n } from '@features/i18n';
 
 interface NoteNavigationPanelHeaderMacProps {
   onTogglePanel: () => void;
@@ -26,16 +27,17 @@ interface NoteNavigationPanelHeaderMacProps {
 export function NoteNavigationPanelHeaderMac({
   onTogglePanel,
 }: NoteNavigationPanelHeaderMacProps) {
+  const { t } = useI18n();
   return (
     <div
       data-tauri-drag-region
       className="shrink-0 h-12 pl-[90px] pr-2 flex items-center justify-end"
     >
-      <Tooltip content="折叠面板">
+      <Tooltip content={t("memo.navigation.collapsePanelTooltip")}>
         <button
           type="button"
           onClick={onTogglePanel}
-          aria-label="折叠面板"
+          aria-label={t("memo.navigation.collapsePanel")}
           className="w-8 h-8 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-xl transition-colors"
         >
           <CaretDoubleLeftIcon className="w-4 h-4" weight="regular" />

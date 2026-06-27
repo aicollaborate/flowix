@@ -9,9 +9,19 @@ import {
   type I18nKey,
 } from '@features/i18n/locales';
 
+export type I18nParams = Record<string, string | number>;
+
+function interpolate(template: string, params?: I18nParams): string {
+  if (!params) return template;
+  return template.replace(/\{(\w+)\}/g, (match, name) => {
+    const value = params[name];
+    return value == null ? match : String(value);
+  });
+}
+
 interface I18nContextValue {
   language: AppLanguage;
-  t: (key: I18nKey) => string;
+  t: (key: I18nKey, params?: I18nParams) => string;
 }
 
 const I18nContext = createContext<I18nContextValue>({
@@ -29,7 +39,7 @@ export function I18nProvider({
   const normalizedLanguage = sanitizeAppLanguage(language);
   const value = useMemo<I18nContextValue>(() => ({
     language: normalizedLanguage,
-    t: (key) => messages[normalizedLanguage][key] ?? messages[DEFAULT_APP_LANGUAGE][key],
+    t: (key, params) => interpolate(messages[normalizedLanguage][key] ?? messages[DEFAULT_APP_LANGUAGE][key], params),
   }), [normalizedLanguage]);
 
   useEffect(() => {
@@ -47,7 +57,7 @@ export function useI18n(): I18nContextValue {
   return useContext(I18nContext);
 }
 
-export function translate(language: AppLanguage, key: I18nKey): string {
+export function translate(language: AppLanguage, key: I18nKey, params?: I18nParams): string {
   const normalizedLanguage = sanitizeAppLanguage(language);
-  return messages[normalizedLanguage][key] ?? messages[DEFAULT_APP_LANGUAGE][key];
+  return interpolate(messages[normalizedLanguage][key] ?? messages[DEFAULT_APP_LANGUAGE][key], params);
 }

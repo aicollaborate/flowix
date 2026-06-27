@@ -3,6 +3,7 @@ import { Hash } from 'lucide-react';
 import { useSelectedItemScroll } from '@features/editor/extensions/shared/use-selected-item-scroll';
 import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
 import type { MentionTagItem } from '@features/editor/extensions/tag-mention/tag-mention-data';
+import { useI18n } from '@features/i18n';
 
 export interface TagMentionDropdownProps {
   items: MentionTagItem[];
@@ -23,6 +24,7 @@ export function TagMentionDropdown({
   onHover,
   onLoadMore,
 }: TagMentionDropdownProps) {
+  const { t } = useI18n();
   const { scrollerRef, itemRefs } = useSelectedItemScroll({
     items,
     selectedIndex,
@@ -37,7 +39,7 @@ export function TagMentionDropdown({
 
   return (
     <div className="mention-note-dropdown" role="listbox" aria-label="Tags">
-      <div className="mention-note-header" aria-label="Mention type">标签</div>
+      <div className="mention-note-header" aria-label="Mention type">{t('editor.tagMention.header')}</div>
       <OverlayScrollbar
         className="mention-note-items-frame"
         scrollerClassName="mention-note-items"
@@ -50,9 +52,9 @@ export function TagMentionDropdown({
         }}
       >
           {loading && items.length === 0 ? (
-            <div className="mention-note-empty">加载中</div>
+            <div className="mention-note-empty">{t('editor.tagMention.loading')}</div>
           ) : items.length === 0 ? (
-            <div className="mention-note-empty">无匹配标签</div>
+            <div className="mention-note-empty">{t('editor.tagMention.empty')}</div>
           ) : (
             items.map((item, index) => {
               const selected = index === selectedIndex;
@@ -77,7 +79,7 @@ export function TagMentionDropdown({
                     <Hash className="mention-tag-icon" aria-hidden="true" />
                     <span className="mention-tag-name">{item.name}</span>
                   </span>
-                  {item.create && <span className="mention-note-notebook">新建</span>}
+                  {item.create && <span className="mention-note-notebook">{t('editor.tagMention.create')}</span>}
                 </button>
               );
             })
@@ -91,7 +93,7 @@ export function TagMentionDropdown({
                 onLoadMore();
               }}
             >
-              加载更多
+              {t('editor.tagMention.loadMore')}
             </button>
           )}
       </OverlayScrollbar>

@@ -2,14 +2,16 @@ interface AgentWelcomeProps {
 	onSelectPrompt?: (text: string) => void;
 }
 
+import { useI18n, type I18nKey } from "@features/i18n";
+
 // 围绕"记忆写作"起步的几类常用条目: SOP / 规范 / 路书 / 待办 / 复盘 / 摘录。
-const prompts = [
-	"产品工作流程 SOP",
-	"组件库设计规范",
-	"周末城市漫步路书",
-	"一日待办清单",
-	"项目复盘记录",
-	"读书摘录与感想"
+const PROMPT_KEYS: I18nKey[] = [
+	"agent.welcome.prompts.sop",
+	"agent.welcome.prompts.designSystem",
+	"agent.welcome.prompts.cityWalk",
+	"agent.welcome.prompts.dailyTodo",
+	"agent.welcome.prompts.retrospective",
+	"agent.welcome.prompts.bookNotes",
 ];
 
 // 卡片背景 / 边框 / 文字派生自主题 token (--muted-foreground / --primary), 3 套主题都可见。
@@ -23,6 +25,7 @@ const CARD_HOVER =
 	"hover:-translate-y-px";
 
 export function AgentWelcome({ onSelectPrompt }: AgentWelcomeProps) {
+	const { t } = useI18n();
 	const handleClick = (text: string) => {
 		onSelectPrompt?.(text);
 	};
@@ -32,18 +35,21 @@ export function AgentWelcome({ onSelectPrompt }: AgentWelcomeProps) {
 	return (
 		<div className="flex items-center justify-center h-full w-full px-8 animate-[fadeIn_0.3s_ease-out]">
 			<div className="flex flex-wrap justify-center gap-0 px-4 w-full">
-				{prompts.map((text, index) => (
-					<button
-						key={index}
-						type="button"
-						className={`${CARD_BASE} ${CARD_HOVER}`}
-						onClick={() => handleClick(text)}
-					>
-						<div className="text-sm font-normal leading-relaxed text-[color-mix(in_oklch,var(--agent-foreground)_80%,transparent)]">
-							{text}
-						</div>
-					</button>
-				))}
+				{PROMPT_KEYS.map((key) => {
+					const text = t(key);
+					return (
+						<button
+							key={key}
+							type="button"
+							className={`${CARD_BASE} ${CARD_HOVER}`}
+							onClick={() => handleClick(text)}
+						>
+							<div className="text-sm font-normal leading-relaxed text-[color-mix(in_oklch,var(--agent-foreground)_80%,transparent)]">
+								{text}
+							</div>
+						</button>
+					);
+				})}
 			</div>
 		</div>
 	);

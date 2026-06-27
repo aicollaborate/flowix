@@ -21,6 +21,7 @@ import {
   OverlayScrollbar,
   type OverlayScrollbarHandle,
 } from '@shared/ui/overlay-scrollbar';
+import { translate, useI18n, type AppLanguage, type I18nKey } from '@features/i18n';
 
 export type SlashMenuItemId =
   | 'blockquote'
@@ -46,11 +47,19 @@ export type SlashMenuIcon = PhosphorIcon | string;
 
 export interface SlashMenuItem {
   id: SlashMenuItemId;
-  label: string;
+  /** 原始展示文本 ── 用于品牌名 (Flowix / Codex 等不可翻译字串)。
+   *  与 labelKey 互斥: 同时存在时 labelKey 优先。 */
+  label?: string;
+  /** i18n key ── 渲染 / 过滤时按当前语言翻译。 */
+  labelKey?: I18nKey;
   description?: string;
   keywords: string[];
   icon: SlashMenuIcon;
-  section: string;
+  /** 分组标题: 优先用 i18n key 翻译; 没有 key 时回退到 section 原始字串
+   *  (用于 AI 这种跨语言统一的缩写)。 */
+  section?: string;
+  /** i18n key ── 渲染时按当前语言翻译。 */
+  sectionKey?: I18nKey;
   /** 快捷键 actionId ── 给出时, 右侧用 ShortcutKbd 渲染 (覆盖 description)。
    *  description + shortcut 同时缺省时, 右侧不渲染, label 独占宽度。 */
   shortcut?: string;
@@ -64,6 +73,19 @@ export interface SlashMenuProps {
 }
 
 const SLASH_MENU_SCROLL_PADDING_TOP = 20;
+
+/** Resolve an item's display label for the given language.
+ *  优先用 labelKey 翻译; 没有 key 时回退到原始 label (品牌名场景)。 */
+export function getSlashMenuItemLabel(item: SlashMenuItem, language: AppLanguage): string {
+  if (item.labelKey) return translate(language, item.labelKey);
+  return item.label ?? '';
+}
+
+/** Resolve an item's section header for the given language. */
+export function getSlashMenuItemSection(item: SlashMenuItem, language: AppLanguage): string {
+  if (item.sectionKey) return translate(language, item.sectionKey);
+  return item.section ?? '';
+}
 
 export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   {
@@ -84,104 +106,104 @@ export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   },
   {
     id: 'blockquote',
-    label: '引用',
+    labelKey: 'editor.slash.label.quote',
     keywords: ['quote', 'blockquote', 'yinyong', '引用'],
     icon: QuotesIcon,
-    section: '添加块',
+    sectionKey: 'editor.slash.section.addBlock',
   },
   {
     id: 'code-block',
-    label: '代码块',
+    labelKey: 'editor.slash.label.codeBlock',
     keywords: ['code', 'block', 'codeblock', 'daimakuai', '代码', 'kuai'],
     icon: CodeIcon,
-    section: '添加块',
+    sectionKey: 'editor.slash.section.addBlock',
   },
   {
     id: 'table',
-    label: '表格',
+    labelKey: 'editor.slash.label.table',
     keywords: ['table', 'biaoge', 'grid'],
     icon: TableIcon,
-    section: '添加块',
+    sectionKey: 'editor.slash.section.addBlock',
   },
   {
     id: 'math-block',
-    label: '公式',
+    labelKey: 'editor.slash.label.math',
     keywords: ['math', 'formula', 'latex', 'katex', 'gongshi'],
     icon: FunctionIcon,
-    section: '添加块',
+    sectionKey: 'editor.slash.section.addBlock',
   },
   {
     id: 'web-card',
-    label: '网页',
+    labelKey: 'editor.slash.label.web',
     keywords: ['web', 'url', 'link', 'preview', 'card', 'wangye', 'lianjie'],
     icon: LinkSimpleIcon,
-    section: '添加块',
+    sectionKey: 'editor.slash.section.addBlock',
   },
   {
     id: 'horizontal-rule',
-    label: '分割线',
+    labelKey: 'editor.slash.label.divider',
     keywords: ['divider', 'hr', 'horizontal', 'rule', 'fenge', '分割'],
     icon: MinusIcon,
-    section: '添加块',
+    sectionKey: 'editor.slash.section.addBlock',
   },
   {
     id: 'bullet-list',
-    label: '无序列表',
+    labelKey: 'editor.slash.label.bulletList',
     keywords: ['bullet', 'list', 'unordered', 'wuxu', '列表'],
     icon: ListBulletsIcon,
-    section: '添加块',
+    sectionKey: 'editor.slash.section.addBlock',
     shortcut: 'editor.toggleBulletList',
   },
   {
     id: 'ordered-list',
-    label: '有序列表',
+    labelKey: 'editor.slash.label.orderedList',
     keywords: ['ordered', 'list', 'numbered', 'youxu', '列表'],
     icon: ListNumbersIcon,
-    section: '添加块',
+    sectionKey: 'editor.slash.section.addBlock',
     shortcut: 'editor.toggleOrderedList',
   },
   {
     id: 'task-list',
-    label: '待办列表',
+    labelKey: 'editor.slash.label.taskList',
     keywords: ['task', 'todo', 'checkbox', 'daiban', '待办'],
     icon: CheckSquareIcon,
-    section: '添加块',
+    sectionKey: 'editor.slash.section.addBlock',
     shortcut: 'editor.toggleTaskList',
   },
   {
     id: 'image',
-    label: '图片',
+    labelKey: 'editor.slash.label.image',
     keywords: ['image', 'img', 'picture', 'tupian'],
     icon: ImageSquareIcon,
-    section: '上传',
+    sectionKey: 'editor.slash.section.upload',
   },
   {
     id: 'video',
-    label: '视频',
+    labelKey: 'editor.slash.label.video',
     keywords: ['video', 'shipin', 'movie'],
     icon: VideoCameraIcon,
-    section: '上传',
+    sectionKey: 'editor.slash.section.upload',
   },
   {
     id: 'file',
-    label: '附件',
+    labelKey: 'editor.slash.label.attachment',
     keywords: ['file', 'attachment', 'fujian'],
     icon: PaperclipIcon,
-    section: '上传',
+    sectionKey: 'editor.slash.section.upload',
   },
   {
     id: 'create-child-note',
-    label: '新建笔记',
+    labelKey: 'editor.slash.label.newMemo',
     keywords: ['note', 'memo', 'child', 'create', 'reference', 'xinjian', 'biji', 'zibiji'],
     icon: FilePlusIcon,
-    section: '笔记',
+    sectionKey: 'editor.slash.section.memo',
   },
   {
     id: 'reference-note',
-    label: '引用笔记',
+    labelKey: 'editor.slash.label.referenceMemo',
     keywords: ['note', 'memo', 'reference', 'mention', 'link', 'yinyong', 'biji'],
     icon: LinkSimpleIcon,
-    section: '笔记',
+    sectionKey: 'editor.slash.section.memo',
   },
 ];
 
@@ -191,6 +213,7 @@ export const SlashMenuDropdown = ({
   onSelect,
   onHover,
 }: SlashMenuProps) => {
+  const { t } = useI18n();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const overlayScrollbarRef = useRef<OverlayScrollbarHandle | null>(null);
@@ -245,13 +268,18 @@ export const SlashMenuDropdown = ({
         scrollerRef={scrollerRef}
       >
         {items.length === 0 ? (
-          <div className="slash-menu-empty">无匹配命令</div>
+          <div className="slash-menu-empty">{t('editor.slash.empty')}</div>
         ) : (
           items.map((item, index) => {
             const Icon = item.icon;
             const selected = index === selectedIndex;
             const prevItem = index > 0 ? items[index - 1] : null;
-            const showSectionHeader = !prevItem || prevItem.section !== item.section;
+            const sectionLabel = item.sectionKey ? t(item.sectionKey) : (item.section ?? '');
+            const prevSectionLabel = prevItem
+              ? (prevItem.sectionKey ? t(prevItem.sectionKey) : (prevItem.section ?? ''))
+              : null;
+            const showSectionHeader = !prevItem || prevSectionLabel !== sectionLabel;
+            const displayLabel = item.labelKey ? t(item.labelKey) : (item.label ?? '');
             const renderIcon = typeof Icon === 'string'
               ? (
                   <img
@@ -269,7 +297,7 @@ export const SlashMenuDropdown = ({
               <Fragment key={item.id}>
                 {showSectionHeader && (
                   <div className="slash-menu-header" role="presentation">
-                    <span>{item.section}</span>
+                    <span>{sectionLabel}</span>
                   </div>
                 )}
                 <button
@@ -287,7 +315,7 @@ export const SlashMenuDropdown = ({
                   }}
                 >
                   {renderIcon}
-                  <span className="slash-menu-item-label">{item.label}</span>
+                  <span className="slash-menu-item-label">{displayLabel}</span>
                   {(item.shortcut || item.description) && (
                     <span className="slash-menu-item-description">
                       {item.shortcut

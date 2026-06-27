@@ -1,4 +1,5 @@
 import { Quote, X } from "lucide-react";
+import { useI18n } from "@features/i18n";
 
 // 单行引用卡片：用于 inputbox 顶部（待发送预览，可关闭）和 user message
 // bubble 顶部（消息回放，只读）。extraClassName 给调用方按上下文补 margin 等。
@@ -24,6 +25,7 @@ interface CitationCardProps {
 }
 
 export function CitationCard({ text, onDismiss, extraClassName = "" }: CitationCardProps) {
+	const { t } = useI18n();
 	return (
 		<div className={`${BASE_CLASS} ${extraClassName}`} title={text}>
 			<Quote className={ICON_CLASS} />
@@ -31,7 +33,7 @@ export function CitationCard({ text, onDismiss, extraClassName = "" }: CitationC
 			{onDismiss && (
 				<button
 					type="button"
-					aria-label="移除引用"
+					aria-label={t("agent.citation.remove")}
 					className={CLOSE_BTN_CLASS}
 					onClick={onDismiss}
 				>

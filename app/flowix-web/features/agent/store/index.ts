@@ -2,5 +2,6 @@ export { useChatStore, installAgentChunkBridge, type ThreadState } from '@featur
 export {
   useAgentAccessStore,
   type AgentAccessState,
+  type AgentAccessErrorCode,
 } from '@features/agent/store/agent-access-store';
 

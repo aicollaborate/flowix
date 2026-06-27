@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { ChatCircleTextIcon, TrashIcon } from '@phosphor-icons/react';
 import { ChevronDown } from 'lucide-react';
 import {
@@ -14,6 +14,7 @@ import { useChatStore } from '@features/agent/store/chat-store';
 import { cn } from '@/lib/utils';
 import type { ThreadListItem } from '@/types';
 import { getAgentRole } from '@/lib/agent-roles';
+import { useI18n, type I18nParams } from '@features/i18n';
 
 interface ChatHistoryProps {
 	onSelectThread?: (threadId: string) => void;
@@ -23,11 +24,14 @@ function ThreadRow({
 	item,
 	onSelect,
 	onDelete,
+	formatTime,
 }: {
 	item: ThreadListItem;
 	onSelect: (tid: string) => void;
 	onDelete?: (e: MouseEvent, tid: string) => void;
+	formatTime: (ts: number) => string;
 }) {
+	const { t } = useI18n();
 	const isRunning = useChatStore(
 		(s) => s.threadStates[item.threadId]?.isLoading ?? false
 	);
@@ -50,24 +54,24 @@ function ThreadRow({
 		>
 			<ChatCircleTextIcon className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
 			<span className="min-w-0 flex-1 truncate text-left text-sm text-[var(--agent-foreground)]">
-				{item.title || '未命名'}
+				{item.title || t('agent.chat.thread.unnamed')}
 			</span>
 			{isRunning && (
 				<span
-					aria-label="后台运行中"
-					title="后台运行中"
+					aria-label={t('agent.chat.thread.running')}
+					title={t('agent.chat.thread.running')}
 					className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500"
 				/>
 			)}
 			<span className="shrink-0 text-xs text-[var(--muted-foreground)] group-hover:hidden">
-				{formatRelativeTime(item.updatedAt || item.createdAt)}
+				{formatTime(item.updatedAt || item.createdAt)}
 			</span>
 			{onDelete && (
 				<button
 					type="button"
 					onClick={(e) => onDelete(e, item.threadId)}
 					onMouseDown={(e) => e.stopPropagation()}
-					aria-label="删除对话"
+					aria-label={t('agent.chat.thread.delete')}
 					className={cn(
 						'h-4 shrink-0 hidden items-center justify-center rounded px-1',
 						'text-[var(--muted-foreground)] transition-colors cursor-pointer',
@@ -82,6 +86,7 @@ function ThreadRow({
 }
 
 export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
+	const { t, language } = useI18n();
 	const [open, setOpen] = useState(false);
 
 	const activeRoleKey = useChatStore((state) => state.activeAgentRoleKey);
@@ -129,9 +134,27 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 			await deleteThread(threadId);
 		} catch (err) {
 			console.error('Failed to delete thread:', err);
-			toast.error('删除失败');
+			toast.error(t('agent.chat.thread.deleteFailed'));
 		}
 	};
+
+	const formatTime = useMemo(() => {
+		const intlLocale = language === 'zh-CN' ? 'zh-CN' : 'en-US';
+		return (timestamp: number): string => {
+			const now = Date.now();
+			const diffMs = Math.max(0, now - timestamp);
+			const diffSec = Math.floor(diffMs / 1000);
+			const diffMin = Math.floor(diffSec / 60);
+			const diffHour = Math.floor(diffMin / 60);
+			const diffDay = Math.floor(diffHour / 24);
+
+			if (diffSec < 60) return t('agent.time.justNow');
+			if (diffMin < 60) return t('agent.time.minutesAgo', { m: diffMin } satisfies I18nParams);
+			if (diffHour < 24) return t('agent.time.hoursAgo', { h: diffHour } satisfies I18nParams);
+			if (diffDay < 7) return t('agent.time.daysAgo', { d: diffDay } satisfies I18nParams);
+			return new Date(timestamp).toLocaleDateString(intlLocale);
+		};
+	}, [t, language]);
 
 	return (
 		<div className="min-w-0 flex-1 [-webkit-app-region:no-drag]">
@@ -142,7 +165,7 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 						className="group flex max-w-full min-w-0 cursor-pointer items-center gap-1 overflow-hidden rounded-md px-2 py-0.5 transition-colors [-webkit-app-region:no-drag]"
 					>
 						<span className="min-w-0 flex-1 truncate text-[15px] font-medium text-[var(--agent-foreground)] transition-colors duration-150 group-hover:text-[color-mix(in_oklch,var(--agent-foreground)_80%,white)]">
-							{currentThreadTitle || '未命名对话'}
+							{currentThreadTitle || t('agent.chat.unnamedConversation')}
 						</span>
 						<ChevronDown
 							className="h-[14px] w-[14px] shrink-0 text-[var(--muted-foreground)]"
@@ -152,12 +175,12 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="start" className="w-[280px] space-y-1 px-1 py-1.5">
 					<DropdownMenuLabel className="px-2 pb-1 text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
-						{activeRole.name} 历史
+						{t('agent.chat.historyLabel', { role: activeRole.name } satisfies I18nParams)}
 					</DropdownMenuLabel>
 					<div className="max-h-[300px] space-y-1 overflow-y-auto">
 						{threadList.length === 0 ? (
 							<div className="px-2 py-3 text-center text-sm text-[var(--muted-foreground)]">
-								暂无历史对话
+								{t('agent.chat.emptyHistory')}
 							</div>
 						) : (
 							threadList.map((item) => (
@@ -166,6 +189,7 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 									item={item}
 									onSelect={handleSelectThread}
 									onDelete={activeRole.runtime === 'codex' ? undefined : handleDeleteThread}
+									formatTime={formatTime}
 								/>
 							))
 						)}
@@ -180,26 +204,11 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 								'transition-colors hover:bg-[var(--muted)]'
 							)}
 						>
-							<span>新建对话</span>
+							<span>{t('agent.chat.newThread')}</span>
 						</button>
 					</div>
 				</DropdownMenuContent>
 			</DropdownMenu>
 		</div>
 	);
-}
-
-function formatRelativeTime(timestamp: number): string {
-	const now = Date.now();
-	const diffMs = Math.max(0, now - timestamp);
-	const diffSec = Math.floor(diffMs / 1000);
-	const diffMin = Math.floor(diffSec / 60);
-	const diffHour = Math.floor(diffMin / 60);
-	const diffDay = Math.floor(diffHour / 24);
-
-	if (diffSec < 60) return '刚刚';
-	if (diffMin < 60) return `${diffMin}分钟前`;
-	if (diffHour < 24) return `${diffHour}小时前`;
-	if (diffDay < 7) return `${diffDay}天前`;
-	return new Date(timestamp).toLocaleDateString('zh-CN');
 }

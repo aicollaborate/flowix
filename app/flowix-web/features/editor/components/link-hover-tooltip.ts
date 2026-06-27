@@ -2,6 +2,8 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import type { Editor } from '@tiptap/core';
 import { normalizePlainLinkHref } from '@features/editor/extensions/markdown-link';
 import { isLinkEditPopupOpen, openLinkEditPopup } from '@features/editor/components/link-edit-popup';
+import { translate } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 
 interface LinkRange {
   from: number;
@@ -214,6 +216,10 @@ export function attachLinkHoverTooltip(editor: Editor, root: HTMLElement): () =>
     tooltip.dataset.href = href;
     tooltip.innerHTML = '';
 
+    const language = useUserSettingsStore.getState().settings.language;
+    const editLabel = translate(language, 'editor.link.edit');
+    const removeLabel = translate(language, 'editor.link.remove');
+
     const text = document.createElement('span');
     text.className = 'editor-link-hover-tooltip-text';
     text.textContent = href;
@@ -221,12 +227,12 @@ export function attachLinkHoverTooltip(editor: Editor, root: HTMLElement): () =>
     const actions = document.createElement('span');
     actions.className = 'editor-link-hover-tooltip-actions';
     actions.append(
-      createIconButton('编辑链接', EDIT_ICON, (event) => {
+      createIconButton(editLabel, EDIT_ICON, (event) => {
         event.preventDefault();
         event.stopPropagation();
         editActiveLink();
       }),
-      createIconButton('移除链接', REMOVE_ICON, (event) => {
+      createIconButton(removeLabel, REMOVE_ICON, (event) => {
         event.preventDefault();
         event.stopPropagation();
         removeActiveLink();

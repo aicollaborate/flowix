@@ -24,8 +24,17 @@ import { useI18n } from '@features/i18n';
  *  still a free-form `string` in `AgentConfig.provider`, so users with a
  *  custom value can still keep it — the trigger just shows whatever
  *  string is in state, and the dropdown highlights whatever preset (if
- *  any) matches. */
-const PROVIDER_OPTIONS = ['OpenAI', 'Anthropic', 'DeepSeek', 'OpenAI Compatible', '自定义'] as const;
+ *  any) matches.
+ *
+ *  id 是写入磁盘的真值（保持兼容老 config 文件），displayKey 是当前语言
+ *  展示文案。 */
+const PROVIDER_OPTIONS = [
+  { id: 'OpenAI', displayKey: 'preferences.agent.provider.openai' },
+  { id: 'Anthropic', displayKey: 'preferences.agent.provider.anthropic' },
+  { id: 'DeepSeek', displayKey: 'preferences.agent.provider.deepseek' },
+  { id: 'OpenAI Compatible', displayKey: 'preferences.agent.provider.openaiCompatible' },
+  { id: '自定义', displayKey: 'preferences.agent.provider.custom' },
+] as const;
 
 /** Default values for新 / 未配置场景。加载时与后端返回的 config 浅合并。
  *  字段命名走 camelCase, 与后端 AiModelConfig 的 serde rename_all 对齐 — 否则
@@ -108,10 +117,12 @@ export function AgentSection() {
     localConfig !== null &&
     savedConfig !== null &&
     JSON.stringify(localConfig) !== JSON.stringify(savedConfig);
-  const currentProviderLabel =
-    localConfig?.provider === '自定义'
-      ? t('preferences.agent.provider.custom')
-      : localConfig?.provider;
+  const currentProviderLabel = (() => {
+    const provider = localConfig?.provider;
+    if (!provider) return '';
+    const preset = PROVIDER_OPTIONS.find((opt) => opt.id === provider);
+    return preset ? t(preset.displayKey as Parameters<typeof t>[0]) : provider;
+  })();
 
   const handleSave = async () => {
     if (!localConfig) return;
@@ -172,8 +183,8 @@ export function AgentSection() {
             </SelectTrigger>
             <SelectContent align="start">
               {PROVIDER_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={opt}>
-                  {opt === '自定义' ? t('preferences.agent.provider.custom') : opt}
+                <SelectItem key={opt.id} value={opt.id}>
+                  {t(opt.displayKey as Parameters<typeof t>[0])}
                 </SelectItem>
               ))}
             </SelectContent>

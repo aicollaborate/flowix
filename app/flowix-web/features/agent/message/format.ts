@@ -5,6 +5,8 @@
 // formatRelativeTime 三个工具, 被 message-tool.tsx / message-user.tsx /
 // agent-message.ts 共用 ── 不归"工具元数据", 保留。
 
+import { translate, type AppLanguage, type I18nParams } from "@features/i18n";
+
 export function truncateStart(path: string, maxChars: number = 20): string {
   if (path.length <= maxChars) return path;
   return "..." + path.slice(-maxChars);
@@ -29,7 +31,7 @@ export function extractFileName(path: string): string {
   return withoutExt || fileName;
 }
 
-export function formatRelativeTime(timestamp: number): string {
+export function formatRelativeTime(timestamp: number, language: AppLanguage = "zh-CN"): string {
   const now = Date.now();
   const diffMs = now - timestamp;
   const diffSec = Math.floor(diffMs / 1000);
@@ -37,9 +39,10 @@ export function formatRelativeTime(timestamp: number): string {
   const diffHour = Math.floor(diffMin / 60);
   const diffDay = Math.floor(diffHour / 24);
 
-  if (diffSec < 60) return "刚刚";
-  if (diffMin < 60) return `${diffMin}分钟前`;
-  if (diffHour < 24) return `${diffHour}小时前`;
-  if (diffDay < 7) return `${diffDay}天前`;
-  return new Date(timestamp).toLocaleDateString("zh-CN");
+  const intlLocale = language === "zh-CN" ? "zh-CN" : "en-US";
+  if (diffSec < 60) return translate(language, "agent.time.justNow");
+  if (diffMin < 60) return translate(language, "agent.time.minutesAgo", { m: diffMin } satisfies I18nParams);
+  if (diffHour < 24) return translate(language, "agent.time.hoursAgo", { h: diffHour } satisfies I18nParams);
+  if (diffDay < 7) return translate(language, "agent.time.daysAgo", { d: diffDay } satisfies I18nParams);
+  return new Date(timestamp).toLocaleDateString(intlLocale);
 }

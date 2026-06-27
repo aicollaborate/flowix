@@ -3,10 +3,36 @@ import { useCallback } from 'react';
 import { displayTitleFromFilename } from '@/lib/utils';
 import { sanitizeFileName, stripFrontmatter } from '@/lib/export-utils';
 import { memos as memosClient, dialogs, type SaveFileFilter } from '@platform/tauri/client';
+import { translate } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 import { toast } from '@/lib/toast';
 import type { MemoColor, MemoItem } from '@features/memo';
 
 type ExportableDocument = { title: string; markdown: string };
+
+type CommandKey =
+  | 'document.command.readFailed'
+  | 'document.command.noDocumentToExport'
+  | 'document.command.copySuccess'
+  | 'document.command.copyFailed'
+  | 'document.command.copyPathSuccess'
+  | 'document.command.unpinFailed'
+  | 'document.command.pinFailed'
+  | 'document.command.unpinSuccess'
+  | 'document.command.pinSuccess'
+  | 'document.command.exportMarkdown.success'
+  | 'document.command.exportMarkdown.failed'
+  | 'document.command.saveAsTemplate'
+  | 'document.command.saveTemplateFailed'
+  | 'document.command.wordDocName'
+  | 'document.command.exportFailed'
+  | 'document.command.exportWord.success'
+  | 'document.command.exportWord.failed';
+
+function tCmd(key: CommandKey, params?: Record<string, string | number>): string {
+  const language = useUserSettingsStore.getState().settings.language;
+  return translate(language, key, params);
+}
 
 interface UseDocumentCommandsOptions {
   currentDocumentPath: string | null;
@@ -68,7 +94,7 @@ export function useDocumentCommands({
         raw = (await memosClient.readDocument(currentDocumentPath)) ?? '';
       } catch (error) {
         console.warn('[useDocumentCommands] Failed to read document for export:', error);
-        toast.error('读取文档失败');
+        toast.error(tCmd('document.command.readFailed'));
         return null;
       }
     }
@@ -82,7 +108,7 @@ export function useDocumentCommands({
   const requireExportableDocument = useCallback(async () => {
     const doc = await getExportableDocument();
     if (!doc) {
-      toast.error('没有可导出的文档');
+      toast.error(tCmd('document.command.noDocumentToExport'));
       return null;
     }
     return doc;
@@ -98,10 +124,10 @@ export function useDocumentCommands({
     try {
       const content = getCurrentDocumentContent() || await memosClient.readDocument(currentDocumentPath) || '';
       await writeClipboardText(content);
-      toast.success('复制成功');
+      toast.success(tCmd('document.command.copySuccess'));
     } catch (error) {
       console.warn('[useDocumentCommands] Failed to copy document content:', error);
-      toast.error('复制失败');
+      toast.error(tCmd('document.command.copyFailed'));
     }
   }, [currentDocumentPath, getCurrentDocumentContent]);
 
@@ -110,10 +136,10 @@ export function useDocumentCommands({
 
     try {
       await writeClipboardText(currentDocumentPath);
-      toast.success('复制成功');
+      toast.success(tCmd('document.command.copySuccess'));
     } catch (error) {
       console.warn('[useDocumentCommands] Failed to copy document link:', error);
-      toast.error('复制失败');
+      toast.error(tCmd('document.command.copyFailed'));
     }
   }, [currentDocumentPath]);
 
@@ -122,10 +148,10 @@ export function useDocumentCommands({
 
     try {
       await writeClipboardText(currentDocumentPath);
-      toast.success('已复制完整路径');
+      toast.success(tCmd('document.command.copyPathSuccess'));
     } catch (error) {
       console.warn('[useDocumentCommands] Failed to copy external path:', error);
-      toast.error('复制失败');
+      toast.error(tCmd('document.command.copyFailed'));
     }
   }, [currentDocumentPath, isExternalDocument]);
 
@@ -139,15 +165,15 @@ export function useDocumentCommands({
         : await memosClient.favoriteMemo(currentMemo.id);
 
       if (!ok) {
-        toast.error(wasFavorited ? '取消置顶失败' : '置顶失败');
+        toast.error(tCmd(wasFavorited ? 'document.command.unpinFailed' : 'document.command.pinFailed'));
         return;
       }
 
       updateMemoMeta(currentMemo.id, { favorited: !wasFavorited });
-      toast.success(wasFavorited ? '取消置顶成功' : '置顶成功');
+      toast.success(tCmd(wasFavorited ? 'document.command.unpinSuccess' : 'document.command.pinSuccess'));
     } catch (error) {
       console.warn('[useDocumentCommands] Failed to toggle pin:', error);
-      toast.error(wasFavorited ? '取消置顶失败' : '置顶失败');
+      toast.error(tCmd(wasFavorited ? 'document.command.unpinFailed' : 'document.command.pinFailed'));
     }
   }, [currentMemo, updateMemoMeta]);
 
@@ -164,7 +190,7 @@ export function useDocumentCommands({
     if (!target) return;
 
     const ok = await dialogs.writeExportFile(target, doc.markdown);
-    toast[ok ? 'success' : 'error'](ok ? '已导出 Markdown' : '导出失败');
+    toast[ok ? 'success' : 'error'](tCmd(ok ? 'document.command.exportMarkdown.success' : 'document.command.exportMarkdown.failed'));
   }, [promptExportTarget, requireExportableDocument]);
 
   const handleSaveAsTemplate = useCallback(async () => {
@@ -173,10 +199,10 @@ export function useDocumentCommands({
 
     try {
       const template = await memosClient.saveTemplate(doc.title, doc.markdown);
-      toast.success(`已保存为模板：${template.name}`);
+      toast.success(tCmd('document.command.saveAsTemplate', { name: template.name }));
     } catch (error) {
       console.warn('[useDocumentCommands] Failed to save template:', error);
-      toast.error('保存模板失败');
+      toast.error(tCmd('document.command.saveTemplateFailed'));
     }
   }, [requireExportableDocument]);
 
@@ -184,7 +210,8 @@ export function useDocumentCommands({
     const doc = await requireExportableDocument();
     if (!doc) return;
 
-    const target = await promptExportTarget(doc, 'doc', { name: 'Word 文档', extensions: ['doc'] });
+    const wordDocName = tCmd('document.command.wordDocName');
+    const target = await promptExportTarget(doc, 'doc', { name: wordDocName, extensions: ['doc'] });
     if (!target) return;
 
     let exportModule: typeof import('@/lib/export');
@@ -194,12 +221,12 @@ export function useDocumentCommands({
       bodyHtml = exportModule.markdownToHtml(doc.markdown);
     } catch (error) {
       console.warn('[useDocumentCommands] Failed to convert markdown for Word export:', error);
-      toast.error('导出失败');
+      toast.error(tCmd('document.command.exportFailed'));
       return;
     }
 
     const ok = await dialogs.writeExportFile(target, exportModule.buildWordHtml(doc.title, bodyHtml));
-    toast[ok ? 'success' : 'error'](ok ? '已导出 Word 文档' : '导出失败');
+    toast[ok ? 'success' : 'error'](tCmd(ok ? 'document.command.exportWord.success' : 'document.command.exportWord.failed'));
   }, [promptExportTarget, requireExportableDocument]);
 
   return {

@@ -3,6 +3,8 @@ import type { NodeView as ProseMirrorNodeView, EditorView, Decoration } from '@t
 import { NodeSelection } from '@tiptap/pm/state';
 import { Node, InputRule, mergeAttributes } from '@tiptap/core';
 import { assetMarkdownUrl, assetUrl, decodeStorageKey } from '@features/editor/extensions/attachment-link/utils';
+import { translate, type I18nKey } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 
 export { decodeStorageKey };
 
@@ -11,6 +13,11 @@ const ASSET_IMAGE_RE = /^(asset:\/\/|https?:\/\/asset\.localhost\/)/i;
 const DEFAULT_IMAGE_WIDTH_PERCENT = 100;
 const MIN_IMAGE_WIDTH_PERCENT = 20;
 const MAX_IMAGE_WIDTH_PERCENT = 100;
+
+// NodeView 不在 React 树内, 不能用 useI18n, 走 user-settings-store 直读当前语言。
+function tKey(key: I18nKey, params?: Record<string, string | number>): string {
+    return translate(useUserSettingsStore.getState().settings.language, key, params);
+}
 
 function isAttachmentImageHref(href: string | null | undefined): boolean {
     return !!href && ASSET_IMAGE_RE.test(href);
@@ -100,11 +107,17 @@ class ImageView implements ProseMirrorNodeView {
         img.setAttribute('fetchpriority', 'low');
         if (title) img.title = title;
 
+        const fallback = document.createElement('div');
+        fallback.className = 'editor-image-attachment__fallback';
+        fallback.textContent = tKey('editor.image.unavailable');
+        fallback.hidden = true;
+
         const wrapper = document.createElement('div');
         wrapper.className = 'editor-image-attachment';
         wrapper.contentEditable = 'false';
         wrapper.draggable = true;
         wrapper.appendChild(img);
+        wrapper.appendChild(fallback);
         wrapper.appendChild(this.createResizeHandle('left'));
         wrapper.appendChild(this.createResizeHandle('right'));
 
@@ -117,7 +130,7 @@ class ImageView implements ProseMirrorNodeView {
         const handle = document.createElement('button');
         handle.type = 'button';
         handle.className = `editor-image-attachment__resize-handle editor-image-attachment__resize-handle--${side}`;
-        handle.setAttribute('aria-label', side === 'left' ? '从左侧等比调整图片大小' : '从右侧等比调整图片大小');
+        handle.setAttribute('aria-label', side === 'left' ? tKey('editor.image.resize.left') : tKey('editor.image.resize.right'));
         handle.addEventListener('pointerdown', (event) => this.startResize(event, side));
         return handle;
     }
@@ -140,12 +153,22 @@ class ImageView implements ProseMirrorNodeView {
             img.addEventListener('load', () => {
                 img.classList.add('is-loaded');
                 this.dom.classList.add('is-loaded');
+                this.dom.classList.remove('is-error');
+                this.setFallbackVisible(false);
             }, { once: true });
             img.addEventListener('error', () => {
-                img.classList.add('is-loaded');
+                img.classList.remove('is-loaded');
+                this.dom.classList.remove('is-loaded');
+                this.dom.classList.add('is-error');
+                this.setFallbackVisible(true);
             }, { once: true });
             img.src = src;
         });
+    }
+
+    private setFallbackVisible(visible: boolean): void {
+        const fallback = this.dom.querySelector<HTMLElement>('.editor-image-attachment__fallback');
+        if (fallback) fallback.hidden = !visible;
     }
 
     private applySrc(img: HTMLImageElement, attrs: Record<string, any>): void {
@@ -166,12 +189,16 @@ class ImageView implements ProseMirrorNodeView {
             img.removeAttribute('src');
             img.classList.remove('is-loaded');
             this.dom.classList.remove('is-loaded');
+            this.dom.classList.remove('is-error');
+            this.setFallbackVisible(false);
             return;
         }
 
         img.dataset.src = nextSrc;
         img.classList.remove('is-loaded');
         this.dom.classList.remove('is-loaded');
+        this.dom.classList.remove('is-error');
+        this.setFallbackVisible(false);
         if (typeof IntersectionObserver === 'undefined') {
             this.scheduleImageLoad(img, nextSrc);
             return;
@@ -535,4 +562,3 @@ export const ImageAttachment = Node.create({
         return `![${altText}](${imageSrc})${sizeSuffix}`;
     },
 });
-

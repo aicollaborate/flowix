@@ -13,8 +13,9 @@ import {
 import { clsx } from "clsx";
 import { pinyin } from "pinyin-pro";
 import { toast } from "sonner";
-import { useAgentAccessStore } from "@features/agent";
+import { useAgentAccessStore, type AgentAccessErrorCode } from "@features/agent";
 import { useMemoStore } from "@features/memo";
+import { useI18n, type I18nKey } from "@features/i18n";
 import type { AgentAccessEntry } from "@/lib/types/agent-access";
 
 // 与 status-bar/notebook-switcher.tsx / status-bar/notebook-switcher 保持一致
@@ -37,6 +38,7 @@ export function InputboxAdd() {
 	// "is_default" 徽章提供信息 ── access config 不复读 is_default。
 	const { config, isLoading, toggle, addFolderFromPicker, removeFolder } = useAgentAccessStore();
 	const { notebooks, loadNotebooks } = useMemoStore();
+	const { t } = useI18n();
 	// 二级面板开关 ── 与 document-titlebar-shared 的 VersionHistorySubmenu
 	// 同款: 父级 <div className="relative"> 直接挂 onMouseEnter / onMouseLeave,
 	// 子面板 absolute 定位为 trigger 的 DOM 子节点, 鼠标从 trigger 进入子面板
@@ -61,10 +63,17 @@ export function InputboxAdd() {
 		void toggle(entry.id);
 	};
 
+	const ACCESS_ERROR_KEYS: Record<AgentAccessErrorCode, I18nKey | null> = {
+		"not-selected": null,
+		"already-tracked": "agent.access.alreadyTracked",
+		"save-failed": "agent.access.saveFailed",
+	};
+
 	const handleAddFolder = async () => {
 		const result = await addFolderFromPicker();
-		if (!result.ok && result.reason !== "未选择目录") {
-			toast.error(result.reason);
+		if (!result.ok) {
+			const key = ACCESS_ERROR_KEYS[result.code];
+			if (key) toast.error(t(key));
 		}
 	};
 
@@ -91,7 +100,7 @@ export function InputboxAdd() {
 				>
 					<span className="flex items-center gap-2">
 						<FolderLock className="h-4 w-4 text-[var(--muted-foreground)]" />
-						<span>可访问文件</span>
+						<span>{t("agent.access.menuTitle")}</span>
 					</span>
 					<ChevronRight className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
 				</button>
@@ -118,7 +127,7 @@ export function InputboxAdd() {
 							if (isEmpty) {
 								return (
 									<div className="px-2 py-3 text-xs text-center text-[var(--muted-foreground)]">
-										{isLoading ? "加载中…" : "暂无访问目录, 点击下方添加"}
+										{isLoading ? t("agent.access.empty.loading") : t("agent.access.empty.empty")}
 									</div>
 								);
 							}
@@ -144,7 +153,7 @@ export function InputboxAdd() {
 											// 在勾选框区域"点哪生效哪"是预期行为。
 											handleToggleRow(entry);
 										}}
-										title={entry.missing ? "目录不存在, 放回原位后自动恢复" : entry.path}
+										title={entry.missing ? t("agent.access.pathMissing") : entry.path}
 										role={isNotebook ? "menuitem" : undefined}
 									>
 										{/* 头像: notebook 用首字母, folder 用文件夹图标 */}
@@ -165,12 +174,12 @@ export function InputboxAdd() {
 											{entry.missing && (
 												<AlertCircle
 													className="h-3 w-3 text-[var(--warning)] shrink-0"
-													aria-label="目录不存在"
+													aria-label={t("agent.access.directoryMissing")}
 												/>
 											)}
 											{isDefault && (
 												<span className="shrink-0 inline-flex items-center leading-none h-5 rounded-lg px-1.5 text-[10px] bg-[var(--accent)] text-[var(--primary)]">
-													默认
+													{t("agent.access.defaultBadge")}
 												</span>
 											)}
 										</span>
@@ -180,7 +189,7 @@ export function InputboxAdd() {
 										{!isNotebook && (
 											<button
 												type="button"
-												aria-label="删除该文件夹"
+												aria-label={t("agent.access.deleteFolder")}
 												onClick={(e) => {
 													e.stopPropagation();
 													void handleRemoveFolder(entry.id);
@@ -196,7 +205,7 @@ export function InputboxAdd() {
 											type="button"
 											role="checkbox"
 											aria-checked={entry.enabled}
-											aria-label={entry.enabled ? "取消 AI 访问" : "允许 AI 访问"}
+											aria-label={entry.enabled ? t("agent.access.toggle.on") : t("agent.access.toggle.off")}
 											disabled={rowDisabled}
 											onClick={(e) => {
 												e.stopPropagation();
@@ -237,14 +246,14 @@ export function InputboxAdd() {
 								<>
 									{notebookEntries.length > 0 && (
 										<>
-											<SectionLabel>笔记本</SectionLabel>
+											<SectionLabel>{t("agent.access.sectionNotebook")}</SectionLabel>
 											{notebookEntries.map(renderEntry)}
 										</>
 									)}
 									{notebookEntries.length > 0 && folderEntries.length > 0 && <Divider />}
 									{folderEntries.length > 0 && (
 										<>
-											<SectionLabel>自定义文件夹</SectionLabel>
+											<SectionLabel>{t("agent.access.sectionFolder")}</SectionLabel>
 											{folderEntries.map(renderEntry)}
 										</>
 									)}
@@ -265,7 +274,7 @@ export function InputboxAdd() {
 							className="mt-1 flex items-center justify-center gap-2 w-full px-2 py-1.5 rounded-md text-sm text-[var(--agent-foreground)] border border-[var(--border)] hover:bg-[var(--muted)] transition-colors"
 						>
 							<Plus className="h-3.5 w-3.5" />
-							<span>添加资料夹</span>
+							<span>{t("agent.access.addFolder")}</span>
 						</button>
 					</div>
 				)}
@@ -277,7 +286,7 @@ export function InputboxAdd() {
 				className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-[var(--agent-foreground)] hover:bg-[var(--accent)] hover:text-[var(--secondary-foreground)] transition-colors"
 			>
 				<Wand2 className="h-4 w-4 text-[var(--muted-foreground)]" />
-				<span>技能</span>
+				<span>{t("agent.menu.skills")}</span>
 			</button>
 
 			{/* 指令 — 占位, 后续接入时再挂 onClick */}
@@ -286,7 +295,7 @@ export function InputboxAdd() {
 				className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-[var(--agent-foreground)] hover:bg-[var(--accent)] hover:text-[var(--secondary-foreground)] transition-colors"
 			>
 				<Scroll className="h-4 w-4 text-[var(--muted-foreground)]" />
-				<span>指令</span>
+				<span>{t("agent.menu.instructions")}</span>
 			</button>
 		</div>
 	);

@@ -154,6 +154,10 @@
   background: transparent;
 }
 
+.markdown-editor .tiptap .editor-image-attachment.is-error {
+  border-style: dashed;
+}
+
 .markdown-editor .tiptap .editor-image-attachment.is-selected,
 .markdown-editor .tiptap .editor-image-attachment.ProseMirror-selectednode {
   outline: 1px solid #5262DC;
@@ -176,6 +180,28 @@
   height: auto;
   object-fit: contain;
   opacity: 1;
+}
+
+.markdown-editor .tiptap .editor-image-attachment.is-error .editor-image-attachment__image {
+  opacity: 0;
+}
+
+.markdown-editor .tiptap .editor-image-attachment__fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  pointer-events: none;
+}
+
+.markdown-editor .tiptap .editor-image-attachment__fallback[hidden] {
+  display: none;
 }
 
 .markdown-editor .tiptap .editor-image-attachment__resize-handle {

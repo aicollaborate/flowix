@@ -2,6 +2,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { ChevronDown, Check } from "lucide-react";
+import { useI18n } from "@features/i18n";
 
 // Context for managing select state
 interface SelectContextValue {
@@ -73,6 +74,7 @@ interface SelectTriggerProps {
 
 function SelectTrigger({ children, className, asChild }: SelectTriggerProps) {
 	const { value, open, setOpen, triggerRef } = useSelectContext();
+	const { t } = useI18n();
 
 	const handleClick = () => {
 		setOpen(!open);
@@ -92,7 +94,7 @@ function SelectTrigger({ children, className, asChild }: SelectTriggerProps) {
 				data-state={open ? "open" : "closed"}
 			>
 				<span className={value ? "" : "text-[var(--muted-foreground)]"}>
-					{value || "请选择"}
+					{value || t("common.pleaseSelect")}
 				</span>
 				<ChevronDown className={cn("w-4 h-4 transition-transform", open && "rotate-180")} />
 			</button>

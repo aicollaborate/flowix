@@ -3,6 +3,7 @@ import { extractFileName } from "@features/agent/message/format";
 import { getToolLabel } from "@features/agent/message/tools";
 import { stripSystemBlock } from "@features/agent/message/system";
 import { isEmptyAssistantMessage } from "@features/agent/message/empty";
+import { translate, type AppLanguage } from "@features/i18n";
 
 export interface AgentMessageViewModel {
   message: ChatMessage;
@@ -34,16 +35,16 @@ export function getAgentToolInputSummary(input?: Record<string, unknown>): strin
     : "";
 }
 
-export function getAgentReasoningLabel(message: ChatMessage): string {
-  return message.isCompleted ? "思考完成" : "思考中";
+export function getAgentReasoningLabel(message: ChatMessage, language: AppLanguage = "zh-CN"): string {
+  return translate(language, message.isCompleted ? "agent.reasoning.completed" : "agent.reasoning.thinking");
 }
 
-export function getAgentMessageEndTimeText(message: ChatMessage): string {
+export function getAgentMessageEndTimeText(message: ChatMessage, language: AppLanguage = "zh-CN"): string {
   if (!message.timestamp) {
-    return new Date().toLocaleTimeString();
+    return new Date().toLocaleTimeString(language === "zh-CN" ? "zh-CN" : "en-US");
   }
 
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(language === "zh-CN" ? "zh-CN" : "en-US", {
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
@@ -51,13 +52,13 @@ export function getAgentMessageEndTimeText(message: ChatMessage): string {
   }).format(new Date(message.timestamp));
 }
 
-export function getAgentMessageVisibleContent(message: ChatMessage): string {
+export function getAgentMessageVisibleContent(message: ChatMessage, language: AppLanguage = "zh-CN"): string {
   if (message.role === "user") {
     return stripSystemBlock(message.content || "");
   }
 
   if (message.role === "end") {
-    return message.content || getAgentMessageEndTimeText(message);
+    return message.content || getAgentMessageEndTimeText(message, language);
   }
 
   return message.content || "";
@@ -67,15 +68,15 @@ export function shouldRenderAgentMessage(message: ChatMessage): boolean {
   return !isEmptyAssistantMessage(message);
 }
 
-export function createAgentMessageViewModel(message: ChatMessage): AgentMessageViewModel {
+export function createAgentMessageViewModel(message: ChatMessage, language: AppLanguage = "zh-CN"): AgentMessageViewModel {
   return {
     message,
     role: message.role,
-    visibleContent: getAgentMessageVisibleContent(message),
+    visibleContent: getAgentMessageVisibleContent(message, language),
     shouldRender: shouldRenderAgentMessage(message),
-    reasoningLabel: getAgentReasoningLabel(message),
-    toolLabel: getToolLabel(message.toolName),
+    reasoningLabel: getAgentReasoningLabel(message, language),
+    toolLabel: getToolLabel(message.toolName, language),
     toolSummary: getAgentToolInputSummary(message.toolInput),
-    endTimeText: getAgentMessageEndTimeText(message),
+    endTimeText: getAgentMessageEndTimeText(message, language),
   };
 }

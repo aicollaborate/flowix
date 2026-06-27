@@ -7,17 +7,19 @@ import {
   getAgentReasoningLabel,
 } from "@features/agent/message/agent-message";
 import { MarkdownRenderer } from "@features/agent/components/messages/markdown-renderer";
+import { useI18n } from "@features/i18n";
 
 interface MessageReasoningProps {
   message: ChatMessageType;
 }
 
 function MessageReasoningInner({ message }: MessageReasoningProps) {
+  const { language } = useI18n();
   const reasoningCollapsed = useSettingsStore((state) => state.reasoningCollapsed);
   const toggleReasoningCollapsed = useSettingsStore((state) => state.toggleReasoningCollapsed);
 
-  const buttonText = getAgentReasoningLabel(message);
-  const visibleContent = getAgentMessageVisibleContent(message);
+  const buttonText = getAgentReasoningLabel(message, language);
+  const visibleContent = getAgentMessageVisibleContent(message, language);
 
   return (
     <div className="flex gap-3">

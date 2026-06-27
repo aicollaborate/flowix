@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { TOOL_ICON_PATHS } from "@features/agent/message/tool-icon-paths";
 import { truncateStart } from "@features/agent/message/format";
+import { useI18n, type I18nParams } from "@features/i18n";
 
 /* TOOL_ICON_PATHS 来自 ./tool-icon-paths.ts ── 直接依赖避免与
  * ./tools.tsx 形成循环 (本文件 → tool-icon-paths 走 path 字符串,
@@ -26,6 +27,7 @@ export function CompactCode({
   value: string;
   maxLines?: number;
 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const lines = value.split("\n");
   const hasMore = lines.length > maxLines || value.length > 1600;
@@ -38,7 +40,7 @@ export function CompactCode({
 
   if (!value.trim()) {
     return (
-      <span className="text-xs text-[var(--muted-foreground)]">无输出</span>
+      <span className="text-xs text-[var(--muted-foreground)]">{t("agent.tool.empty")}</span>
     );
   }
 
@@ -54,7 +56,7 @@ export function CompactCode({
           className="text-xs text-[var(--muted-foreground)] hover:text-[var(--agent-foreground)]"
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? "收起" : "展开"}
+          {expanded ? t("agent.tool.collapse") : t("agent.tool.expand")}
         </button>
       )}
     </div>
@@ -63,12 +65,13 @@ export function CompactCode({
 
 /* ── FileList ── glob 匹配路径列表 ────────────────────────────────── */
 export function FileList({ paths }: { paths: string[] }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? paths : paths.slice(0, 8);
 
   if (paths.length === 0) {
     return (
-      <span className="text-xs text-[var(--muted-foreground)]">无匹配项</span>
+      <span className="text-xs text-[var(--muted-foreground)]">{t("agent.tool.noMatches")}</span>
     );
   }
 
@@ -99,7 +102,7 @@ export function FileList({ paths }: { paths: string[] }) {
           className="text-xs text-[var(--muted-foreground)] hover:text-[var(--agent-foreground)]"
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? "收起" : `展开 ${paths.length - 8} 项`}
+          {expanded ? t("agent.tool.collapse") : t("agent.tool.expandItems", { count: paths.length - 8 } satisfies I18nParams)}
         </button>
       )}
     </div>
@@ -108,12 +111,13 @@ export function FileList({ paths }: { paths: string[] }) {
 
 /* ── EntriesList ── ls 目录条目列表 ────────────────────────────────── */
 export function EntriesList({ entries }: { entries: any[] }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? entries : entries.slice(0, 10);
 
   if (entries.length === 0) {
     return (
-      <span className="text-xs text-[var(--muted-foreground)]">空目录</span>
+      <span className="text-xs text-[var(--muted-foreground)]">{t("agent.tool.emptyDir")}</span>
     );
   }
 
@@ -157,7 +161,7 @@ export function EntriesList({ entries }: { entries: any[] }) {
           className="text-xs text-[var(--muted-foreground)] hover:text-[var(--agent-foreground)]"
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? "收起" : `展开 ${entries.length - 10} 项`}
+          {expanded ? t("agent.tool.collapse") : t("agent.tool.expandEntries", { count: entries.length - 10 } satisfies I18nParams)}
         </button>
       )}
     </div>
@@ -166,12 +170,13 @@ export function EntriesList({ entries }: { entries: any[] }) {
 
 /* ── GrepResult ── grep 匹配结果 ───────────────────────────────────── */
 export function GrepResult({ matches }: { matches: any[] }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? matches : matches.slice(0, 6);
 
   if (matches.length === 0) {
     return (
-      <span className="text-xs text-[var(--muted-foreground)]">无匹配项</span>
+      <span className="text-xs text-[var(--muted-foreground)]">{t("agent.tool.noMatches")}</span>
     );
   }
 
@@ -198,7 +203,7 @@ export function GrepResult({ matches }: { matches: any[] }) {
           className="text-xs text-[var(--muted-foreground)] hover:text-[var(--agent-foreground)]"
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? "收起" : `展开 ${matches.length - 6} 条`}
+          {expanded ? t("agent.tool.collapse") : t("agent.tool.expandMatches", { count: matches.length - 6 } satisfies I18nParams)}
         </button>
       )}
     </div>

@@ -13,6 +13,8 @@ import {
   useDocumentStore,
   type DocumentIdentity,
 } from '@features/document';
+import { translate } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 import { toast } from '@/lib/toast';
 import { formatDateTime } from '@/lib/utils';
 import {
@@ -166,17 +168,23 @@ export function useDocumentAutosave({
             if (onDisk !== null) {
               buf.lastSavedContent = onDisk;
             }
-            toast.error('保存失败：文档已被外部修改', { duration: 5000 });
+            const language = useUserSettingsStore.getState().settings.language;
+            toast.error(translate(language, 'document.save.casRefused'), { duration: 5000 });
           })();
           void writtenContent;
         },
         onError: (_writtenContent, err) => {
           console.error('[DocumentContainer] Failed to save memo:', err);
-          toast.error(`保存失败：${err instanceof Error ? err.message : String(err)}`, {
+          const language = useUserSettingsStore.getState().settings.language;
+          const message = err instanceof Error ? err.message : String(err);
+          toast.error(translate(language, 'document.save.failed', { message }), {
             duration: 5000,
           });
           if (isMountedRef.current) {
-            setState(prev => ({ ...prev, error: '保存失败' }));
+            // 错误展示在 document-container 里的 state.error (ghost 兜底视图);
+            // 此处承载 save 失败语义 ── 用 document.save.failed + 实际 error
+            // 拼接, 跟 toast 文案保持一致。
+            setState(prev => ({ ...prev, error: translate(language, 'document.save.failed', { message }) }));
           }
         },
       },
@@ -217,7 +225,8 @@ export function useDocumentAutosave({
     if (!isMountedRef.current) return;
     if (hasDocumentUnsavedChanges(identity)) {
       // 用户有本地未保存改动 + 磁盘被外部改 ── 提示冲突, 不覆盖
-      toast.warning('文档已被外部修改', { duration: 5000 });
+      const language = useUserSettingsStore.getState().settings.language;
+      toast.warning(translate(language, 'document.save.externalChanged'), { duration: 5000 });
       return;
     }
     // 磁盘变了 + 无本地未保存 ── 走 reloadDocument 拉新 (跟 watcher

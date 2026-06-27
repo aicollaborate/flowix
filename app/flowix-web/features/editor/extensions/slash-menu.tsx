@@ -7,8 +7,11 @@ import { openNoteMention, invalidateMentionNotes } from '@features/editor/extens
 import {
   SLASH_MENU_ITEMS,
   SlashMenuDropdown,
+  getSlashMenuItemLabel,
   type SlashMenuItem,
 } from '@features/editor/components/slash-menu-dropdown';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
+import { translate } from '@features/i18n';
 
 export const slashMenuPluginKey = new PluginKey('slashMenu');
 
@@ -33,10 +36,13 @@ function filterItems(query: string): SlashMenuItem[] {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return SLASH_MENU_ITEMS;
 
+  const language = useUserSettingsStore.getState().settings.language;
+
   return SLASH_MENU_ITEMS.filter((item) => {
+    const labelText = getSlashMenuItemLabel(item, language);
     const haystack = [
       item.id,
-      item.label,
+      labelText,
       item.description,
       ...item.keywords,
     ].join(' ').toLowerCase();
@@ -191,7 +197,8 @@ const SLASH_MENU_MIN_HEIGHT_PX = SLASH_MENU_MIN_HEIGHT_REM * 16;
 
 function estimateMenuHeight(items: SlashMenuItem[]): number {
   // header per section (~28px) + items (min 42px + 2px gap each) + wrapper padding (8px)
-  const sectionCount = new Set(items.map((item) => item.section)).size;
+  const sectionKey = (item: SlashMenuItem) => item.sectionKey ?? item.section ?? '';
+  const sectionCount = new Set(items.map(sectionKey)).size;
   const headers = 28 * sectionCount;
   const perItem = 44;
   const wrapper = 8;
@@ -317,7 +324,11 @@ function deleteTriggerText(editor: Editor): boolean {
 }
 
 function memoTitleFromFilename(filename: string): string {
-  return filename.replace(/\.md$/i, '').trim() || '未命名笔记';
+  const stripped = filename.replace(/\.md$/i, '').trim();
+  if (stripped) return stripped;
+  // 同步命名兜底走当前语言的 memo.untitled (zh-CN "未命名的笔记" / en-US "Untitled memo")。
+  const language = useUserSettingsStore.getState().settings.language;
+  return translate(language, 'memo.untitled');
 }
 
 async function createChildNoteReference(editor: Editor): Promise<void> {

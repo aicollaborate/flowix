@@ -43,6 +43,7 @@ import {
 } from '@features/document';
 import { memos as memosClient, type MemoVersionMeta } from '@platform/tauri/client';
 import { toast } from '@/lib/toast';
+import { useI18n, translate, type AppLanguage, type I18nKey, type I18nParams } from '@features/i18n';
 
 /**
  * Document state for the titlebar. Exactly one is active at a time:
@@ -97,6 +98,7 @@ export function ExternalSaveButton({
   onSave: () => void;
   className: string;
 }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
@@ -105,7 +107,7 @@ export function ExternalSaveButton({
       className={className}
     >
       <BoxArrowDownIcon className="h-4 w-4" />
-      <span className="text-xs">{isSaving ? '保存中...' : '保存为笔记'}</span>
+      <span className="text-xs">{isSaving ? t("document.external.save.saving") : t("document.external.save.label")}</span>
     </button>
   );
 }
@@ -122,12 +124,13 @@ export function ExternalCopyButton({
   onCopy: () => void;
   iconButtonClass: string;
 }) {
+  const { t } = useI18n();
   return (
-    <Tooltip content="复制完整路径">
+    <Tooltip content={t("document.external.copyPathTooltip")}>
       <button
         type="button"
         onClick={onCopy}
-        aria-label="复制完整路径"
+        aria-label={t("document.external.copyPath")}
         className={iconButtonClass}
       >
         <CopyIcon className="w-4 h-4" />
@@ -145,15 +148,19 @@ export function ExternalCopyButton({
 // 把整组新颜色走 `onChange` 一次性写回后端, 由 memo-event 链路回灌 store。
 // =====================================================================
 
-const COLOR_LABELS: Record<MemoColor, string> = {
-  red: '红',
-  orange: '橙',
-  yellow: '黄',
-  green: '绿',
-  cyan: '青',
-  blue: '蓝',
-  gray: '灰',
+const COLOR_LABEL_KEYS: Record<MemoColor, I18nKey> = {
+  red: "document.color.red",
+  orange: "document.color.orange",
+  yellow: "document.color.yellow",
+  green: "document.color.green",
+  cyan: "document.color.cyan",
+  blue: "document.color.blue",
+  gray: "document.color.gray",
 };
+
+function getColorLabel(color: MemoColor, language: AppLanguage): string {
+  return translate(language, COLOR_LABEL_KEYS[color]);
+}
 
 export function MemoColorPicker({
   colors,
@@ -164,6 +171,7 @@ export function MemoColorPicker({
   iconButtonClass: string;
   onChange: (next: MemoColor[]) => void;
 }) {
+  const { t, language } = useI18n();
   const selected = new Set(colors);
 
   const toggle = (c: MemoColor) => {
@@ -182,10 +190,10 @@ export function MemoColorPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Tooltip content="文档颜色">
+        <Tooltip content={t("document.color.tooltip")}>
           <button
             type="button"
-            aria-label="文档颜色"
+            aria-label={t("document.color.button")}
             className={iconButtonClass}
           >
             {colors.length > 0 ? (
@@ -214,10 +222,10 @@ export function MemoColorPicker({
         className="w-[180px] p-2"
       >
         <div className="flex items-center gap-1.5">
-          <Tooltip content="无颜色">
+          <Tooltip content={t("document.color.noColorTooltip")}>
             <button
               type="button"
-              aria-label="清除颜色"
+              aria-label={t("document.color.clear")}
               onClick={clear}
               className={`relative h-7 w-7 rounded-md transition-colors ${
                 colors.length === 0
@@ -236,7 +244,7 @@ export function MemoColorPicker({
               <button
                 key={c}
                 type="button"
-                aria-label={COLOR_LABELS[c]}
+                aria-label={getColorLabel(c, language)}
                 aria-pressed={isSelected}
                 onClick={() => toggle(c)}
                 className="relative h-7 w-7 rounded-md transition-transform hover:scale-110"
@@ -264,19 +272,21 @@ export function MemoColorPicker({
 // iconButtonClass (size / radius / bg / border) supplied by caller
 // =====================================================================
 
-const VERSION_SOURCE_LABELS: Record<MemoVersionMeta['source'], string> = {
-  auto: '自动',
-  manual: '手动',
-  restore_backup: '恢复前',
+const VERSION_SOURCE_LABEL_KEYS: Record<MemoVersionMeta['source'], I18nKey> = {
+  auto: "document.version.source.auto",
+  manual: "document.version.source.manual",
+  restore_backup: "document.version.source.restoreBackup",
 };
 
-function formatVersionTime(timestamp: number): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(timestamp));
+function formatVersionTime(timestamp: number, language: AppLanguage): string {
+  const intlLocale = language === "zh-CN" ? "zh-CN" : "en-US";
+  // 英文用「June 24, 2025」简写形式 (long month + day + year, 无时间); 中文保留
+  // 紧凑数字格式带时分, 列表项之间的时间信息更密。
+  const options: Intl.DateTimeFormatOptions =
+    language === "zh-CN"
+      ? { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }
+      : { year: "numeric", month: "long", day: "numeric" };
+  return new Intl.DateTimeFormat(intlLocale, options).format(new Date(timestamp));
 }
 
 function formatVersionSize(size: number): string {
@@ -296,6 +306,7 @@ function VersionHistorySubmenu({
   restoringVersionId: string | null;
   onSelectVersion: (version: MemoVersionMeta) => void;
 }) {
+  const { t, language } = useI18n();
   const [open, setOpen] = useState(false);
   const [versions, setVersions] = useState<MemoVersionMeta[]>([]);
   const [loading, setLoading] = useState(false);
@@ -324,14 +335,14 @@ function VersionHistorySubmenu({
       .catch((err) => {
         if (!mountedRef.current || requestSeqRef.current !== requestSeq) return;
         console.error('[VersionHistorySubmenu] listVersions failed', err);
-        setError('读取失败');
+        setError(t("document.version.loadFailed"));
       })
       .finally(() => {
         if (mountedRef.current && requestSeqRef.current === requestSeq) {
           setLoading(false);
         }
       });
-  }, [open, memoId, refreshKey]);
+  }, [open, memoId, refreshKey, t]);
 
   const orderedVersions = useMemo(
     () => [...versions].sort((a, b) => b.createdAt - a.createdAt),
@@ -350,14 +361,14 @@ function VersionHistorySubmenu({
         onFocus={() => setOpen(true)}
       >
         <ClockIcon className="w-4 h-4 mr-2" />
-        <span className="flex-1 text-left">历史版本</span>
+        <span className="flex-1 text-left">{t("document.version.menuLabel")}</span>
         <ChevronRight className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
       </button>
 
       {open && (
         <div className="absolute right-full top-0 z-[1001] w-[300px] rounded-lg border border-[var(--border)] bg-[var(--card)] py-2 shadow-lg">
           <div className="flex items-center justify-between px-3 pb-2">
-            <div className="text-xs font-medium text-[var(--foreground)]">全部历史版本</div>
+            <div className="text-xs font-medium text-[var(--foreground)]">{t("document.version.allHistory")}</div>
             <div className="text-[11px] text-[var(--muted-foreground)]">
               {orderedVersions.length}/20
             </div>
@@ -367,7 +378,7 @@ function VersionHistorySubmenu({
             {loading && (
               <div className="flex items-center gap-2 px-2 py-3 text-xs text-[var(--muted-foreground)]">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                正在读取
+                {t("document.version.loading")}
               </div>
             )}
 
@@ -377,7 +388,7 @@ function VersionHistorySubmenu({
 
             {!loading && !error && orderedVersions.length === 0 && (
               <div className="px-2 py-3 text-xs text-[var(--muted-foreground)]">
-                暂无历史版本
+                {t("document.version.empty")}
               </div>
             )}
 
@@ -397,13 +408,13 @@ function VersionHistorySubmenu({
               >
                 <div className="flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-xs text-[var(--foreground)]">
-                    {formatVersionTime(version.createdAt)}
+                    {formatVersionTime(version.createdAt, language)}
                   </span>
                   {isRestoring && (
                     <Loader2 className="h-3 w-3 animate-spin text-[var(--muted-foreground)]" />
                   )}
                   <span className="rounded bg-[var(--muted)] px-1.5 py-0.5 text-[10px] text-[var(--muted-foreground)]">
-                    {VERSION_SOURCE_LABELS[version.source] ?? version.source}
+                    {translate(language, VERSION_SOURCE_LABEL_KEYS[version.source] ?? "") || version.source}
                   </span>
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
@@ -448,6 +459,7 @@ export function MemoActions({
   onRequestDeleteMemo: () => void;
   onColorsChange: (next: MemoColor[]) => void;
 }) {
+  const { t, language } = useI18n();
   const isPinned = !!memo.favorited;
   const [confirmVersion, setConfirmVersion] = useState<MemoVersionMeta | null>(null);
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
@@ -469,7 +481,7 @@ export function MemoActions({
       if (activePath) {
         const flushed = await flushDocumentPath(identity, activePath);
         if (!flushed) {
-          toast.error('保存当前内容失败，未切换版本');
+          toast.error(t("document.version.saveCurrentFailed"));
           return;
         }
       }
@@ -480,7 +492,7 @@ export function MemoActions({
       const restored = await memosClient.restoreVersion(memo.id, version.id, expectedContent);
 
       if (!restored) {
-        toast.error('切换版本失败');
+        toast.error(t("document.version.restoreFailed"));
         return;
       }
 
@@ -498,10 +510,10 @@ export function MemoActions({
 
       setConfirmVersion(null);
       setVersionRefreshKey((key) => key + 1);
-      toast.success('已切换到历史版本');
+      toast.success(t("document.version.restored"));
     } catch (err) {
       console.error('[MemoActions] restore version failed', err);
-      toast.error('切换版本失败');
+      toast.error(t("document.version.restoreFailed"));
     } finally {
       setRestoringVersionId(null);
     }
@@ -514,7 +526,7 @@ export function MemoActions({
         iconButtonClass={iconButtonClass}
         onChange={onColorsChange}
       />
-      <Tooltip content="文档搜索" shortcut="editor.find">
+      <Tooltip content={t("document.titlebar.searchTooltip")} shortcut="editor.find">
         <button
           onClick={onOpenSearch}
           className={iconButtonClass}
@@ -524,7 +536,7 @@ export function MemoActions({
       </Tooltip>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Tooltip content="更多">
+          <Tooltip content={t("document.titlebar.moreTooltip")}>
             <button className={iconButtonClass}>
               <Ellipsis className="w-4 h-4" />
             </button>
@@ -535,28 +547,28 @@ export function MemoActions({
             onClick={onCopyLink}
             className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
           >
-            <LinkSimpleIcon className="w-4 h-4 mr-2" /> 复制链接
+            <LinkSimpleIcon className="w-4 h-4 mr-2" /> {t("document.action.copyLink")}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={onCopyFullText}
             className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
           >
-            <CopyIcon className="w-4 h-4 mr-2" /> 复制全文
+            <CopyIcon className="w-4 h-4 mr-2" /> {t("document.action.copyFullText")}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={onOpenProperties}
             className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
           >
-            <StackSimpleIcon className="w-4 h-4 mr-2" /> 属性
+            <StackSimpleIcon className="w-4 h-4 mr-2" /> {t("document.action.properties")}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={onTogglePin}
             className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
           >
             {isPinned ? (
-              <><PushPinSlashIcon className="w-4 h-4 mr-2" /> 取消置顶</>
+              <><PushPinSlashIcon className="w-4 h-4 mr-2" /> {t("document.action.unpin")}</>
             ) : (
-              <><PushPinIcon className="w-4 h-4 mr-2" /> 置顶</>
+              <><PushPinIcon className="w-4 h-4 mr-2" /> {t("document.action.pin")}</>
             )}
           </DropdownMenuItem>
           <hr className="mx-2 border-t border-[var(--border)] opacity-50" />
@@ -564,19 +576,19 @@ export function MemoActions({
             onClick={onSaveAsTemplate}
             className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
           >
-            <SwatchesIcon className="w-4 h-4 mr-2" /> 保存为模板
+            <SwatchesIcon className="w-4 h-4 mr-2" /> {t("document.action.saveAsTemplate")}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={onExportMarkdown}
             className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
           >
-            <FileMdIcon className="w-4 h-4 mr-2" /> 导出为 Markdown
+            <FileMdIcon className="w-4 h-4 mr-2" /> {t("document.action.exportMarkdown")}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={onExportWord}
             className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)]"
           >
-            <FileDocIcon className="w-4 h-4 mr-2" /> 导出为 Word
+            <FileDocIcon className="w-4 h-4 mr-2" /> {t("document.action.exportWord")}
           </DropdownMenuItem>
           <hr className="mx-2 border-t border-[var(--border)] opacity-50" />
           <VersionHistorySubmenu
@@ -589,16 +601,16 @@ export function MemoActions({
             onClick={onRequestDeleteMemo}
             className="flex items-center cursor-pointer rounded-md px-2 hover:bg-[var(--muted)] hover:text-[var(--destructive)]"
           >
-            <TrashSimpleIcon className="w-4 h-4 mr-2" /> 删除
+            <TrashSimpleIcon className="w-4 h-4 mr-2" /> {t("document.action.delete")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <Dialog open={!!confirmVersion} onOpenChange={(open) => !open && setConfirmVersion(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>确认是否切换版本</DialogTitle>
+            <DialogTitle>{t("document.version.confirmTitle")}</DialogTitle>
             <DialogDescription>
-              确定切换到 {confirmVersion ? formatVersionTime(confirmVersion.createdAt) : ''} 版本使用吗？当前内容会先保存为一个历史版本。
+              {t("document.version.confirmDescription", { time: confirmVersion ? formatVersionTime(confirmVersion.createdAt, language) : '' } satisfies I18nParams)}
             </DialogDescription>
           </DialogHeader>
           <div className="mt-4 flex justify-end gap-2">
@@ -608,7 +620,7 @@ export function MemoActions({
               onClick={() => setConfirmVersion(null)}
               className="h-8 rounded-lg px-3 text-sm hover:bg-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              取消
+              {t("document.version.cancel")}
             </button>
             <button
               type="button"
@@ -617,7 +629,7 @@ export function MemoActions({
               className="inline-flex h-8 items-center gap-2 rounded-lg bg-[var(--primary)] px-3 text-sm text-[var(--primary-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {restoringVersionId && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              确定
+              {t("document.version.confirm")}
             </button>
           </div>
         </DialogContent>

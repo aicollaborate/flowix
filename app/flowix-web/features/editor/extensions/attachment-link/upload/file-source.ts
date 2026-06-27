@@ -1,3 +1,6 @@
+import { translate, type AppLanguage } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
+
 export type StoredAsset = {
     kind: 'image' | 'video' | 'file';
     url: string;
@@ -64,8 +67,14 @@ export function mimeTypeFromName(name: string): string {
     return mimeTypes[ext] ?? 'application/octet-stream';
 }
 
-export function fileNameFromPath(path: string): string {
-    return path.split(/[\\/]/).pop() || '附件';
+/**
+ * 解析路径尾段作为文件名 ── 当路径无法取出文件名时回落到当前语言下的
+ * "附件"。非 React 上下文使用, 由调用方传入 language, 不传则直读
+ * user-settings-store (与 errors.ts 的 getLanguage() 同源)。
+ */
+export function fileNameFromPath(path: string, language?: AppLanguage): string {
+    const lang = language ?? useUserSettingsStore.getState().settings.language;
+    return path.split(/[\\/]/).pop() || translate(lang, 'editor.attachment.fallback');
 }
 
 export function isTauriApp(): boolean {

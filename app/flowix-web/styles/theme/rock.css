@@ -45,7 +45,27 @@
 	/* 链接: L=0.42 "冷却中岩浆" 锚定浅橄榄底, 改同色系深浅对比, 对比 11.77:1 */
 	--document-link: oklch(0.42 0.18 var(--brand-hue));
 	--document-highlight-bg: oklch(0.86 0.14 78);
-	--document-tag-bg: oklch(0.50 0.08 var(--brand-hue));
+	/* 标签: bg / hover 沿用 mist 的 tag 同 L, chroma 直接归零 (纯灰) ──
+	 * 与 mist 走"近底色 + 真灰"套路, 把 brand 染色让位给链接 / focus
+	 * ring / 选区, 让 tag 在 rock 岩灰底上读作"灰纸上的灰印" ── 视觉
+	 * 信号完全交给 chip 与正文的明度对比, 不依赖任何色相。
+	 *
+	 *   bg (L=0.91 纯灰) ── 比 rock 的 background (0.918) 低 ΔL=-0.008,
+	 *     几乎贴底 ── 与 mist 的 ΔL=-0.086 同一方向 (chip 略深于底);
+	 *   hover (L=0.84 纯灰) ── chip 按到 main bg 之下, "印章回沉"反馈,
+	 *     ΔL=-0.078 与 mist 的 -0.07 同一量级。
+	 *
+	 * 跨主题对照: rock 与 mist 走完全同公式, 仅 main bg 不同 ── 在岩
+	 * 灰 (0.918) 与白纸 (0.996) 上, "灰印"读感一致。 */
+	--document-tag-bg: oklch(0.91 0 0);
+	/* 标签文字: 直接接 --foreground, 与正文同色 ── 让 tag 读作"被高亮背景
+	 * 托住的普通文字", 而非"一段彩色字"。原色 (0.28 0.10 brand) 是
+	 * 暖红深字, 与 chip 同色系, 但与正文 (0.333 0.012 neutral) 拉开
+	 * 0.05 的 L 差 + 明显色相差 ── 视觉上 tag 像"被框出的彩色字"。
+	 * 统一到 --foreground 后, 文字永远跟正文同步, chip 的 brand 染色
+	 * 单独承担 tag 视觉信号。 */
+	--document-tag-foreground: var(--foreground);
+	--document-tag-hover-bg: oklch(0.84 0 0);
 
 	/* 文档颜色标签 — rock 主题底是低饱和岩灰 + 橄榄基调 (hue 92),
 	 * chroma 取三主题里最低档, 让色块"嵌进"岩灰而非"浮在"岩灰。

@@ -15,6 +15,7 @@ import {
   type Notebook,
 } from '@features/memo';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@features/i18n';
 
 interface NotebookDialogsProps {
   createOpen: boolean;
@@ -48,6 +49,7 @@ function NotebookIconPicker({
   notebookName: string;
   onChange: (icon: string | null) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="space-y-2">
       <div className="text-xs font-medium text-[var(--muted-foreground)]">Icon</div>
@@ -62,8 +64,8 @@ function NotebookIconPicker({
                 ? 'border-[var(--primary)] bg-[var(--accent)]'
                 : 'border-[var(--border)] hover:bg-[var(--muted)]'
             )}
-            aria-label="Use letter icon"
-            title="Use letter icon"
+            aria-label={t("memo.notebook.letterIcon")}
+            title={t("memo.notebook.letterIcon")}
           >
             <NotebookIcon
               name={notebookName}
@@ -123,16 +125,17 @@ export function NotebookDialogs({
   onConfirmEdit,
   onCancelEdit,
 }: NotebookDialogsProps) {
+  const { t } = useI18n();
   return (
     <>
       <Dialog open={createOpen} onOpenChange={onCreateOpenChange}>
         <DialogContent className="w-[400px]">
           <DialogHeader>
-            <DialogTitle>新建笔记本</DialogTitle>
+            <DialogTitle>{t("notebook.create.title")}</DialogTitle>
           </DialogHeader>
           <div className="mt-1 space-y-3">
             <Input
-              placeholder="笔记本名称"
+              placeholder={t("notebook.create.namePlaceholder")}
               value={newNotebookName}
               onChange={(event) => onNewNotebookNameChange(event.target.value)}
               onKeyDown={(event) => {
@@ -147,7 +150,7 @@ export function NotebookDialogs({
             />
             <div className="flex gap-2">
               <Input
-                placeholder="选择笔记存储文件夹"
+                placeholder={t("notebook.create.pathPlaceholder")}
                 value={newNotebookPath}
                 onChange={(event) => onNewNotebookPathChange(event.target.value)}
                 className="flex-1"
@@ -160,7 +163,7 @@ export function NotebookDialogs({
                   void onSelectDirectory();
                 }}
               >
-                选择
+                {t("notebook.create.selectDirectory")}
               </Button>
             </div>
           </div>
@@ -170,7 +173,7 @@ export function NotebookDialogs({
               onClick={onCancelCreate}
               className="h-8 px-3 text-sm rounded-lg hover:bg-[var(--muted)]"
             >
-              取消
+              {t("notebook.create.cancel")}
             </button>
             <button
               type="button"
@@ -178,7 +181,7 @@ export function NotebookDialogs({
               className="h-8 px-3 text-sm rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
               disabled={!newNotebookName.trim() || !newNotebookPath.trim()}
             >
-              创建
+              {t("notebook.create.confirm")}
             </button>
           </div>
         </DialogContent>
@@ -187,11 +190,11 @@ export function NotebookDialogs({
       <Dialog open={editOpen} onOpenChange={onEditOpenChange}>
         <DialogContent className="w-[400px]">
           <DialogHeader>
-            <DialogTitle>编辑笔记本</DialogTitle>
+            <DialogTitle>{t("notebook.edit.title")}</DialogTitle>
           </DialogHeader>
           <div className="mt-2 space-y-3">
             <Input
-              placeholder="笔记本名称"
+              placeholder={t("notebook.edit.namePlaceholder")}
               value={editNotebookName}
               onChange={(event) => onEditNotebookNameChange(event.target.value)}
               onKeyDown={(event) => {
@@ -211,7 +214,7 @@ export function NotebookDialogs({
               onClick={onCancelEdit}
               className="h-8 px-3 text-sm rounded-lg hover:bg-[var(--muted)]"
             >
-              取消
+              {t("notebook.edit.cancel")}
             </button>
             <button
               type="button"
@@ -223,7 +226,7 @@ export function NotebookDialogs({
                   (editNotebookIcon ?? '') === (normalizeNotebookIconId(editingNotebook?.icon) ?? ''))
               }
             >
-              保存
+              {t("notebook.edit.confirm")}
             </button>
           </div>
         </DialogContent>

@@ -5,7 +5,7 @@ import { Button } from '@shared/ui/button';
 import { DEFAULT_THEME_ID, THEME_OPTIONS, type ThemeId } from '@features/theme';
 import { cn } from '@/lib/utils';
 import { SectionHeader, FIELD_TITLE_CLASS, FIELD_DESC_CLASS } from '@features/preferences/sections/primitives';
-import { useI18n, type I18nKey } from '@features/i18n';
+import { useI18n } from '@features/i18n';
 
 interface ThemeSectionProps {
   settings: { theme: ThemeId };
@@ -20,17 +20,14 @@ interface ThemeSectionProps {
 function ThemeCard({
   option,
   active,
-  label,
-  description,
   onSelect,
 }: {
   option: typeof THEME_OPTIONS[number];
   active: boolean;
-  label: string;
-  description: string;
   onSelect: () => void;
 }) {
-  const { preview, id } = option;
+  const { t } = useI18n();
+  const { preview, id, labelKey, descriptionKey } = option;
 
   return (
     <button
@@ -99,9 +96,9 @@ function ThemeCard({
       </div>
 
       <div className="mt-2 space-y-0.5">
-        <div className={cn(FIELD_TITLE_CLASS)}>{label}</div>
+        <div className={cn(FIELD_TITLE_CLASS)}>{t(labelKey)}</div>
         <div className={cn(FIELD_DESC_CLASS, 'line-clamp-1')}>
-          {description}
+          {t(descriptionKey)}
         </div>
       </div>
     </button>
@@ -124,8 +121,6 @@ export function ThemeSection({ settings, updateSettings }: ThemeSectionProps) {
             key={opt.id}
             option={opt}
             active={active === opt.id}
-            label={t(`theme.${opt.id}.label` as I18nKey)}
-            description={t(`theme.${opt.id}.description` as I18nKey)}
             onSelect={() => updateSettings({ theme: opt.id })}
           />
         ))}

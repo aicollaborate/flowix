@@ -26,6 +26,7 @@
 @import './theme/light.css';
 @import './theme/dark.css';
 @import './theme/rock.css';
+@import './theme/mist.css';
 
 @import "shadcn/tailwind.css";
 

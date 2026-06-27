@@ -25,6 +25,8 @@ import { setInlineAtomTextSelectionFromMouse } from '@features/editor/extensions
 import { readMarkdownLinkDestination } from '@features/editor/extensions/shared/markdown-link-destination';
 import { openNoteByMemoId, openNoteByPhysicalPath, resolveMemoById, resolveMemoByPath } from '@features/editor/extensions/note-link/memo-resolver';
 import { escapeHtml, parseBooleanAttr, pickAttr, splitDisplay, stripMdSuffix, unescapeHtml } from '@features/editor/extensions/note-link/markdown';
+import { translate, type I18nKey } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 
 // ─── Attrs ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,11 @@ const FLOWIX_MEMO_URL_RE = /^flowix:\/\/memo\//i;
 const FLOWIX_MEMO_HREF_RE = /^flowix:\/\/memo\/([^?\s)]*)(?:\?[^)\s]*)?$/;
 const STRICT_FLOWIX_MEMO_HREF_RE = /^flowix:\/\/memo\/([0-9a-z]{6}|[0-9a-z]{8})(?:\?[^)\s]*)?$/;
 const VALID_MEMO_ID_RE = /^([0-9a-z]{6}|[0-9a-z]{8})$/;
+
+// NodeView 不在 React 树内, 不能用 useI18n, 走 user-settings-store 直读当前语言。
+function tKey(key: I18nKey, params?: Record<string, string | number>): string {
+  return translate(useUserSettingsStore.getState().settings.language, key, params);
+}
 
 type ParsedMarkdownNoteLink = {
   raw: string;
@@ -277,7 +284,7 @@ class NoteReferenceView implements ProseMirrorNodeView {
     card.className = 'editor-note-reference__card';
     card.setAttribute('data-stale', effectiveStale ? 'true' : 'false');
     if (originalPath) {
-      card.setAttribute('title', effectiveStale ? `链接已失效 · ${originalPath}` : originalPath);
+      card.setAttribute('title', effectiveStale ? tKey('editor.noteLink.stale', { path: originalPath }) : originalPath);
     }
 
     // 笔记图标 (lucide file-text 同形, 内联 SVG 避免依赖 React)
@@ -301,7 +308,7 @@ class NoteReferenceView implements ProseMirrorNodeView {
     nameSpan.className = 'editor-note-reference__name';
     const titleSpan = document.createElement('span');
     titleSpan.className = 'editor-note-reference__title';
-    titleSpan.textContent = stripMdSuffix(title) || '未命名';
+    titleSpan.textContent = stripMdSuffix(title) || tKey('editor.noteLink.untitled');
     nameSpan.appendChild(titleSpan);
 
     card.appendChild(icon);
@@ -313,7 +320,7 @@ class NoteReferenceView implements ProseMirrorNodeView {
     if (effectiveStale) {
       const staleMark = document.createElement('span');
       staleMark.className = 'editor-note-reference__stale-mark';
-      staleMark.textContent = '（已失效）';
+      staleMark.textContent = tKey('editor.noteLink.staleMark');
       card.appendChild(staleMark);
     }
 

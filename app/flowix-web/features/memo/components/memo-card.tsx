@@ -1,11 +1,12 @@
 'use client';
 
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { displayTitleFromFilename } from '@/lib/utils';
 import { MoreHorizontal } from 'lucide-react';
 import { PushPin } from "@phosphor-icons/react";
 import { MEMO_COLOR_HEX, type MemoItem } from '@features/memo';
 import { cn } from '@/lib/utils';
+import { useI18n, type I18nParams } from '@features/i18n';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -32,7 +33,7 @@ interface MemoCardProps {
   onDelete: (memo: MemoItem) => void;
 }
 
-function formatTimeAgo(timestamp: number): string {
+function formatTimeAgo(timestamp: number, t: (key: import("@features/i18n").I18nKey, params?: I18nParams) => string): string {
   const now = Date.now();
   const diff = now - timestamp;
   const seconds = Math.floor(diff / 1000);
@@ -42,12 +43,13 @@ function formatTimeAgo(timestamp: number): string {
 
   if (days > 30) {
     const months = Math.floor(days / 30);
-    return `${months}个月前`;
+    return t("memo.time.monthsAgo", { m: months } satisfies I18nParams);
   }
-  if (days > 0) return `${days}天前`;
-  if (hours > 0) return `${hours}小时前`;
-  if (minutes > 0) return `${minutes}分钟前`;
-  return '刚刚';
+  if (days > 0) return t("memo.time.daysAgo", { d: days } satisfies I18nParams);
+  if (hours > 0) return t("memo.time.hoursAgo", { h: hours } satisfies I18nParams);
+  if (minutes > 0) return t("memo.time.minutesAgo", { m: minutes } satisfies I18nParams);
+  if (seconds > 0) return t("memo.time.secondsAgo", { s: seconds } satisfies I18nParams);
+  return t("memo.time.justNow");
 }
 
 function thumbnailSrc(thumbnail: string | null | undefined): string | null {
@@ -66,8 +68,14 @@ export function MemoCardImpl({
   onFavoriteToggle,
   onDelete,
 }: MemoCardProps) {
+  const { t } = useI18n();
   const selectedIdentifier = selectedMemo?.id || null;
   const thumbnail = thumbnailSrc(memo.thumbnail);
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+
+  useEffect(() => {
+    setThumbnailFailed(false);
+  }, [thumbnail]);
 
   return (
     <ContextMenu>
@@ -111,16 +119,17 @@ export function MemoCardImpl({
                     </span>
                   )}
                   <span className="min-w-0">
-                    {displayTitleFromFilename(memo.filename) || '未命名的笔记'}
+                    {displayTitleFromFilename(memo.filename) || t("memo.untitled")}
                   </span>
                 </h3>
-                {thumbnail ? (
+                {thumbnail && !thumbnailFailed ? (
                   <div className="h-16 w-[114px] overflow-hidden rounded-md bg-[var(--muted)]">
                     <img
                       src={thumbnail}
                       alt=""
                       loading="lazy"
                       draggable={false}
+                      onError={() => setThumbnailFailed(true)}
                       className="h-full w-full rounded-md object-cover"
                     />
                   </div>
@@ -131,7 +140,7 @@ export function MemoCardImpl({
                   </p>
                 ) : (
                   <p className="text-sm text-[var(--foreground)] opacity-50 line-clamp-2">
-                    记录自己的想法
+                    {t("memo.empty.preview")}
                   </p>
                 )}
               </div>
@@ -155,7 +164,7 @@ export function MemoCardImpl({
                   )}
                 </div>
                 <span className="text-xs text-[var(--muted-foreground)] shrink-0">
-                  {formatTimeAgo(memo.createdAt)}
+                  {formatTimeAgo(memo.createdAt, t)}
                 </span>
               </div>
             </div>

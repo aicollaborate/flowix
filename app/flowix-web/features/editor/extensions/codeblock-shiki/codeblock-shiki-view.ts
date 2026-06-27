@@ -1,6 +1,8 @@
 import type { NodeView, ViewMutationRecord } from '@tiptap/pm/view'
 import type { NodeViewRendererProps } from '@tiptap/core'
 import svgPanZoom from 'svg-pan-zoom'
+import { translate, type I18nKey } from '@features/i18n'
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store'
 
 // svg-pan-zoom 实例类型 ── 库本身没有导出类型, 用 ReturnType 推断。
 // 用在 fullscreen overlay 内 ── 用户的 mermaid 流程图常因节点多而显示
@@ -83,6 +85,13 @@ function loadBundledLanguagesInfo(): Promise<readonly BundledLanguageInfo[]> {
 
 export interface CodeBlockShikiViewOptions {
   theme: string
+}
+
+// NodeView 不在 React 树内 ── 走 user-settings-store 读最新 AppLanguage,
+// 与 agent-thread-card 的 `t(key)` 模式同源 (跨窗口同步跟 I18nProvider 一致)。
+function t(key: I18nKey): string {
+  const language = useUserSettingsStore.getState().settings.language
+  return translate(language, key)
 }
 
 class CodeBlockShikiView implements NodeView {
@@ -212,7 +221,7 @@ class CodeBlockShikiView implements NodeView {
     this.modeTabs.setAttribute('role', 'tablist')
     this.modeTabs.setAttribute('aria-label', 'Mermaid view mode')
 
-    this.previewTabBtn = this.createModeTab('preview', '预览', MERMAID_PREVIEW_ICON)
+    this.previewTabBtn = this.createModeTab('preview', t('editor.codeblock.previewTab'), MERMAID_PREVIEW_ICON)
     this.codeTabBtn = this.createModeTab('code', 'Code', MERMAID_CODE_ICON)
     this.modeTabs.append(this.previewTabBtn, this.codeTabBtn)
 
@@ -234,7 +243,7 @@ class CodeBlockShikiView implements NodeView {
     this.fullscreenButton.type = 'button'
     this.fullscreenButton.tabIndex = -1
     this.fullscreenButton.classList.add('code-block-fullscreen-btn')
-    this.fullscreenButton.setAttribute('aria-label', '全屏展示')
+    this.fullscreenButton.setAttribute('aria-label', t('editor.codeblock.fullscreen'))
     this.fullscreenButton.hidden = true
     this.fullscreenButton.innerHTML = FULLSCREEN_ENTER_ICON
     this.fullscreenButton.addEventListener('click', (event) => {
@@ -628,7 +637,7 @@ class CodeBlockShikiView implements NodeView {
       if (version !== this.renderVersion) return
       const isParseError = error instanceof Error && error.name === 'MermaidParseError'
       const message = isParseError
-        ? 'Mermaid 格式解析异常，无法完成预览'
+        ? t('editor.mermaid.parseError')
         : error instanceof Error ? error.message : 'Failed to render Mermaid diagram'
       this.lastRenderedSource = null
       this.previewDOM.innerHTML = ''
@@ -805,7 +814,7 @@ class CodeBlockShikiView implements NodeView {
       // 退出再进时会重新 clone 最新 SVG, 所以这是 transient 状态。
       const placeholder = document.createElement('div');
       placeholder.classList.add('code-block-fullscreen-placeholder');
-      placeholder.textContent = '正在渲染...';
+      placeholder.textContent = t('editor.mermaid.rendering');
       svgWrap.appendChild(placeholder);
     }
     overlay.appendChild(svgWrap);
@@ -837,7 +846,7 @@ class CodeBlockShikiView implements NodeView {
     const exitBtn = document.createElement('button');
     exitBtn.type = 'button';
     exitBtn.classList.add('code-block-fullscreen-btn', 'code-block-fullscreen-exit');
-    exitBtn.setAttribute('aria-label', '退出全屏展示');
+    exitBtn.setAttribute('aria-label', t('editor.mermaid.exitFullscreen'));
     exitBtn.innerHTML = FULLSCREEN_EXIT_ICON;
     exitBtn.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -901,9 +910,9 @@ private createFullscreenToolbar(): HTMLElement {
   const toolbar = document.createElement('div');
   toolbar.classList.add('code-block-fullscreen-toolbar');
   toolbar.setAttribute('role', 'toolbar');
-  toolbar.setAttribute('aria-label', 'Mermaid 缩放与平移');
+  toolbar.setAttribute('aria-label', t('editor.mermaid.zoomPan'));
 
-  const zoomOutBtn = this.createToolbarButton(ZOOM_OUT_ICON, '缩小', () => {
+  const zoomOutBtn = this.createToolbarButton(ZOOM_OUT_ICON, t('editor.mermaid.zoomOut'), () => {
     this.panZoomInstance?.zoomOut();
   });
   toolbar.appendChild(zoomOutBtn);
@@ -919,8 +928,8 @@ private createFullscreenToolbar(): HTMLElement {
     'code-block-fullscreen-btn',
     'code-block-fullscreen-toolbar-label'
   );
-  labelBtn.setAttribute('aria-label', '重置缩放');
-  labelBtn.title = '重置缩放';
+  labelBtn.setAttribute('aria-label', t('editor.mermaid.resetZoom'));
+  labelBtn.title = t('editor.mermaid.resetZoom');
   // 初始内容是 "100%" 兜底占位; 首次 zoom 完成后会被 updateZoomLabel
   // 覆盖成实际百分比 (e.g. "125%")。
   labelBtn.textContent = '100%';
@@ -931,7 +940,7 @@ private createFullscreenToolbar(): HTMLElement {
   toolbar.appendChild(labelBtn);
   this.zoomLabelBtn = labelBtn;
 
-  const zoomInBtn = this.createToolbarButton(ZOOM_IN_ICON, '放大', () => {
+  const zoomInBtn = this.createToolbarButton(ZOOM_IN_ICON, t('editor.mermaid.zoomIn'), () => {
     this.panZoomInstance?.zoomIn();
   });
   toolbar.appendChild(zoomInBtn);

@@ -12,6 +12,7 @@ import {
 } from '@shared/ui/dropdown-menu';
 import { Tooltip } from '@shared/ui/tooltip';
 import { openLinkEditPopup } from '@features/editor/components/link-edit-popup';
+import { useI18n } from '@features/i18n';
 
 interface EditorToolbarProps {
   editor: Editor | null;
@@ -64,6 +65,7 @@ const iconButtonStyle: React.CSSProperties = {
 };
 
 export function EditorToolbar({ editor, collapsed, onCollapsedChange }: EditorToolbarProps) {
+  const { t } = useI18n();
   const [state, setState] = useState<ToolbarState>(INITIAL_STATE);
   const editorRef = useRef<Editor | null>(null);
 
@@ -116,13 +118,13 @@ export function EditorToolbar({ editor, collapsed, onCollapsedChange }: EditorTo
   if (collapsed) {
     return (
       <div className="editor-toolbar">
-        <Tooltip content="展开工具栏">
+        <Tooltip content={t('editor.toolbar.expandTooltip')}>
           <button
             className="toolbar-expand-handle"
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => onCollapsedChange?.(false)}
-            aria-label="展开工具栏"
+            aria-label={t('editor.toolbar.expand')}
             style={{ width: '2.4rem', height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <CaretUpIcon size={14} weight="bold" />
@@ -171,7 +173,7 @@ export function EditorToolbar({ editor, collapsed, onCollapsedChange }: EditorTo
               onClick={() => editor.chain().focus().setParagraph().run()}
             >
               {paragraphIcon}
-              <span className="text-[var(--muted-foreground)]">正文</span>
+              <span className="text-[var(--muted-foreground)]">{t('editor.toolbar.paragraph')}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -218,7 +220,7 @@ export function EditorToolbar({ editor, collapsed, onCollapsedChange }: EditorTo
           <ListBulletsIcon size={18} weight="bold" />
         </button>
 
-        <Tooltip content="待办列表" shortcut="editor.toggleTaskList">
+        <Tooltip content={t('editor.toolbar.taskList')} shortcut="editor.toggleTaskList">
           <button
             className={`toolbar-button ${state.taskList ? 'active' : ''}`}
             onMouseDown={(e) => e.preventDefault()}
@@ -229,7 +231,7 @@ export function EditorToolbar({ editor, collapsed, onCollapsedChange }: EditorTo
             <CheckSquareIcon size={18} weight="bold" />
           </button>
         </Tooltip>
-        <Tooltip content="添加链接">
+        <Tooltip content={t('editor.toolbar.addLink')}>
           <button
             className={`toolbar-button ${state.link ? 'active' : ''}`}
             onMouseDown={(e) => e.preventDefault()}
@@ -271,32 +273,32 @@ export function EditorToolbar({ editor, collapsed, onCollapsedChange }: EditorTo
                 onClick={() => editor.chain().focus().toggleCodeBlock().run()}
               >
                 <CodeIcon size={16} weight="bold" />
-                <span>插入代码块</span>
+                <span>{t('editor.toolbar.insertCodeBlock')}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 className={`gap-3 rounded-md hover:bg-[var(--muted)] ${state.strikethrough ? 'active' : ''}`}
                 onClick={() => editor.chain().focus().toggleStrike().run()}
               >
                 <TextStrikethroughIcon size={16} weight="bold" />
-                <span>删除线</span>
+                <span>{t('editor.toolbar.strikethrough')}</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="gap-3 rounded-md hover:bg-[var(--muted)]"
                 onClick={() => editor.commands.openFileDialog()}
               >
                 <PaperclipIcon size={16} weight="bold" />
-                <span>添加附件</span>
+                <span>{t('editor.toolbar.addAttachment')}</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <Tooltip content="折叠工具栏">
+        <Tooltip content={t('editor.toolbar.collapseTooltip')}>
           <button
             className="toolbar-button"
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => onCollapsedChange?.(true)}
-            aria-label="折叠工具栏"
+            aria-label={t('editor.toolbar.collapse')}
             style={iconButtonStyle}
           >
             <CaretDownIcon size={14} weight="bold" />

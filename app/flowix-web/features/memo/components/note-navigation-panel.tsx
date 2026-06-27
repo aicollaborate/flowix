@@ -8,7 +8,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { HashIcon } from '@phosphor-icons/react';
+import { HashIcon, StackIcon } from '@phosphor-icons/react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -25,7 +25,9 @@ import {
 } from '@features/memo';
 import {
   loadMemoLibraryMetadata,
-  persistTagOrder,
+  persistTagLayout,
+  type MemoTagLayoutItem,
+  type MemoTagTreeItem,
 } from '@features/memo/services/memo-list-metadata-service';
 import { useI18n } from '@features/i18n';
 import { isWindowsPlatform } from '@features/shortcuts/platform';
@@ -35,6 +37,13 @@ interface TagDragGhost {
   rect: DOMRect;
   currentX: number;
   currentY: number;
+}
+
+type TagDropPosition = 'before' | 'after' | 'inside';
+
+interface TagDropTarget {
+  id: string;
+  position: TagDropPosition;
 }
 
 interface NoteNavigationPanelProps {
@@ -51,6 +60,7 @@ interface NoteNavigationPanelProps {
 // 写读都是 O(1), 无需经 Tauri IPC; 现有 theme/apply.ts 也是同套模式。
 // 取值范围与 NOTEBOOK_LIST_MIN/MAX_HEIGHT 同步约束, 越界视为无效。
 const NOTEBOOK_LIST_HEIGHT_STORAGE_KEY = 'flowix:notebook-list-height';
+const TAG_COLLAPSED_STORAGE_PREFIX = 'flowix:tag-collapsed:';
 
 function readPersistedNotebookListHeight(
   min: number,
@@ -80,6 +90,31 @@ function writePersistedNotebookListHeight(height: number | null): void {
   }
 }
 
+function getCollapsedTagsStorageKey(notebookId: string): string {
+  return `${TAG_COLLAPSED_STORAGE_PREFIX}${notebookId}`;
+}
+
+function readPersistedCollapsedTagIds(notebookId: string): string[] {
+  try {
+    const raw = localStorage.getItem(getCollapsedTagsStorageKey(notebookId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePersistedCollapsedTagIds(notebookId: string, ids: string[]): void {
+  try {
+    localStorage.setItem(getCollapsedTagsStorageKey(notebookId), JSON.stringify(ids));
+  } catch {
+    // 折叠状态是纯 UI 偏好, localStorage 不可用时不影响标签树本身。
+  }
+}
+
 export function NoteNavigationPanel({
   notebooks,
   selectedNotebook,
@@ -98,11 +133,12 @@ export function NoteNavigationPanel({
   const selectedTagId = useTagStore((s) => s.selectedTagId);
   const setSelectedTagId = useTagStore((s) => s.setSelectedTagId);
   const tagMetadataRefreshVersion = useTagStore((s) => s.metadataRefreshVersion);
-  const [tagOptions, setTagOptions] = useState<Array<{ id: string; name: string }>>([]);
-  const [tagOrder, setTagOrder] = useState<string[]>([]);
+  const [tagOptions, setTagOptions] = useState<MemoTagTreeItem[]>([]);
+  const [tagLayout, setTagLayout] = useState<MemoTagLayoutItem[]>([]);
   const [hiddenTagIds, setHiddenTagIds] = useState<string[]>([]);
+  const [collapsedTagIds, setCollapsedTagIds] = useState<string[]>([]);
   const [draggingTagId, setDraggingTagId] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<{ id: string; position: 'before' | 'after' } | null>(null);
+  const [dropTarget, setDropTarget] = useState<TagDropTarget | null>(null);
   const [dragGhost, setDragGhost] = useState<TagDragGhost | null>(null);
 
   const dragPointerRef = useRef<{
@@ -133,6 +169,32 @@ export function NoteNavigationPanel({
   }, [notebookListHeight]);
 
   const hiddenTagIdSet = useMemo(() => new Set(hiddenTagIds), [hiddenTagIds]);
+  const collapsedTagIdSet = useMemo(() => new Set(collapsedTagIds), [collapsedTagIds]);
+  const childTagIdSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const tag of tagOptions) {
+      if (tag.parentId) ids.add(tag.parentId);
+    }
+    return ids;
+  }, [tagOptions]);
+  const visibleTagOptions = useMemo(() => {
+    let collapsedDepth: number | null = null;
+    const visible: MemoTagTreeItem[] = [];
+
+    for (const tag of tagOptions) {
+      if (collapsedDepth !== null) {
+        if (tag.depth > collapsedDepth) continue;
+        collapsedDepth = null;
+      }
+
+      visible.push(tag);
+      if (collapsedTagIdSet.has(tag.id)) {
+        collapsedDepth = tag.depth;
+      }
+    }
+
+    return visible;
+  }, [collapsedTagIdSet, tagOptions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,8 +207,14 @@ export function NoteNavigationPanel({
         });
         if (!metadata || cancelled) return;
         setTagOptions(metadata.tagOptions);
-        setTagOrder(metadata.tagOrder);
+        setTagLayout(metadata.tagLayout);
         setHiddenTagIds(metadata.hiddenTagIds);
+        if (selectedNotebook) {
+          const validTagIds = new Set(metadata.tagOptions.map((tag) => tag.id));
+          const nextCollapsed = readPersistedCollapsedTagIds(selectedNotebook.id)
+            .filter((id) => validTagIds.has(id));
+          setCollapsedTagIds(nextCollapsed);
+        }
         const currentSelectedTagId = useTagStore.getState().selectedTagId;
         if (metadata.selectedTagId !== currentSelectedTagId) {
           setSelectedTagId(metadata.selectedTagId);
@@ -155,16 +223,18 @@ export function NoteNavigationPanel({
         if (!cancelled) {
           console.warn('[NoteNavigationPanel] Failed to load tags:', error);
           setTagOptions([]);
-          setTagOrder([]);
+          setTagLayout([]);
           setHiddenTagIds([]);
+          setCollapsedTagIds([]);
         }
       }
     };
 
     if (!selectedNotebook) {
       setTagOptions([]);
-      setTagOrder([]);
+      setTagLayout([]);
       setHiddenTagIds([]);
+      setCollapsedTagIds([]);
       return;
     }
 
@@ -177,20 +247,32 @@ export function NoteNavigationPanel({
 
   const handleTagSelect = useCallback(
     (tagId: string) => {
-      const isCurrentlySelected = activeFilter === 'tagged' && selectedTagId === tagId;
-      const nextTagId = isCurrentlySelected ? null : tagId;
-      const nextFilter = nextTagId ? 'tagged' : 'all';
-
-      setSelectedTagId(nextTagId);
-      setActiveFilter(nextFilter);
+      setSelectedTagId(tagId);
+      setActiveFilter('tagged');
     },
     [
-      activeFilter,
-      selectedTagId,
       setActiveFilter,
       setSelectedTagId,
     ],
   );
+
+  const handleShowAllTags = useCallback(() => {
+    setSelectedTagId(null);
+    setActiveFilter('all');
+  }, [setActiveFilter, setSelectedTagId]);
+
+  const handleTagCollapseToggle = useCallback((tagId: string) => {
+    const notebookId = useMemoStore.getState().selectedNotebook?.id;
+    setCollapsedTagIds((current) => {
+      const next = current.includes(tagId)
+        ? current.filter((id) => id !== tagId)
+        : [...current, tagId];
+      if (notebookId) {
+        writePersistedCollapsedTagIds(notebookId, next);
+      }
+      return next;
+    });
+  }, []);
 
   // 笔记本行点击: 与 NotebookSwitcher 保持一致 ── 失效路径直接 toast 警告,
   // 不切换。有效路径走 onSelectNotebook 回调。
@@ -267,54 +349,146 @@ export function NoteNavigationPanel({
     };
   }, []);
 
-  // 拖动排序逻辑 ── 指针事件三段式 (与原 TagOverflowPopoverContent 同款, 现已并入本文件):
+  const rebuildTagOptionsFromLayout = useCallback(
+    (layout: MemoTagLayoutItem[]): MemoTagTreeItem[] => {
+      const byId = new Map(tagOptions.map((tag) => [tag.id, tag]));
+      const childrenByParent = new Map<string | null, MemoTagLayoutItem[]>();
+      for (const item of layout) {
+        const siblings = childrenByParent.get(item.parentId) ?? [];
+        siblings.push(item);
+        childrenByParent.set(item.parentId, siblings);
+      }
+
+      const result: MemoTagTreeItem[] = [];
+      const visit = (item: MemoTagLayoutItem, depth: number) => {
+        const tag = byId.get(item.id);
+        if (!tag) return;
+        result.push({
+          ...tag,
+          parentId: item.parentId,
+          depth,
+        });
+        for (const child of childrenByParent.get(item.id) ?? []) {
+          visit(child, depth + 1);
+        }
+      };
+
+      for (const root of childrenByParent.get(null) ?? []) {
+        visit(root, 0);
+      }
+      return result;
+    },
+    [tagOptions]
+  );
+
+  const getSubtreeIds = useCallback(
+    (sourceId: string): string[] => {
+      const sourceIndex = tagOptions.findIndex((tag) => tag.id === sourceId);
+      if (sourceIndex < 0) return [];
+      const sourceDepth = tagOptions[sourceIndex].depth;
+      const ids = [sourceId];
+      for (let index = sourceIndex + 1; index < tagOptions.length; index += 1) {
+        if (tagOptions[index].depth <= sourceDepth) break;
+        ids.push(tagOptions[index].id);
+      }
+      return ids;
+    },
+    [tagOptions]
+  );
+
+  // 拖动排序 / 层级逻辑:
   // 1. pointerdown 在行上设 setPointerCapture 并暂存起点;
-  // 2. pointermove 越过 4px 阈值进入拖动态, 显示 ghost + drop 指示条;
+  // 2. pointermove 越过 4px 阈值进入拖动态, 显示 ghost + drop 指示;
   // 3. pointerup 时若处于拖动态则提交 reorder, 否则回退为选中点击;
-  // 4. 排序结果写入 tagOrder + 同步重排 tagOptions, 持久化到 per-notebook 设置。
-  const applyTagReorder = useCallback(
-    (sourceId: string, targetId: string, position: 'before' | 'after') => {
+  // 4. before/after 调整同级顺序, inside 把 source 子树移动到 target 下方。
+  const applyTagMove = useCallback(
+    (sourceId: string, targetId: string, position: TagDropPosition) => {
       if (sourceId === targetId) return;
-      const current = tagOrder.length > 0 ? tagOrder : tagOptions.map((t) => t.id);
-      const fromIndex = current.indexOf(sourceId);
-      const toIndex = current.indexOf(targetId);
-      if (fromIndex < 0 || toIndex < 0) return;
+      const sourceSubtreeIds = getSubtreeIds(sourceId);
+      if (sourceSubtreeIds.length === 0 || sourceSubtreeIds.includes(targetId)) return;
 
-      const next = current.slice();
-      next.splice(fromIndex, 1);
-      const insertIndex = position === 'before' ? next.indexOf(targetId) : next.indexOf(targetId) + 1;
-      next.splice(insertIndex, 0, sourceId);
+      const target = tagOptions.find((tag) => tag.id === targetId);
+      if (!target) return;
 
-      setTagOrder(next);
-      const byId = new Map(tagOptions.map((t) => [t.id, t]));
-      setTagOptions(
-        next
-          .map((id) => byId.get(id))
-          .filter((t): t is { id: string; name: string } => Boolean(t))
+      const currentLayout = tagLayout.length > 0
+        ? tagLayout
+        : tagOptions.map(({ id, parentId }) => ({ id, parentId }));
+      const movingItems = currentLayout.filter((item) => sourceSubtreeIds.includes(item.id));
+      const remaining = currentLayout.filter((item) => !sourceSubtreeIds.includes(item.id));
+      const nextMovingItems = movingItems.map((item) =>
+        item.id === sourceId
+          ? {
+              ...item,
+              parentId: position === 'inside' ? targetId : target.parentId,
+            }
+          : item
       );
+
+      let insertIndex = remaining.length;
+      if (position === 'inside') {
+        const targetSubtreeIds = getSubtreeIds(targetId);
+        const lastTargetSubtreeId = targetSubtreeIds[targetSubtreeIds.length - 1] ?? targetId;
+        insertIndex = remaining.findIndex((item) => item.id === lastTargetSubtreeId) + 1;
+      } else {
+        const targetIndex = remaining.findIndex((item) => item.id === targetId);
+        if (targetIndex < 0) return;
+        if (position === 'before') {
+          insertIndex = targetIndex;
+        } else {
+          const targetSubtreeIds = getSubtreeIds(targetId).filter((id) => !sourceSubtreeIds.includes(id));
+          const lastTargetSubtreeId = targetSubtreeIds[targetSubtreeIds.length - 1] ?? targetId;
+          insertIndex = remaining.findIndex((item) => item.id === lastTargetSubtreeId) + 1;
+        }
+      }
+
+      const nextLayout = [
+        ...remaining.slice(0, insertIndex),
+        ...nextMovingItems,
+        ...remaining.slice(insertIndex),
+      ];
+
+      setTagLayout(nextLayout);
+      setTagOptions(rebuildTagOptionsFromLayout(nextLayout));
       const notebookId = useMemoStore.getState().selectedNotebook?.id;
-      void persistTagOrder(next, notebookId).catch((error) => {
-        console.warn('[NoteNavigationPanel] Failed to persist tag order:', error);
+      if (position === 'inside') {
+        setCollapsedTagIds((current) => {
+          if (!current.includes(targetId)) return current;
+          const next = current.filter((id) => id !== targetId);
+          if (notebookId) {
+            writePersistedCollapsedTagIds(notebookId, next);
+          }
+          return next;
+        });
+      }
+      void persistTagLayout(nextLayout, notebookId).catch((error) => {
+        console.warn('[NoteNavigationPanel] Failed to persist tag layout:', error);
       });
     },
-    [tagOptions, tagOrder]
+    [getSubtreeIds, rebuildTagOptionsFromLayout, tagLayout, tagOptions]
   );
 
   const findDropTarget = useCallback(
-    (y: number, sourceId: string): { id: string; position: 'before' | 'after' } | null => {
-      for (const tag of tagOptions) {
-        if (tag.id === sourceId) continue;
+    (y: number, sourceId: string): TagDropTarget | null => {
+      const sourceSubtreeIds = getSubtreeIds(sourceId);
+      for (const tag of visibleTagOptions) {
+        if (sourceSubtreeIds.includes(tag.id)) continue;
         const row = rowRefs.current.get(tag.id);
         if (!row) continue;
         const rect = row.getBoundingClientRect();
         if (y >= rect.top && y <= rect.bottom) {
-          const position: 'before' | 'after' = y < rect.top + rect.height / 2 ? 'before' : 'after';
+          const relativeY = y - rect.top;
+          const position: TagDropPosition =
+            relativeY < rect.height / 3
+              ? 'before'
+              : relativeY > (rect.height * 2) / 3
+                ? 'after'
+                : 'inside';
           return { id: tag.id, position };
         }
       }
       return null;
     },
-    [tagOptions]
+    [getSubtreeIds, visibleTagOptions]
   );
 
   const handleRowPointerDown = useCallback(
@@ -376,7 +550,7 @@ export function NoteNavigationPanel({
       if (state.isDragging) {
         const target = findDropTarget(e.clientY, state.sourceId);
         if (target) {
-          applyTagReorder(state.sourceId, target.id, target.position);
+          applyTagMove(state.sourceId, target.id, target.position);
         }
       } else {
         // 没有位移, 视为普通点击 → 选中标签。
@@ -399,7 +573,7 @@ export function NoteNavigationPanel({
       window.removeEventListener('pointerup', handleUp);
       window.removeEventListener('pointercancel', handleCancel);
     };
-  }, [applyTagReorder, findDropTarget, handleTagSelect]);
+  }, [applyTagMove, findDropTarget, handleTagSelect]);
 
   return (
     <div className="flex h-full min-w-0 flex-col bg-[var(--agent-bg)] text-[var(--agent-foreground)]">
@@ -424,7 +598,7 @@ export function NoteNavigationPanel({
       >
         <OverlayScrollbar
           className="min-h-0 flex-1"
-          scrollerClassName="h-full overflow-y-auto px-2 pt-2 pb-1"
+          scrollerClassName="h-full overflow-y-auto px-2 pb-1"
         >
           <div className="space-y-0.5">
             {notebooks.length === 0 ? (
@@ -536,7 +710,7 @@ export function NoteNavigationPanel({
       <div
         role="separator"
         aria-orientation="horizontal"
-        aria-label="调整笔记本列表高度"
+        aria-label={t("memo.navigation.resizeNotebookList")}
         onPointerDown={handleResizeStart}
         className="group mx-2 h-1 shrink-0 cursor-row-resize border-t border-[var(--muted-foreground)]/50 hover:border-[var(--primary)]/70 active:border-[var(--primary)]"
       />
@@ -547,16 +721,47 @@ export function NoteNavigationPanel({
           className="min-h-0 flex-1"
           scrollerClassName="h-full overflow-y-auto px-2 pt-2 pb-3"
         >
-          {tagOptions.length === 0 ? null : (
-            <div className="space-y-0.5">
-              {tagOptions.map((tag) => {
+          <div className="space-y-0.5">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={handleShowAllTags}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleShowAllTags();
+                }
+              }}
+              className={cn(
+                'group relative flex h-8 w-full cursor-pointer select-none items-center gap-0 rounded-md pr-2 text-left text-sm transition-colors',
+                activeFilter === 'all'
+                  ? 'bg-[var(--muted)] text-[var(--foreground)]'
+                  : 'text-[var(--foreground)] hover:bg-[var(--muted)]',
+              )}
+              style={{ paddingLeft: 6 }}
+              aria-pressed={activeFilter === 'all'}
+            >
+              <span className="mr-2 shrink-0 opacity-60">
+                <StackIcon
+                  className="h-3.5 w-3.5 text-[var(--muted-foreground)]"
+                  weight="bold"
+                />
+              </span>
+              <span className="min-w-0 flex-1 truncate">{t("memo.list.filterAll")}</span>
+            </div>
+            {tagOptions.length > 0 && (
+              <>
+              {visibleTagOptions.map((tag) => {
                 const isSelected = activeFilter === 'tagged' && selectedTagId === tag.id;
                 const isHidden = hiddenTagIdSet.has(tag.id);
                 const isDragging = draggingTagId === tag.id;
+                const hasChildren = childTagIdSet.has(tag.id);
                 const isDropBefore =
                   dropTarget?.id === tag.id && dropTarget.position === 'before' && !isDragging;
                 const isDropAfter =
                   dropTarget?.id === tag.id && dropTarget.position === 'after' && !isDragging;
+                const isDropInside =
+                  dropTarget?.id === tag.id && dropTarget.position === 'inside' && !isDragging;
 
                 return (
                   <div
@@ -571,6 +776,11 @@ export function NoteNavigationPanel({
                     role="button"
                     tabIndex={0}
                     onPointerDown={(event) => handleRowPointerDown(event, tag.id)}
+                    onDoubleClick={(event) => {
+                      if (!hasChildren) return;
+                      event.preventDefault();
+                      handleTagCollapseToggle(tag.id);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();
@@ -578,17 +788,19 @@ export function NoteNavigationPanel({
                       }
                     }}
                     className={cn(
-                      'group relative flex h-8 w-full cursor-pointer select-none items-center gap-2 rounded-md pl-1.5 pr-2 text-left text-sm transition-colors',
+                      'group relative flex h-8 w-full cursor-pointer select-none items-center gap-0 rounded-md pr-2 text-left text-sm transition-colors',
                       isSelected
                         ? 'bg-[var(--muted)] text-[var(--foreground)]'
                         : 'text-[var(--foreground)] hover:bg-[var(--muted)]',
                       isDragging && 'opacity-50',
+                      isDropInside && 'bg-[var(--muted)] ring-1 ring-inset ring-[var(--primary)]/70',
                       isHidden && !isSelected && 'opacity-70',
                     )}
+                    style={{ paddingLeft: `${6 + tag.depth * 14}px` }}
                     title={tag.name}
                     aria-pressed={isSelected}
                   >
-                    <span className="shrink-0 opacity-60">
+                    <span className="mr-2 shrink-0 opacity-60">
                       <HashIcon
                         className="h-3.5 w-3.5 text-[var(--muted-foreground)]"
                         weight="bold"
@@ -611,8 +823,9 @@ export function NoteNavigationPanel({
                   </div>
                 );
               })}
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </OverlayScrollbar>
       </div>
 

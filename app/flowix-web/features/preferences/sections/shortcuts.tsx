@@ -23,8 +23,8 @@ import {
   getShortcutGroupLabel,
 } from '@features/preferences/sections/shortcut-i18n';
 
-/** 渲染顺序: 编辑组放最后 (条目最多, 视觉负担最大, 沉到底部), 其它组保留 actions.ts 中的声明顺序。 */
-const GROUP_ORDER_LAST = '编辑';
+/** 渲染顺序: editor 组放最后 (条目最多, 视觉负担最大, 沉到底部), 其它组保留 actions.ts 中的声明顺序。 */
+const GROUP_ORDER_LAST = 'editor';
 
 /**
  * 偏好设置 → 快捷键 tab。
@@ -49,7 +49,7 @@ export function ShortcutsSection() {
   // 当前正在编辑的 actionId (recorder 打开时非空)
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // 按 group 分组, 然后把 GROUP_ORDER_LAST (编辑) 强制挪到末尾, 其余按 actions.ts 声明顺序
+  // 按 group 分组, 然后把 GROUP_ORDER_LAST (editor) 强制挪到末尾, 其余按 actions.ts 声明顺序
   const grouped = useMemo(() => {
     const all = groupActions(listActions());
     const entries = Object.entries(all);

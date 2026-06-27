@@ -30,6 +30,7 @@ import { LazyDocumentEditor } from '@features/document/components/lazy-document-
 import { NotePropertiesDialog } from '@features/document/components/note-properties-dialog';
 import type { MarkdownEditorHandle } from '@features/editor/markdown-editor';
 import backgroundImage from '@/assets/bg.document.png';
+import { useI18n } from '@features/i18n';
 
 export function DocumentContainer({
   filePath,
@@ -46,6 +47,7 @@ export function DocumentContainer({
   onToolbarCollapsedChange,
   onExternalImportApiChange,
 }: DocumentContainerProps) {
+  const { t } = useI18n();
   const documentInstanceKey = useMemo(
     () => memoId ? `memo:${memoId}` : getDocumentInstanceKey(filePath),
     [filePath, memoId]
@@ -304,7 +306,7 @@ export function DocumentContainer({
           style={{ backgroundImage: `url(${backgroundImage})` }}
         />
         <span className="relative text-center text-[var(--muted-foreground)] text-sm">
-          请选择一个文档
+          {t("document.empty")}
         </span>
       </div>
     );
@@ -328,12 +330,12 @@ export function DocumentContainer({
         const success = await useMemoStore.getState().deleteMemo(memoId);
         if (success) {
           await useDocumentStore.getState().clearDocument();
-          toast.success('已从索引移除');
+          toast.success(t('document.ghost.removed'));
         } else {
-          toast.error('删除失败');
+          toast.error(t('document.ghost.deleteFailed'));
         }
       } catch {
-        toast.error('删除失败');
+        toast.error(t('document.ghost.deleteFailed'));
       }
     };
     return (
@@ -345,7 +347,7 @@ export function DocumentContainer({
             onClick={handleDeleteCurrent}
             className="inline-flex items-center h-7 px-2.5 text-xs rounded-lg bg-transparent border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
           >
-            删除笔记
+            {t('document.ghost.deleteButton')}
           </button>
         )}
       </div>
@@ -364,7 +366,7 @@ export function DocumentContainer({
               handleChange(content);
               if (state.isNewlyCreated) setState(prev => ({ ...prev, isNewlyCreated: false }));
             }}
-            placeholder="请输入 Memo..."
+            placeholder={t("document.editorPlaceholder")}
             className=""
             onEditorScroll={(scrollTop) => setState(prev => ({ ...prev, isScrolled: scrollTop > 90 }))}
             onEditingFinished={() => {

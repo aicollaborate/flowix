@@ -3,6 +3,7 @@
 import { CaretDoubleLeftIcon } from '@phosphor-icons/react';
 
 import { Tooltip } from '@shared/ui/tooltip';
+import { useI18n } from '@features/i18n';
 
 interface NoteNavigationPanelHeaderWinProps {
   onTogglePanel: () => void;
@@ -28,16 +29,17 @@ interface NoteNavigationPanelHeaderWinProps {
 export function NoteNavigationPanelHeaderWin({
   onTogglePanel,
 }: NoteNavigationPanelHeaderWinProps) {
+  const { t } = useI18n();
   return (
     <div
       data-tauri-drag-region
       className="shrink-0 h-9 px-2 flex items-center justify-end"
     >
-      <Tooltip content="折叠面板">
+      <Tooltip content={t("memo.navigation.collapsePanelTooltip")}>
         <button
           type="button"
           onClick={onTogglePanel}
-          aria-label="折叠面板"
+          aria-label={t("memo.navigation.collapsePanel")}
           className="w-7 h-7 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-lg transition-colors"
         >
           <CaretDoubleLeftIcon className="w-4 h-4" weight="regular" />

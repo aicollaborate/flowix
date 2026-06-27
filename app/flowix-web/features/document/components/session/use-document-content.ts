@@ -8,6 +8,8 @@ import {
   useDocumentStore,
   type DocumentIdentity,
 } from '@features/document';
+import { translate } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 import { formatDateTime } from '@/lib/utils';
 import {
   initialDocumentContainerState,
@@ -166,7 +168,8 @@ export function useDocumentContent({
 
         if (fullContent === null || fullContent === undefined) {
           if (currentLoadId !== counter.current) return;
-          setState((prev) => ({ ...prev, isLoading: false, error: '读取失败' }));
+          const language = useUserSettingsStore.getState().settings.language;
+          setState((prev) => ({ ...prev, isLoading: false, error: translate(language, 'document.load.failed') }));
           if (transitionId !== null) {
             useDocumentStore.getState().finishDocumentTransition(transitionId);
           }
@@ -185,7 +188,8 @@ export function useDocumentContent({
         }
       } catch (err) {
         if (currentLoadId !== counter.current) return;
-        setState((prev) => ({ ...prev, isLoading: false, error: '读取失败' }));
+        const language = useUserSettingsStore.getState().settings.language;
+        setState((prev) => ({ ...prev, isLoading: false, error: translate(language, 'document.load.failed') }));
         logOpenDocPerf('reloadDocument:error', startedAt, {
           memoId,
           transitionId,

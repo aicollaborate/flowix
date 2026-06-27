@@ -19,7 +19,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@shared/ui/select';
+import { useI18n, translate, type AppLanguage } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 import { cn } from '@/lib/utils';
+
+function getWeekdayKeys(): Array<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'> {
+  return ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+}
 
 type PropertyType = 'Text' | 'Number' | 'Date' | 'URL' | 'Tags';
 
@@ -40,7 +46,6 @@ interface NotePropertiesDialogProps {
 const PROPERTY_TYPES: PropertyType[] = ['Text', 'Number', 'Date', 'URL', 'Tags'];
 const FRONTMATTER_RE = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 const URL_RE = /^https?:\/\/\S+$/i;
-const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
 let rowIdSeq = 0;
 
 function createRowId(): string {
@@ -224,8 +229,11 @@ function getMonthDays(viewMonth: Date): Array<{ date: Date; inMonth: boolean }> 
   });
 }
 
-function getMonthTitle(date: Date): string {
-  return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+function getMonthTitle(t: (key: any, params?: Record<string, string | number>) => string, date: Date): string {
+  return t('document.properties.monthTitle', {
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+  });
 }
 
 function TagsInput({
@@ -237,6 +245,7 @@ function TagsInput({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const { t, language } = useI18n();
   const tags = tagsFromValue(value);
   const [draft, setDraft] = useState('');
 
@@ -271,7 +280,7 @@ function TagsInput({
               type="button"
               onClick={() => removeTag(tag)}
               className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-              aria-label={`删除标签 ${tag}`}
+              aria-label={translate(language, 'document.properties.deleteTag', { tag })}
             >
               ×
             </button>
@@ -281,7 +290,7 @@ function TagsInput({
       <input
         value={draft}
         disabled={disabled}
-        placeholder={tags.length === 0 ? '输入标签后回车' : ''}
+        placeholder={tags.length === 0 ? t('document.properties.tagInputPlaceholder') : ''}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commitDraft}
         onKeyDown={(event) => {
@@ -308,6 +317,11 @@ function DateValueInput({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const { t, language } = useI18n();
+  const settingsLanguage = useUserSettingsStore((store) => store.settings.language);
+  // 同步当前 user settings 语言; 跟 i18n provider 同源 ── 即便 Provider
+  // 因为 react 批处理有微小延迟, 这里也能拿到最新值。
+  const effectiveLanguage = (settingsLanguage ?? language) as AppLanguage;
   const [open, setOpen] = useState(false);
   const selectedDate = parseDateValue(value);
   const [viewMonth, setViewMonth] = useState(() => selectedDate ?? new Date());
@@ -319,6 +333,13 @@ function DateValueInput({
   }, [selectedDate?.getFullYear(), selectedDate?.getMonth()]);
 
   const monthDays = useMemo(() => getMonthDays(viewMonth), [viewMonth]);
+
+  // 周列标签: zh-CN "一/二/..."; en-US "Mon/Tue/..."。优先用 i18n key 走
+  // locales.ts; 静态 hook 之外用 translate(language, ...)。
+  const weekdayLabels = useMemo(() => {
+    const keys = getWeekdayKeys();
+    return keys.map((key) => translate(effectiveLanguage, `document.properties.weekdays.${key}` as const));
+  }, [effectiveLanguage]);
 
   const changeMonth = (offset: number) => {
     setViewMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
@@ -354,7 +375,7 @@ function DateValueInput({
             aria-hidden="true"
           />
           <span className={cn('min-w-0 flex-1 truncate', value ? 'text-[var(--foreground)]' : 'text-[var(--muted-foreground)]')}>
-            {value || '选择日期'}
+            {value || t('document.properties.selectDate')}
           </span>
           {value && !disabled && (
             <span
@@ -362,7 +383,7 @@ function DateValueInput({
               tabIndex={-1}
               onClick={clearDate}
               className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--muted-foreground)] opacity-0 transition-opacity hover:bg-[var(--muted)] hover:text-[var(--foreground)] group-hover:opacity-100 group-focus-visible:opacity-100"
-              aria-label="清空日期"
+              aria-label={t('document.properties.clearDate')}
             >
               <X className="h-3.5 w-3.5" />
             </span>
@@ -380,27 +401,27 @@ function DateValueInput({
               type="button"
               onClick={() => changeMonth(-1)}
               className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-              aria-label="上个月"
+              aria-label={t('document.properties.prevMonth')}
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
             <div className="text-sm font-medium text-[var(--foreground)]">
-              {getMonthTitle(viewMonth)}
+              {getMonthTitle(t, viewMonth)}
             </div>
             <button
               type="button"
               onClick={() => changeMonth(1)}
               className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-              aria-label="下个月"
+              aria-label={t('document.properties.nextMonth')}
             >
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
 
           <div className="grid grid-cols-7 gap-1 px-1 pb-1 text-center text-[11px] font-medium text-[var(--muted-foreground)]">
-            {WEEKDAYS.map((weekday) => (
-              <div key={weekday} className="flex h-6 items-center justify-center">
-                {weekday}
+            {weekdayLabels.map((label) => (
+              <div key={label} className="flex h-6 items-center justify-center">
+                {label}
               </div>
             ))}
           </div>
@@ -441,6 +462,7 @@ export function NotePropertiesDialog({
   onOpenChange,
   onSave,
 }: NotePropertiesDialogProps) {
+  const { t } = useI18n();
   const frontmatter = useMemo(() => extractFrontmatter(content), [content]);
   const [rows, setRows] = useState<PropertyRow[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -496,21 +518,21 @@ export function NotePropertiesDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[640px] max-w-[calc(100vw-32px)]">
         <DialogHeader>
-          <DialogTitle>属性</DialogTitle>
+          <DialogTitle>{t('document.properties.title')}</DialogTitle>
         </DialogHeader>
 
         <div className="mt-2 space-y-3">
           {frontmatter.parseError && (
             <div className="rounded-lg border border-[color-mix(in_oklch,var(--destructive)_35%,var(--border))] bg-[color-mix(in_oklch,var(--destructive)_8%,transparent)] px-3 py-2 text-xs text-[var(--destructive)]">
-              当前 YAML 无法解析，请先修复后再编辑属性。
+              {t('document.properties.yamlParseError')}
             </div>
           )}
 
           <div className="max-h-[360px] overflow-y-auto pr-1 [scrollbar-gutter:stable]">
             <div className="grid grid-cols-[minmax(88px,0.67fr)_96px_minmax(192px,1.73fr)_32px] gap-2 px-1 pb-1 text-xs font-medium text-[var(--muted-foreground)]">
-              <span>字段</span>
-              <span>类型</span>
-              <span>值</span>
+              <span>{t('document.properties.fieldColumn')}</span>
+              <span>{t('document.properties.typeColumn')}</span>
+              <span>{t('document.properties.valueColumn')}</span>
               <span />
             </div>
 
@@ -571,7 +593,7 @@ export function NotePropertiesDialog({
                       type="button"
                       onClick={() => removeRow(row.id)}
                       className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--destructive)]"
-                      aria-label="删除字段"
+                      aria-label={t('document.properties.deleteField')}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -583,16 +605,16 @@ export function NotePropertiesDialog({
 
             {rows.length === 0 && !frontmatter.parseError && (
               <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--muted-foreground)]">
-                暂无属性
+                {t('document.properties.empty')}
               </div>
             )}
           </div>
 
           {duplicateKeys.size > 0 && (
-            <div className="text-xs text-[var(--destructive)]">字段名不能重复。</div>
+            <div className="text-xs text-[var(--destructive)]">{t('document.properties.duplicateKey')}</div>
           )}
           {hasInvalidKey && (
-            <div className="text-xs text-[var(--destructive)]">字段名不能为空。</div>
+            <div className="text-xs text-[var(--destructive)]">{t('document.properties.emptyKey')}</div>
           )}
 
           <button
@@ -602,7 +624,7 @@ export function NotePropertiesDialog({
             className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
-            新增字段
+            {t('document.properties.addField')}
           </button>
         </div>
 
@@ -612,7 +634,7 @@ export function NotePropertiesDialog({
             onClick={() => onOpenChange(false)}
             className="h-8 rounded-lg px-3 text-sm hover:bg-[var(--muted)]"
           >
-            取消
+            {t('document.properties.cancel')}
           </button>
           <button
             type="button"
@@ -620,7 +642,7 @@ export function NotePropertiesDialog({
             disabled={!canSave}
             className="h-8 rounded-lg bg-[var(--primary)] px-3 text-sm text-[var(--primary-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            保存
+            {t('document.properties.save')}
           </button>
         </div>
       </DialogContent>

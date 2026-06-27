@@ -8,6 +8,13 @@ import { useMemoStore } from '@features/memo/store/memo-store';
 import { useDocumentStore } from '@features/document/store/document-store';
 import { isEmptyAssistantMessage } from '@features/agent/message';
 import { stripSystemBlock } from '@features/agent/message';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
+import { translate, type AppLanguage } from '@features/i18n';
+
+/** 读取当前 AppLanguage ── zustand store 不在 React 树里也能用 .getState()。 */
+function getLanguage(): AppLanguage {
+  return useUserSettingsStore.getState().settings.language;
+}
 import { DEFAULT_AGENT_ROLE_KEY, getAgentRole, getAgentRoleByRuntime, normalizeAgentRoleKey } from '@/lib/agent-roles';
 
 function joinPath(basePath: string, filePath: string): string {
@@ -67,9 +74,9 @@ function toToolInput(input: unknown): Record<string, unknown> | undefined {
   return undefined;
 }
 
-function buildThreadTitle(content: string): string {
+function buildThreadTitle(content: string, fallback: string = '新对话'): string {
   const title = content.replace(/\s+/g, ' ').trim();
-  return title ? title.slice(0, 28) : '新对话';
+  return title ? title.slice(0, 28) : fallback;
 }
 
 function userMessageStableKey(message: ChatMessage): string | null {
@@ -318,7 +325,7 @@ export const useChatStore = create<ChatStore>()(
             activeCodexThreadId: threadId,
             activeAgentRoleKey: role.key,
             agentRuntime: role.runtime,
-            currentCodexThreadTitle: buildThreadTitle(content),
+            currentCodexThreadTitle: buildThreadTitle(content, translate(getLanguage(), 'agent.chat.newConversation')),
             threadRoles: {
               ...state.threadRoles,
               [threadId]: role.key,
@@ -337,7 +344,7 @@ export const useChatStore = create<ChatStore>()(
           return existingThreadId;
         }
 
-        const thread = await agent.createThread(buildThreadTitle(content));
+        const thread = await agent.createThread(buildThreadTitle(content, translate(getLanguage(), 'agent.chat.newConversation')));
         set((state) => {
           const nextStates: ThreadsMap = {
             ...state.threadStates,
@@ -479,7 +486,7 @@ export const useChatStore = create<ChatStore>()(
                     hasMoreHistory: page.hasMore,
                   },
                 },
-                currentThreadTitle: threadInfo?.title ?? '未命名对话',
+                currentThreadTitle: threadInfo?.title ?? translate(getLanguage(), 'agent.chat.unnamedConversation'),
               };
             });
           } catch (err) {
@@ -598,7 +605,7 @@ export const useChatStore = create<ChatStore>()(
                     pendingReasoningId: null,
                   },
                 },
-                currentCodexThreadTitle: threadInfo?.title ?? 'Codex Session',
+                currentCodexThreadTitle: threadInfo?.title ?? translate(getLanguage(), 'agent.codexSession.title'),
               };
             });
           } catch (err) {
@@ -629,9 +636,10 @@ export const useChatStore = create<ChatStore>()(
           }
         },
 
-        createThread: async (title = '新对话') => {
+        createThread: async (title?: string) => {
+          const finalTitle = title ?? translate(getLanguage(), 'agent.chat.newConversation');
           try {
-            const thread = await agent.createThread(title);
+            const thread = await agent.createThread(finalTitle);
             set((state) => ({
               activeThreadId: thread.threadId,
               activeAgentRoleKey: 'flowix',
@@ -658,7 +666,7 @@ export const useChatStore = create<ChatStore>()(
             activeCodexThreadId: threadId,
             activeAgentRoleKey: 'codex',
             agentRuntime: 'codex',
-            currentCodexThreadTitle: 'Codex Session',
+            currentCodexThreadTitle: translate(getLanguage(), 'agent.codexSession.title'),
             threadRoles: {
               ...state.threadRoles,
               [threadId]: 'codex',
@@ -763,7 +771,7 @@ export const useChatStore = create<ChatStore>()(
               content:
                 typeof err === 'string' && err
                   ? err
-                  : '抱歉，发送失败。',
+                  : translate(getLanguage(), 'agent.chat.sendFailed'),
               timestamp: new Date().toISOString(),
             };
             set((state) => {
@@ -835,12 +843,13 @@ export const useChatStore = create<ChatStore>()(
           // 独立于 ensureThread 的首条消息重命名 ── 与旧版同形。
           if (isFirstMessage && activeRole.runtime === 'flowix') {
             const previousTitle = get().currentThreadTitle;
-            const nextTitle = buildThreadTitle(content);
+            const placeholder = translate(getLanguage(), 'agent.chat.newConversation');
+            const nextTitle = buildThreadTitle(content, placeholder);
             const isPlaceholderTitle = (t: string | undefined) =>
-              !t || t === '新对话';
+              !t || t === placeholder;
             const shouldRename =
               nextTitle !== previousTitle &&
-              (nextTitle !== '新对话' || isPlaceholderTitle(previousTitle));
+              (nextTitle !== placeholder || isPlaceholderTitle(previousTitle));
             if (shouldRename) {
               set({ currentThreadTitle: nextTitle });
               agent
@@ -877,7 +886,7 @@ export const useChatStore = create<ChatStore>()(
               content:
                 typeof err === 'string' && err
                   ? err
-                  : '抱歉，发生了错误。',
+                  : translate(getLanguage(), 'agent.chat.errorOccurred'),
               timestamp: new Date().toISOString(),
             };
             set((state) => {

@@ -11,6 +11,7 @@ import { useChatStore, type ThreadState } from '@features/agent/store/chat-store
 import { useAgentAccessStore } from '@features/agent/store/agent-access-store';
 import { useMemoStore } from '@features/memo';
 import { Tooltip } from '@shared/ui/tooltip';
+import { translate, type AppLanguage, type I18nKey } from '@features/i18n';
 import type { AgentRoleKey } from '@/types/agent';
 import type { AgentAccessEntry } from '@/lib/types/agent-access';
 import {
@@ -21,6 +22,7 @@ import { getToolIconPath } from '@features/agent/message/tools';
 import { openNoteByDeepLink } from '@platform/open-target';
 import { isWindowsPlatform } from '@features/shortcuts';
 import { DEFAULT_AGENT_ROLE_KEY, getAgentRole, normalizeAgentRoleKey } from '@/lib/agent-roles';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -35,7 +37,14 @@ declare module '@tiptap/core' {
   }
 }
 
+/** Schema default 用的静态字面量 ── Tiptap schema 不依赖语言, 这里
+ * 写死 zh-CN 原文; 用户在创建卡片后 title 会被 buildTitle() 覆盖,
+ * 不会被长时间展示。运行期 title getter 用 `this.t('editor.threadCard.title')` 走 i18n。 */
 const DEFAULT_TITLE = 'AI 对话';
+// DEFAULT_TITLE_KEY ── 卡片标题为空时的回落 i18n key, 实际取值在每处
+// 取数前 translate(language, DEFAULT_TITLE_KEY)。 在 schema default 里
+// 也直接用静态 fallback (zh-CN 原文), 因为 schema 不依赖语言 ── 用户
+// 创建卡片后这个 default 立即会被 buildTitle() 覆盖, 不会被长时间展示。
 
 // OS 顶部控件区高度 ── AgentThreadCard 全屏时把卡片向上探出这条带状区
 // 高度, 覆盖到 webview 顶端 (而不是停在文档区顶边)。
@@ -259,9 +268,9 @@ function getAccessEntryLetter(name: string | undefined | null, fallback: string 
   return /[A-Za-z0-9]/.test(first) ? first.toUpperCase() : fallback;
 }
 
-function buildTitle(prompt: string): string {
+function buildTitle(prompt: string, fallback: string = 'AI 对话'): string {
   const title = prompt.replace(/\s+/g, ' ').trim();
-  return title ? title.slice(0, 28) : DEFAULT_TITLE;
+  return title ? title.slice(0, 28) : fallback;
 }
 
 function escapeAttr(value: string | null | undefined): string {
@@ -480,6 +489,25 @@ class AgentThreadCardView implements ProseMirrorNodeView {
     this.setAccessPopoverOpen(false);
   };
 
+  /** 当前 AppLanguage ── NodeView 不在 React 树里, 不能用 useI18n,
+   *  走 user-settings-store 读最新值 (跨窗口同步跟 I18nProvider 一致)。 */
+  private get language(): AppLanguage {
+    return useUserSettingsStore.getState().settings.language;
+  }
+
+  /** 翻译: NodeView 内部所有面向用户的字符串走这里, 切换语言时由
+   *  rerender 文案刷新, 不依赖 React 重渲染整张卡片。 */
+  private t(key: I18nKey): string {
+    return translate(this.language, key);
+  }
+
+  /** 在语言切换后把卡片上的静态文案重新渲染 ── 状态/事件 (placeholder,
+   *  aria-label, title, textContent 等) 需要手动同步。 默认 no-op, 子
+   *  类按需覆盖 (这里是该方法的主要宿主, 因为它持有大量 DOM 元素)。 */
+  protected syncLocalizedText(): void {
+    // 子类按需覆盖
+  }
+
   constructor(node: ProseMirrorNode, view: EditorView, getPos?: () => number | undefined) {
     this.node = node;
     this.view = view;
@@ -560,8 +588,8 @@ class AgentThreadCardView implements ProseMirrorNodeView {
     this.copyThreadIdButton = document.createElement('button');
     this.copyThreadIdButton.type = 'button';
     this.copyThreadIdButton.className = 'agent-thread-card__icon-btn agent-thread-card__copy-thread-id';
-    this.copyThreadIdButton.setAttribute('aria-label', '复制 ThreadId');
-    this.copyThreadIdButton.title = '复制 ThreadId';
+    this.copyThreadIdButton.setAttribute('aria-label', this.t('editor.threadCard.copyThreadId'));
+    this.copyThreadIdButton.title = this.t('editor.threadCard.copyThreadId');
     this.copyThreadIdButton.append(createCopyIcon());
     this.copyThreadIdButton.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -589,7 +617,7 @@ class AgentThreadCardView implements ProseMirrorNodeView {
     this.deleteButton = document.createElement('button');
     this.deleteButton.type = 'button';
     this.deleteButton.className = 'agent-thread-card__icon-btn agent-thread-card__delete';
-    this.deleteButton.setAttribute('aria-label', '删除对话');
+    this.deleteButton.setAttribute('aria-label', this.t('editor.threadCard.delete'));
     this.deleteButton.append(createTrashIcon());
     this.deleteButton.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -602,7 +630,7 @@ class AgentThreadCardView implements ProseMirrorNodeView {
     this.fullscreenButton = document.createElement('button');
     this.fullscreenButton.type = 'button';
     this.fullscreenButton.className = 'agent-thread-card__icon-btn agent-thread-card__fullscreen';
-    this.fullscreenButton.setAttribute('aria-label', '全屏展示');
+    this.fullscreenButton.setAttribute('aria-label', this.t('editor.threadCard.enterFullscreen'));
     this.fullscreenButton.hidden = true;
     this.fullscreenButton.append(createFullscreenIcon('enter'));
     this.fullscreenButton.addEventListener('click', (event) => {
@@ -622,7 +650,7 @@ class AgentThreadCardView implements ProseMirrorNodeView {
     this.collapseButton = document.createElement('button');
     this.collapseButton.type = 'button';
     this.collapseButton.className = 'agent-thread-card__icon-btn agent-thread-card__collapse';
-    this.collapseButton.setAttribute('aria-label', '折叠');
+    this.collapseButton.setAttribute('aria-label', this.t('editor.threadCard.collapse'));
     this.collapseButton.append(createChevronIcon('down'));
     this.collapseButton.addEventListener('click', (event) => {
       // 阻止事件冒泡, 避免与卡片根 mousedown 处理互相干扰。
@@ -667,7 +695,7 @@ actions.append(
 
     const loadingText = document.createElement('span');
     loadingText.className = 'agent-thread-card__loading-text';
-    loadingText.textContent = '思考中';
+    loadingText.textContent = this.t('editor.threadCard.thinking');
     loadingText.hidden = true;
 
     this.loadingIndicator.append(loadingDot, loadingText);
@@ -682,7 +710,7 @@ actions.append(
 
     this.input = document.createElement('textarea');
     this.input.rows = 1;
-    this.input.placeholder = '问 AI 处理任务';
+    this.input.placeholder = this.t('editor.threadCard.inputPlaceholder');
     this.input.addEventListener('keydown', (event) => {
       if (event.isComposing || event.key !== 'Enter' || event.shiftKey) return;
       event.preventDefault();
@@ -695,7 +723,7 @@ actions.append(
     this.accessButton = document.createElement('button');
     this.accessButton.type = 'button';
     this.accessButton.className = 'agent-thread-card__access-trigger';
-    this.accessButton.textContent = '访问';
+    this.accessButton.textContent = this.t('editor.threadCard.accessButton');
     this.accessButton.setAttribute('aria-haspopup', 'menu');
     this.accessButton.setAttribute('aria-expanded', 'false');
     this.accessButton.addEventListener('click', (event) => {
@@ -743,7 +771,7 @@ actions.append(
   }
 
   private get title(): string {
-    return (this.node.attrs.title as string | null) || DEFAULT_TITLE;
+    return (this.node.attrs.title as string | null) || this.t('editor.threadCard.title');
   }
 
   private get roleKey(): AgentRoleKey {
@@ -844,11 +872,11 @@ actions.append(
     if (notebookEntries.length === 0 && folderEntries.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'agent-thread-card__access-empty';
-      empty.textContent = isLoading ? '加载中...' : '暂无访问目录，点击下方添加';
+      empty.textContent = isLoading ? this.t('agent.access.empty.loading') : this.t('agent.access.empty.empty');
       this.accessPopover.append(empty);
     } else {
       if (notebookEntries.length > 0) {
-        this.accessPopover.append(this.createAccessSectionLabel('笔记本'));
+        this.accessPopover.append(this.createAccessSectionLabel(this.t('agent.access.sectionNotebook')));
         notebookEntries.forEach((entry) => {
           this.accessPopover.append(this.createAccessEntryRow(entry, notebooks, toggle, removeFolder));
         });
@@ -857,7 +885,7 @@ actions.append(
         this.accessPopover.append(this.createAccessDivider());
       }
       if (folderEntries.length > 0) {
-        this.accessPopover.append(this.createAccessSectionLabel('自定义文件夹'));
+        this.accessPopover.append(this.createAccessSectionLabel(this.t('agent.access.sectionFolder')));
         folderEntries.forEach((entry) => {
           this.accessPopover.append(this.createAccessEntryRow(entry, notebooks, toggle, removeFolder));
         });
@@ -867,12 +895,12 @@ actions.append(
     const addButton = document.createElement('button');
     addButton.type = 'button';
     addButton.className = 'agent-thread-card__access-add';
-    addButton.append(createPlusIcon(), document.createTextNode('添加资料夹'));
+    addButton.append(createPlusIcon(), document.createTextNode(this.t('agent.access.addFolder')));
     addButton.addEventListener('click', (event) => {
       event.stopPropagation();
       void addFolderFromPicker().then((result) => {
-        if (!result.ok && result.reason !== '未选择目录') {
-          console.error(result.reason);
+        if (!result.ok && result.code !== 'not-selected') {
+          console.error(`addFolderFromPicker error: ${result.code}`);
         }
       });
     });
@@ -902,7 +930,7 @@ actions.append(
     const notebook = isNotebook ? notebooks.find((item) => item.id === entry.id) : null;
     const row = document.createElement('div');
     row.className = 'agent-thread-card__access-row';
-    row.title = entry.missing ? '目录不存在，放回原位后自动恢复' : entry.path;
+    row.title = entry.missing ? this.t('agent.access.pathMissing') : entry.path;
     if (entry.missing) row.classList.add('agent-thread-card__access-row--disabled');
     row.addEventListener('click', () => {
       if (entry.missing) return;
@@ -932,7 +960,7 @@ actions.append(
     if (notebook?.isDefault) {
       const badge = document.createElement('span');
       badge.className = 'agent-thread-card__access-default-badge';
-      badge.textContent = '默认';
+      badge.textContent = this.t('agent.access.defaultBadge');
       nameWrap.append(badge);
     }
 
@@ -942,7 +970,7 @@ actions.append(
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'agent-thread-card__access-remove';
-      remove.setAttribute('aria-label', '删除该文件夹');
+      remove.setAttribute('aria-label', this.t('agent.access.deleteFolder'));
       remove.append(createTrashIcon());
       remove.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -956,7 +984,7 @@ actions.append(
     checkbox.className = 'agent-thread-card__access-checkbox';
     checkbox.setAttribute('role', 'checkbox');
     checkbox.setAttribute('aria-checked', entry.enabled ? 'true' : 'false');
-    checkbox.setAttribute('aria-label', entry.enabled ? '取消 AI 访问' : '允许 AI 访问');
+    checkbox.setAttribute('aria-label', entry.enabled ? this.t('agent.access.toggle.on') : this.t('agent.access.toggle.off'));
     checkbox.disabled = !!entry.missing;
     checkbox.classList.toggle('agent-thread-card__access-checkbox--checked', entry.enabled);
     if (entry.enabled) {
@@ -1086,7 +1114,7 @@ actions.append(
   private renderCollapseState(): void {
     const collapsed = this.collapsed;
     this.dom.classList.toggle('agent-thread-card--collapsed', collapsed);
-    this.collapseButton.setAttribute('aria-label', collapsed ? '展开' : '折叠');
+    this.collapseButton.setAttribute('aria-label', collapsed ? this.t('editor.threadCard.expand') : this.t('editor.threadCard.collapse'));
   }
 
   // 切换折叠态: 走 updateAttrs 走 ProseMirror 事务, 状态持久化到 node.attrs,
@@ -1123,7 +1151,7 @@ actions.append(
     this.dom.classList.toggle('agent-thread-card--fullscreen', this.isFullscreen);
     this.fullscreenButton.setAttribute(
       'aria-label',
-      this.isFullscreen ? '退出全屏展示' : '全屏展示'
+      this.isFullscreen ? this.t('editor.threadCard.exitFullscreen') : this.t('editor.threadCard.enterFullscreen')
     );
     this.fullscreenButton.replaceChildren(
       createFullscreenIcon(this.isFullscreen ? 'exit' : 'enter')
@@ -1286,7 +1314,7 @@ actions.append(
     // thread 创建后 (submit 完成 → updateAttrs 设 threadId) renderThreadState
     // 会被 chat store subscribe 再次触发, 自动走到 'ready' 分支, 按钮出现。
     if (isLoading) {
-      this.metaEl.textContent = '运行中';
+      this.metaEl.textContent = this.t('editor.threadCard.running');
     } else if (!this.threadId) {
       this.metaEl.textContent = '';
     } else {
@@ -1315,7 +1343,7 @@ actions.append(
     if (visibleMessages.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'agent-thread-card__empty';
-      empty.textContent = this.isLoadingThreadCache ? '加载对话中...' : '使用当前笔记开始 AI 对话';
+      empty.textContent = this.isLoadingThreadCache ? this.t('editor.threadCard.loadingThreadCache') : this.t('editor.threadCard.empty');
       this.body.append(empty, this.loadingIndicator);
       this.shouldFollowBottom = true;
       return;
@@ -1330,7 +1358,7 @@ actions.append(
       if (!shouldRenderAgentMessage(message)) {
         continue;
       }
-      const messageView = createAgentMessageViewModel(message);
+      const messageView = createAgentMessageViewModel(message, this.language);
 
       const item = document.createElement('div');
       item.className = `agent-thread-card__message agent-thread-card__message--${message.role}`;
@@ -1439,7 +1467,7 @@ actions.append(
   }
 
   private renderSendButton(wantStop: boolean, disabled: boolean): void {
-    const label = wantStop ? '停止' : '发送';
+    const label = wantStop ? this.t('editor.threadCard.stop') : this.t('editor.threadCard.send');
     const className = wantStop
       ? 'agent-thread-card__send agent-thread-card__send--stop'
       : 'agent-thread-card__send';
@@ -1592,7 +1620,7 @@ actions.append(
       if (!nextThreadId) {
         this.isCreating = true;
         this.renderThreadState();
-        const nextTitle = buildTitle(rawPrompt);  // 标题用原文, 不带 system 块
+        const nextTitle = buildTitle(rawPrompt, this.t('editor.threadCard.title'));  // 标题用原文, 不带 system 块
         const role = getAgentRole(this.roleKey);
         if (role.runtime === 'codex') {
           nextThreadId = `codex-local-${Date.now()}`;
@@ -1619,7 +1647,7 @@ actions.append(
         currentNoteContent: documentContext,
       });
     } catch (err) {
-      this.setError(typeof err === 'string' ? err : '发送失败');
+      this.setError(typeof err === 'string' ? err : this.t('editor.threadCard.sendFailed'));
     } finally {
       this.isCreating = false;
       this.renderThreadState();
@@ -1721,17 +1749,17 @@ export const AgentThreadCard = Node.create({
         'div',
         { class: 'agent-thread-card__container' },
         ['div', { class: 'agent-thread-card__title' }, `${role.name} · ${title}`],
-        ['div', { class: 'agent-thread-card__empty' }, '使用当前笔记开始 AI 对话'],
+        ['div', { class: 'agent-thread-card__empty' }, 'Use current note to start an AI conversation'],
         [
           'div',
           { class: 'agent-thread-card__composer' },
-          ['textarea', { placeholder: '问 AI 处理任务', rows: '1' }],
+          ['textarea', { placeholder: 'Ask AI to handle this task', rows: '1' }],
           [
             'button',
             {
               class: 'agent-thread-card__send',
               type: 'button',
-              'aria-label': '发送',
+              'aria-label': 'Send',
             },
           ],
         ],

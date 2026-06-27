@@ -8,6 +8,7 @@ import { Button } from '@shared/ui/button';
 import { Input } from '@shared/ui/input';
 import { Tooltip } from '@shared/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@features/i18n';
 
 interface SearchReplacePanelProps {
   editor: Editor | null;
@@ -16,6 +17,7 @@ interface SearchReplacePanelProps {
 }
 
 export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePanelProps) {
+  const { t } = useI18n();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -157,7 +159,7 @@ export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePa
     <div ref={panelRef} className="absolute top-0 left-1/2 -translate-x-1/2 z-[200] bg-[var(--card)] border border-[var(--border)] rounded-xl shadow-lg p-2 flex flex-col gap-1.5 min-w-[320px] max-w-[480px] animate-in slide-in-from-top-2 fade-in duration-200">
       {/* Search row */}
       <div className="flex items-center gap-1.5">
-        <Tooltip content="切换替换">
+        <Tooltip content={t('editor.search.toggleReplace')}>
           <Button
             variant="ghost"
             size="icon-xs"
@@ -173,7 +175,7 @@ export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePa
             value={searchTerm}
             onChange={(e) => handleSearchChange(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            placeholder="搜索..."
+            placeholder={t('editor.search.searchPlaceholder')}
             className="pr-9 h-8 text-sm"
           />
           {matchCount > 0 && (
@@ -183,17 +185,17 @@ export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePa
           )}
         </div>
 
-        <Tooltip content="上一处">
+        <Tooltip content={t('editor.search.previous')}>
           <Button variant="ghost" size="icon-xs" onClick={handlePrev} disabled={matchCount === 0}>
             <ArrowUp className="size-3.5" />
           </Button>
         </Tooltip>
-        <Tooltip content="下一处">
+        <Tooltip content={t('editor.search.next')}>
           <Button variant="ghost" size="icon-xs" onClick={handleNext} disabled={matchCount === 0}>
             <ArrowDown className="size-3.5" />
           </Button>
         </Tooltip>
-        <Tooltip content="关闭">
+        <Tooltip content={t('editor.search.close')}>
           <Button variant="ghost" size="icon-xs" onClick={handleClose} className="hover:bg-transparent dark:hover:bg-transparent hover:text-destructive">
             <X className="size-3.5" />
           </Button>
@@ -208,16 +210,16 @@ export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePa
             ref={replaceInputRef}
             value={replaceTerm}
             onChange={(e) => handleReplaceChange(e.target.value)}
-            placeholder="替换为..."
+            placeholder={t('editor.search.replacePlaceholder')}
             className="h-8 text-sm pr-9"
           />
         </div>
-        <Tooltip content="替换">
+        <Tooltip content={t('editor.search.replace')}>
           <Button variant="ghost" size="icon-xs" onClick={handleReplace} disabled={matchCount === 0} className="hover:bg-[color-mix(in_oklch,var(--primary)_10%,transparent)] hover:text-[var(--primary)]">
             <Replace className="size-3.5" />
           </Button>
         </Tooltip>
-        <Tooltip content="全部替换">
+        <Tooltip content={t('editor.search.replaceAll')}>
           <Button variant="ghost" size="icon-xs" onClick={handleReplaceAll} disabled={matchCount === 0} className="hover:bg-[color-mix(in_oklch,var(--success)_10%,transparent)] hover:text-[var(--success)]">
             <ReplaceAll className="size-3.5" />
           </Button>

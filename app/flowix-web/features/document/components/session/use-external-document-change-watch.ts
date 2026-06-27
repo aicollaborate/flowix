@@ -5,6 +5,8 @@ import {
   isRecentSelfDocumentWrite,
   type DocumentIdentity,
 } from '@features/document';
+import { translate } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 import { toast } from '@/lib/toast';
 import { canonicalPath } from '@/lib/path';
 import { registerMemoEventHandler } from '@/lib/memo-dispatcher';
@@ -33,7 +35,8 @@ export function useExternalDocumentChangeWatch({
     if (!hasDocumentUnsavedChanges(identity)) return;
     if (Date.now() - lastConflictWarningAtRef.current < CONFLICT_WARNING_COOLDOWN_MS) return;
     lastConflictWarningAtRef.current = Date.now();
-    toast.warning('文档已被外部修改', { duration: 5000 });
+    const language = useUserSettingsStore.getState().settings.language;
+    toast.warning(translate(language, 'document.external.changeWarning'), { duration: 5000 });
   };
 
   useEffect(() => {

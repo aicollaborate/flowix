@@ -2,6 +2,7 @@ import { type MouseEvent } from 'react';
 import { useSelectedItemScroll } from '@features/editor/extensions/shared/use-selected-item-scroll';
 import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
 import type { MentionNoteItem } from '@features/editor/extensions/note-mention/note-mention-data';
+import { useI18n } from '@features/i18n';
 
 export interface NoteMentionDropdownProps {
   items: MentionNoteItem[];
@@ -22,6 +23,7 @@ export function NoteMentionDropdown({
   onHover,
   onLoadMore,
 }: NoteMentionDropdownProps) {
+  const { t } = useI18n();
   const { scrollerRef, itemRefs } = useSelectedItemScroll({
     items,
     selectedIndex,
@@ -36,7 +38,7 @@ export function NoteMentionDropdown({
 
   return (
     <div className="mention-note-dropdown" role="listbox" aria-label="Notes">
-      <div className="mention-note-header" aria-label="Mention type">笔记</div>
+      <div className="mention-note-header" aria-label="Mention type">{t('editor.noteMention.header')}</div>
       <OverlayScrollbar
         className="mention-note-items-frame"
         scrollerClassName="mention-note-items"
@@ -49,9 +51,9 @@ export function NoteMentionDropdown({
         }}
       >
           {loading && items.length === 0 ? (
-            <div className="mention-note-empty">加载中</div>
+            <div className="mention-note-empty">{t('editor.noteMention.loading')}</div>
           ) : items.length === 0 ? (
-            <div className="mention-note-empty">无匹配笔记</div>
+            <div className="mention-note-empty">{t('editor.noteMention.empty')}</div>
           ) : (
             items.map((item, index) => {
               const selected = index === selectedIndex;
@@ -88,7 +90,7 @@ export function NoteMentionDropdown({
                 onLoadMore();
               }}
             >
-              加载更多
+              {t('editor.noteMention.loadMore')}
             </button>
           )}
       </OverlayScrollbar>

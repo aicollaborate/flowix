@@ -1,6 +1,8 @@
 import { Node as TiptapNode, mergeAttributes } from '@tiptap/core';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { translate, type I18nKey } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -13,6 +15,11 @@ declare module '@tiptap/core' {
 const DEFAULT_LATEX = '';
 const PLACEHOLDER_LATEX = '\\frac{a}{b}';
 const BLOCK_MATH_RE = /^\$\$\s*\n?([\s\S]*?)\n?\s*\$\$(?:\n|$)/;
+
+// NodeView 不在 React 树内, 不能用 useI18n, 走 user-settings-store 直读当前语言。
+function tKey(key: I18nKey, params?: Record<string, string | number>): string {
+  return translate(useUserSettingsStore.getState().settings.language, key, params);
+}
 
 function normalizeLatex(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -95,11 +102,11 @@ export const MathBlock = TiptapNode.create({
 
       const hint = document.createElement('div');
       hint.className = 'math-block-hint';
-      hint.textContent = '输入 LaTeX 公式，离开后居中展示';
+      hint.textContent = tKey('editor.math.hint');
 
       const textarea = document.createElement('textarea');
       textarea.className = 'math-block-input';
-      textarea.placeholder = '例如：E = mc^2';
+      textarea.placeholder = tKey('editor.math.placeholder');
       textarea.rows = 2;
       textarea.spellcheck = false;
       textarea.value = latex;

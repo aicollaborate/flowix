@@ -1,0 +1,152 @@
+[data-theme="mist"] {
+	/* 整体方向: "纯灰 + 蓝色主锚" — v7.6 在 v7 纯灰基础上, 把 --primary / --brand
+	 * 改为 #4693FF 蓝, 让界面有了唯一的彩色锚点 ── 其它 token 仍保持纯灰,
+	 * 形成"灰纸 + 蓝按钮"的极简构图。
+	 *
+	 * v7.6 改动:
+	 * - --primary: 纯灰 → #4693FF (oklch 0.625 0.205 257)
+	 * - --brand:   纯灰 → 同上
+	 * - --brand-hue: 230 → 257 (与新主色对齐)
+	 * - --primary-foreground: 0.985 → 纯白 (提升蓝底可读性)
+	 * - 其它所有 token (background / card / popover / agent-bg / code-bg /
+	 *   secondary / muted / accent / border / 全部文字 / 反色面 / 高亮色)
+	 *   仍保持 chroma=0 纯灰, 维持 v7 "灰阶摄影" 风格
+	 *
+	 * 联动 (因 var() 引用自动跟随):
+	 * - --ring = --primary → 焦点环变蓝
+	 * - 输入框 caret-color = --brand → 光标变蓝
+	 * - 文本选区 background = --brand 22% → 浅蓝高亮
+	 *
+	 * 设计意图:
+	 * - mist 现在是"灰纸 + 单蓝色锚"主题, 介于 light (冷蓝紫整体染) 和
+	 *   rock (暖橄榄整体染) 之间 ── 中间派的"克制单色"选项。
+	 *
+	 * 保留色相的元素 (语义强, 不归零):
+	 * - --document-highlight-bg (hue 80 奶油暖意, 高亮=引起注意)
+	 * - --destructive / --warning / --success (状态语义色)
+	 * - --memo-color-* (跨主题身份识别, 7 色稳定) */
+	--neutral-hue: 250;
+	/* brand-hue: v7.11 从 110 改为 158 ── 与 #6DF7B4 薄荷绿 (oklch 0.90 0.135 158) 对齐 */
+	--brand-hue: 152;
+	--brand-chroma: 0;
+
+	/* 主色: v7.11 改为 #6DF7B4 薄荷绿 ── OKLCH 转换 oklch(0.90 0.135 158);
+	 * 比 v7.10 的 #C4EB15 (L 0.88, hue 110) 更"冷" ── hue 158 进入薄荷
+	 * 绿区间, chroma 从 0.18 降到 0.135, 视觉更柔和。 L=0.90 在浅灰界面
+	 * 里几乎"贴纸化", 与深字 ~12:1 对比 (远超 AAA)。 */
+	--primary: oklch(0.53 0.155 152);
+	--primary-foreground: oklch(1 0 0);
+	--brand: oklch(0.53 0.155 152);
+
+	/* 背景: 纯灰, 比 --card (0.992) 略亮 ── 读作"最白雾"; chroma=0 */
+	--background: oklch(0.996 0 0);
+	/* 文字: 仍保 6.6:1 AAA 对比, 纯灰中性, 不再带冷调 */
+	--foreground: oklch(0.36 0 0);
+	/* 卡片: 纯灰, L=0.992 参考线 */
+	--card: oklch(0.992 0 0);
+
+	/* 浮层底: 比 background 略亮, 纯灰 */
+	--popover: oklch(0.997 0 0);
+	--popover-foreground: var(--foreground);
+
+	/* 交互面: 全部 chroma=0, 仅靠 L 差排序 ── 视觉层级"消隐", 纯灰阶 */
+	--secondary: oklch(0.985 0 0);
+	--secondary-foreground: oklch(0.40 0 0);
+	/* muted: v7.4 (v7.3 已撤销 + 改浅 1/2) ── L 0.93 → 0.965, 取 0.93↔1.0
+	 * 区间中点, 与 editor-block-bg 0.982 同套"半提"逻辑; 与 --card
+	 * 形成 2.7% L 差 (之前 6.2%), hover 反馈从"勉强看见"退回"几乎看不
+	 * 见"。 --muted-foreground 不动。 */
+	--muted: oklch(0.965 0 0);
+	--muted-foreground: oklch(0.585 0 0);
+	/* accent: v7.5 加深到 0.93 ── "比 muted 深 2 倍":
+ *   muted 深度 = 1 - 0.965 = 0.035
+ *   2 倍深度   = 0.07
+ *   新 L      = 1 - 0.07 = 0.93
+ * 现在与 --card (0.992) 形成 6.2% L 差, memo 选中/hover/侧栏激活/聊天
+ * 标签等 18+ 消费点都能清晰读出"被选中 / 被悬停"。 0.93 与 editor-block-bg
+ * 0.982 拉开 4.9%, 块元素不与选中面冲突。 */
+	--accent: oklch(0.93 0 0);
+
+	/* 描边: L=0.92 纯灰, 在近白底上读作"淡雾痕" */
+	--border: oklch(0.92 0 0);
+	--input: var(--border);
+	--divider: color-mix(in oklch, var(--background) 50%, var(--border));
+	/* Keyboard focus ring follows the theme primary color. */
+	--ring: var(--primary);
+
+	/* 代理面板: 纯灰, 与整窗白底几乎融合 */
+	--agent-bg: oklch(0.993 0 0);
+	--agent-foreground: color-mix(in oklch, var(--foreground) 66%, transparent);
+
+	--statusbar-bg: color-mix(in oklch, var(--card) 92%, var(--background));
+
+	--bg-titlebar: oklch(1 0 0);
+	/* 文档: 纯白不透明, 主窗口文档区根底色 (main-layout.tsx:371) ── 在纯
+	 * 灰侧栏/列表的衬托下读作"白纸"; 同步驱动 editor 内 agent 卡片、标
+	 * 题栏渐变末端、偏好缩略图小样。 不再用 light 那种 alpha 0.557 半透
+	 * 叠加, 让"纸面"与"桌面"之间有清晰的 L 差 (1.0 vs 0.992 = 0.8% 视觉差)。
+	 *
+	 * 注意: light 主题这里仍用 alpha 0.557, mist 是显式破例 ── mist 的
+	 * background 已经 0.992 极近白, 半透叠加区分度太低, 失去"白纸"语义。 */
+	--document-bg: oklch(1 0 0);
+	--document-foreground: oklch(0.38 0 0);
+	/* 链接: 纯灰, 仅靠 L 差 (0.45) 与 foreground (0.36) 区分 ── 不再"蓝" */
+	--document-link: oklch(0.45 0 0);
+	/* 高亮: v7 保留 hue 80 暖意作为唯一的暖色孤儿 ── 高亮语义需要"显眼",
+	 * chroma 0.05 给一点奶油暖意, 但不与冷调主题争夺注意力 */
+	--document-highlight-bg: oklch(0.94 0.05 80);
+	/* 标签: 沿用 light 的"亮底暗字 + brand 染色"套路 ── 但 mist 的设计
+	 * 哲学是"纯灰 + 单色锚" (chroma=0 克制), 因此 brand 染色取极弱
+	 * chroma (0.006) ── 与"灰纸"几乎一致, 仅在特定光线下能感知到一抹
+	 * 薄荷绿, 让标签与 focus ring / caret / 选区形成微弱的色彩纽带。
+	 *
+	 * L 从原 0.55 提到 0.91 ── 原值是 mist 全色板里唯一 0.5 档深的表
+	 * 面, 与 0.99 主底形成 0.44 的 ΔL, 视觉上是"在灰纸上贴了一块黑
+	 * 牌", 与 mist "克制单色"基调冲突。0.91 接近 light (0.925), 形
+	 * 成"白纸 + 浅米色标签"的低对比构图, 读作"被打印上"而非"贴上去"。 */
+	--document-tag-bg: oklch(0.91 0.006 var(--brand-hue));
+	/* 标签文字: 直接接 --foreground, 与正文同色 ── 让 tag 读作"被高亮背景
+	 * 托住的普通文字", 而非"一段彩色字"。原色 (0.30 0.020 brand) 是
+	 * 极淡薄荷深字, 与 chip 同色系, 但与正文 (0.36 0 neutral) 拉开
+	 * 0.06 的 L 差 + 0.020 的 brand 色相差 ── 视觉上 tag 像"被框出的
+	 * 彩色字"。统一到 --foreground 后, 文字永远跟正文同步, chip 的
+	 * 极淡 brand 染色单独承担 tag 视觉信号, 与 mist "克制单色"基调更
+	 * 一致。 */
+	--document-tag-foreground: var(--foreground);
+	--document-tag-hover-bg: oklch(0.84 0.010 var(--brand-hue));
+
+	/* 文档颜色标签 — 跨主题身份识别稳定, 7 色不变:
+	 * - red / orange 偏暖, yellow 完全暖, green / cyan / blue 偏冷
+	 * - gray 与背景同 L 档但 chroma 极低, 融进纯灰底色 */
+	--memo-color-red:    oklch(58% 0.180 25);
+	--memo-color-orange: oklch(64% 0.160 50);
+	--memo-color-yellow: oklch(72% 0.155 88);
+	--memo-color-green:  oklch(60% 0.175 142);
+	--memo-color-cyan:   oklch(60% 0.120 215);
+	--memo-color-blue:   oklch(54% 0.180 252);
+	--memo-color-gray:   oklch(55% 0 0);
+
+	--code-bg: oklch(0.99 0 0);
+	/* editor-block-bg: 0.965 → 0.982 ── 取原 0.965↔1.0 区间的中点 (1.75%
+	 * L 差 vs 白纸), 让 agent 块在文档里有存在感但不"贴住"; 之前的
+	 * 0.965 偏深, 0.998 偏淡 ── 0.982 是视觉甜点。 */
+	--editor-block-bg: oklch(0.982 0 0);
+
+	/* 浮层: 纯灰深色, tooltip 不带任何冷调 */
+	--floating-bg: oklch(0.42 0 0);
+	--floating-foreground: oklch(0.96 0 0);
+
+	/* 反色面: 纯灰深色, 与主色同档深度但不染蓝 */
+	--inverse-background: oklch(0.34 0 0);
+	--inverse-foreground: oklch(0.962 0 0);
+
+	--success: oklch(0.72 0.160 150);
+	/* 危险: 仍保留 hue 25 暖红, 状态语义色不归零 */
+	--destructive: oklch(0.60 0.200 25);
+	--warning: oklch(0.78 0.135 80);
+
+	color-scheme: light;
+
+	/* 代码高亮: github-light 干净低饱和, 与纯灰主题一致 */
+	--shiki-theme: github-light;
+}

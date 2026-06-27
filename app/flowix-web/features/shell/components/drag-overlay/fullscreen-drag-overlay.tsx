@@ -9,6 +9,8 @@
  * - 主题色走 `var(--card)` / `var(--foreground)` / `var(--muted-foreground)`，
  *   light / dark / rock 三套主题自动适配。
  */
+import { useI18n } from '@features/i18n';
+
 interface FullscreenDragOverlayProps {
   visible: boolean;
   title?: string;
@@ -17,9 +19,12 @@ interface FullscreenDragOverlayProps {
 
 export function FullscreenDragOverlay({
   visible,
-  title = '拖入松开，打开文件',
-  subtitle = '仅支持 Markdown 格式文件',
+  title,
+  subtitle,
 }: FullscreenDragOverlayProps) {
+  const { t } = useI18n();
+  const resolvedTitle = title ?? t("shell.dropOverlay.title");
+  const resolvedSubtitle = subtitle ?? t("shell.dropOverlay.subtitle");
   if (!visible) return null;
 
   return (
@@ -29,11 +34,11 @@ export function FullscreenDragOverlay({
     >
       <div className="flex flex-col items-center gap-1.5">
         <span className="text-base font-medium text-[var(--foreground)] drop-shadow-sm">
-          {title}
+          {resolvedTitle}
         </span>
-        {subtitle && (
+        {resolvedSubtitle && (
           <span className="text-xs text-[var(--muted-foreground)] drop-shadow-sm">
-            {subtitle}
+            {resolvedSubtitle}
           </span>
         )}
       </div>

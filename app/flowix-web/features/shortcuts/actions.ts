@@ -4,7 +4,7 @@ import { windows } from '@platform/tauri/client';
 import { useSettingsStore } from '@features/shell/store/settings-store';
 import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 import { navigateDocumentHistory } from '@/lib/document-navigation';
-import type { ThemeId } from '@features/theme';
+import { resolveSystemTheme, type ResolvedThemeId, type ThemeId } from '@features/theme';
 
 /**
  * 集中声明所有 action 的地方。
@@ -17,9 +17,13 @@ import type { ThemeId } from '@features/theme';
  *  - 业务方应当 *优先* 在这里集中声明, 避免散落在各组件的 useEffect 注册
  *    (那样无法静态追溯 action 列表, 命令面板也读不到)。
  *
+ * `group` 字段是稳定的英文 id (与 i18n key 后缀一致), 供排序 / 查找使用;
+ * 人类可读的展示文案走 `preferences.shortcuts.group.*` i18n key (见
+ * shortcut-i18n.ts 的 GROUP_KEY_BY_ID)。
+ *
  * 当前 action 清单 (按 group 排序):
  *
- *   编辑
+ *   editor
  *     editor.find              ⌘F          window  — 打开 / 关闭编辑器搜索替换面板
  *     editor.undo              ⌘Z          editor  — 撤销
  *     editor.redo              ⌘⇧Z         editor  — 重做
@@ -32,21 +36,21 @@ import type { ThemeId } from '@features/theme';
  *     editor.toggleOrderedList  ⌘⌥7         editor  — 块元素 → 有序列表
  *     editor.toggleTaskList     ⌘⌥9         editor  — 块元素 → 待办列表
  *
- *   导航
+ *   navigation
  *     palette.search  ⌘K          no-input — 打开/关闭命令面板 (toggle)
  *     menu.open       ⌘P / Ctrl+P window — 打开偏好设置窗口
  *
- *   Memo
+ *   memo
  *     memo.create            ⌘N          no-input — 新建 Memo
  *     notebook.create        ⌘⌥N         no-input — 新建笔记本
  *     notebook.switcher.toggle ⌘⇧N       no-input — 打开/关闭笔记本下拉面板 (toggle)
  *
- *   视图
+ *   view
  *     theme.toggle         ⌘⌥T         window   — 循环切换主题 (编辑器内也生效)
  *     panel.memoList.toggle ⌘L / Ctrl+L window — 显示/隐藏 memo 列表 (左栏)
  *     panel.agent.toggle   ⌘R / Ctrl+R window — 显示/隐藏 Agent 面板 (右栏)
  *
- *   系统
+ *   system
  *     dialog.cancel   Esc         dialog   — 关闭弹窗
  *     dialog.confirm  Enter       dialog   — 确认弹窗
  */
@@ -54,7 +58,26 @@ import type { ThemeId } from '@features/theme';
 // ── 模块常量 ──────────────────────────────────────────────
 
 /** theme.toggle 的循环顺序 — 与 lib/theme/options.ts 的 THEME_OPTIONS 同序。 */
-const THEME_CYCLE: readonly ThemeId[] = ['system', 'light', 'dark', 'rock'];
+const THEME_CYCLE: readonly ThemeId[] = ['system', 'light', 'dark', 'rock', 'mist'];
+
+function resolveThemeId(theme: ThemeId, prefersDark: boolean): ResolvedThemeId {
+  return theme === 'system' ? resolveSystemTheme(prefersDark) : theme;
+}
+
+function nextVisibleTheme(current: ThemeId, prefersDark: boolean): ThemeId {
+  const currentResolved = resolveThemeId(current, prefersDark);
+  const startIndex = THEME_CYCLE.indexOf(current);
+  const start = startIndex < 0 ? 0 : startIndex;
+
+  for (let offset = 1; offset <= THEME_CYCLE.length; offset += 1) {
+    const candidate = THEME_CYCLE[(start + offset) % THEME_CYCLE.length];
+    if (resolveThemeId(candidate, prefersDark) !== currentResolved) {
+      return candidate;
+    }
+  }
+
+  return current;
+}
 
 // ── 编辑 ─────────────────────────────────────────────────
 
@@ -68,9 +91,9 @@ const THEME_CYCLE: readonly ThemeId[] = ['system', 'light', 'dark', 'rock'];
  */
 export const editorFindAction = defineAction({
   id: 'editor.find',
-  title: '编辑器内查找',
-  description: '打开 / 关闭当前编辑器的搜索替换面板。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.find.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.find.description',
+  group: 'editor',
   scope: 'window',
   defaultBinding: {
     mac: 'Mod+F',
@@ -91,9 +114,9 @@ export const editorFindAction = defineAction({
  */
 export const editorUndoAction = defineAction({
   id: 'editor.undo',
-  title: '撤销',
-  description: '撤销上一步编辑操作。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.undo.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.undo.description',
+  group: 'editor',
   scope: 'editor',
   defaultBinding: {
     mac: 'Mod+Z',
@@ -111,9 +134,9 @@ export const editorUndoAction = defineAction({
  */
 export const editorRedoAction = defineAction({
   id: 'editor.redo',
-  title: '重做',
-  description: '重做上一步被撤销的操作。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.redo.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.redo.description',
+  group: 'editor',
   scope: 'editor',
   defaultBinding: {
     mac: 'Mod+Shift+Z',
@@ -138,9 +161,9 @@ export const editorRedoAction = defineAction({
 // ── 标题 1-4 ──
 export const setHeading1Action = defineAction({
   id: 'editor.setHeading1',
-  title: '标题 1',
-  description: '将当前块元素设置为 H1 (⌘1)。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.setHeading1.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.setHeading1.description',
+  group: 'editor',
   scope: 'editor',
   defaultBinding: { mac: 'Mod+1', windows: 'Mod+1', linux: 'Mod+1' },
   run: () => invokeHandler('editor.setHeading1'),
@@ -148,9 +171,9 @@ export const setHeading1Action = defineAction({
 
 export const setHeading2Action = defineAction({
   id: 'editor.setHeading2',
-  title: '标题 2',
-  description: '将当前块元素设置为 H2 (⌘2)。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.setHeading2.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.setHeading2.description',
+  group: 'editor',
   scope: 'editor',
   defaultBinding: { mac: 'Mod+2', windows: 'Mod+2', linux: 'Mod+2' },
   run: () => invokeHandler('editor.setHeading2'),
@@ -158,9 +181,9 @@ export const setHeading2Action = defineAction({
 
 export const setHeading3Action = defineAction({
   id: 'editor.setHeading3',
-  title: '标题 3',
-  description: '将当前块元素设置为 H3 (⌘3)。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.setHeading3.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.setHeading3.description',
+  group: 'editor',
   scope: 'editor',
   defaultBinding: { mac: 'Mod+3', windows: 'Mod+3', linux: 'Mod+3' },
   run: () => invokeHandler('editor.setHeading3'),
@@ -168,9 +191,9 @@ export const setHeading3Action = defineAction({
 
 export const setHeading4Action = defineAction({
   id: 'editor.setHeading4',
-  title: '标题 4',
-  description: '将当前块元素设置为 H4 (⌘4)。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.setHeading4.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.setHeading4.description',
+  group: 'editor',
   scope: 'editor',
   defaultBinding: { mac: 'Mod+4', windows: 'Mod+4', linux: 'Mod+4' },
   run: () => invokeHandler('editor.setHeading4'),
@@ -179,9 +202,9 @@ export const setHeading4Action = defineAction({
 /** 块元素 → 正文 (paragraph)。 命名沿用 Tiptap `setParagraph` 命令。 */
 export const setParagraphAction = defineAction({
   id: 'editor.setParagraph',
-  title: '正文',
-  description: '将当前块元素转换为正文 (⌘0)。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.setParagraph.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.setParagraph.description',
+  group: 'editor',
   scope: 'editor',
   defaultBinding: { mac: 'Mod+0', windows: 'Mod+0', linux: 'Mod+0' },
   run: () => invokeHandler('editor.setParagraph'),
@@ -202,9 +225,9 @@ export const setParagraphAction = defineAction({
  */
 export const toggleBulletListAction = defineAction({
   id: 'editor.toggleBulletList',
-  title: '无序列表',
-  description: '将当前块元素切换为无序列表 (⌘⌥8)。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.toggleBulletList.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.toggleBulletList.description',
+  group: 'editor',
   scope: 'editor',
   defaultBinding: { mac: 'Mod+Alt+8', windows: 'Mod+Alt+8', linux: 'Mod+Alt+8' },
   run: () => invokeHandler('editor.toggleBulletList'),
@@ -212,9 +235,9 @@ export const toggleBulletListAction = defineAction({
 
 export const toggleOrderedListAction = defineAction({
   id: 'editor.toggleOrderedList',
-  title: '有序列表',
-  description: '将当前块元素切换为有序列表 (⌘⌥7)。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.toggleOrderedList.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.toggleOrderedList.description',
+  group: 'editor',
   scope: 'editor',
   defaultBinding: { mac: 'Mod+Alt+7', windows: 'Mod+Alt+7', linux: 'Mod+Alt+7' },
   run: () => invokeHandler('editor.toggleOrderedList'),
@@ -222,9 +245,9 @@ export const toggleOrderedListAction = defineAction({
 
 export const toggleTaskListAction = defineAction({
   id: 'editor.toggleTaskList',
-  title: '待办列表',
-  description: '将当前块元素切换为待办列表 (⌘⌥9)。',
-  group: '编辑',
+  titleKey: 'preferences.shortcuts.action.editor.toggleTaskList.title',
+  descriptionKey: 'preferences.shortcuts.action.editor.toggleTaskList.description',
+  group: 'editor',
   scope: 'editor',
   defaultBinding: { mac: 'Mod+Alt+9', windows: 'Mod+Alt+9', linux: 'Mod+Alt+9' },
   run: () => invokeHandler('editor.toggleTaskList'),
@@ -244,9 +267,9 @@ export const toggleTaskListAction = defineAction({
  */
 export const paletteSearchAction = defineAction({
   id: 'palette.search',
-  title: '切换命令面板',
-  description: '打开或关闭全局搜索 / 命令面板 (二次触发关闭)。',
-  group: '导航',
+  titleKey: 'preferences.shortcuts.action.palette.search.title',
+  descriptionKey: 'preferences.shortcuts.action.palette.search.description',
+  group: 'navigation',
   scope: 'window',
   defaultBinding: {
     mac: 'Mod+K',
@@ -268,9 +291,9 @@ export const paletteSearchAction = defineAction({
  */
 export const menuOpenAction = defineAction({
   id: 'menu.open',
-  title: '打开偏好设置',
-  description: '打开偏好设置窗口 (通用 / 格式 / 主题 / 代理 / 快捷键 / 历史 等)。',
-  group: '导航',
+  titleKey: 'preferences.shortcuts.action.menu.open.title',
+  descriptionKey: 'preferences.shortcuts.action.menu.open.description',
+  group: 'navigation',
   scope: 'window',
   defaultBinding: {
     mac: 'Mod+P',
@@ -296,9 +319,9 @@ export const menuOpenAction = defineAction({
  */
 export const memoCreateAction = defineAction({
   id: 'memo.create',
-  title: '新建 Memo',
-  description: '在当前选中的笔记本下创建一条新 Memo。',
-  group: 'Memo',
+  titleKey: 'preferences.shortcuts.action.memo.create.title',
+  descriptionKey: 'preferences.shortcuts.action.memo.create.description',
+  group: 'memo',
   scope: 'window',
   defaultBinding: {
     mac: 'Mod+N',
@@ -318,9 +341,9 @@ export const memoCreateAction = defineAction({
  */
 export const notebookCreateAction = defineAction({
   id: 'notebook.create',
-  title: '新建笔记本',
-  description: '打开新建笔记本弹窗。',
-  group: 'Memo',
+  titleKey: 'preferences.shortcuts.action.notebook.create.title',
+  descriptionKey: 'preferences.shortcuts.action.notebook.create.description',
+  group: 'memo',
   scope: 'window',
   defaultBinding: {
     mac: 'Mod+Alt+N',
@@ -344,9 +367,9 @@ export const notebookCreateAction = defineAction({
  */
 export const notebookSwitcherToggleAction = defineAction({
   id: 'notebook.switcher.toggle',
-  title: '切换笔记本面板',
-  description: '打开或关闭底部状态栏的笔记本下拉面板 (二次触发关闭)。',
-  group: 'Memo',
+  titleKey: 'preferences.shortcuts.action.notebook.switcher.toggle.title',
+  descriptionKey: 'preferences.shortcuts.action.notebook.switcher.toggle.description',
+  group: 'memo',
   scope: 'window',
   defaultBinding: {
     mac: 'Mod+Shift+N',
@@ -361,7 +384,7 @@ export const notebookSwitcherToggleAction = defineAction({
 // ── 视图 ──────────────────────────────────────────────────
 
 /**
- * 循环切换主题: system → light → dark → rock → system。
+ * 循环切换主题: system → light → dark → rock → mist → system。
  *
  * scope: 'window' — 任意位置都生效, 包括 Tiptap 编辑器内部。 这是"切主题"
  * 操作的天然诉求: 用户在编辑 memo 时也想切。`⌘⌥T` / `Ctrl+Alt+T` 是双修饰
@@ -373,9 +396,9 @@ export const notebookSwitcherToggleAction = defineAction({
  */
 export const historyBackAction = defineAction({
   id: 'history.back',
-  title: '后退',
-  description: '返回上一个阅读的文档。',
-  group: '导航',
+  titleKey: 'preferences.shortcuts.action.history.back.title',
+  descriptionKey: 'preferences.shortcuts.action.history.back.description',
+  group: 'navigation',
   scope: 'window',
   defaultBinding: {
     mac: 'Alt+ArrowLeft',
@@ -389,9 +412,9 @@ export const historyBackAction = defineAction({
 
 export const historyForwardAction = defineAction({
   id: 'history.forward',
-  title: '前进',
-  description: '前进到下一个阅读的文档。',
-  group: '导航',
+  titleKey: 'preferences.shortcuts.action.history.forward.title',
+  descriptionKey: 'preferences.shortcuts.action.history.forward.description',
+  group: 'navigation',
   scope: 'window',
   defaultBinding: {
     mac: 'Alt+ArrowRight',
@@ -405,9 +428,9 @@ export const historyForwardAction = defineAction({
 
 export const themeToggleAction = defineAction({
   id: 'theme.toggle',
-  title: '切换主题',
-  description: '在 跟随系统 / 浅色 / 深色 / 岩灰 之间循环切换。',
-  group: '视图',
+  titleKey: 'preferences.shortcuts.action.theme.toggle.title',
+  descriptionKey: 'preferences.shortcuts.action.theme.toggle.description',
+  group: 'view',
   scope: 'window',
   defaultBinding: {
     mac: 'Mod+Alt+T',
@@ -417,8 +440,8 @@ export const themeToggleAction = defineAction({
   run: () => {
     const state = useUserSettingsStore.getState();
     const current = state.settings.theme;
-    const idx = THEME_CYCLE.indexOf(current);
-    const next = idx < 0 ? THEME_CYCLE[0] : THEME_CYCLE[(idx + 1) % THEME_CYCLE.length];
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const next = nextVisibleTheme(current, prefersDark);
     void state.updateSettings({ theme: next });
   },
 });
@@ -434,9 +457,9 @@ export const themeToggleAction = defineAction({
  */
 export const memoListToggleAction = defineAction({
   id: 'panel.memoList.toggle',
-  title: '显示/隐藏 memo 列表',
-  description: '切换左栏 memo 列表的显示与隐藏 (Mod+L)。',
-  group: '视图',
+  titleKey: 'preferences.shortcuts.action.panel.memoList.toggle.title',
+  descriptionKey: 'preferences.shortcuts.action.panel.memoList.toggle.description',
+  group: 'view',
   scope: 'window',
   defaultBinding: {
     mac: 'Mod+L',
@@ -457,9 +480,9 @@ export const memoListToggleAction = defineAction({
  */
 export const agentPanelToggleAction = defineAction({
   id: 'panel.agent.toggle',
-  title: '显示/隐藏 Agent 面板',
-  description: '切换右栏 Agent 面板的显示与隐藏 (Mod+R)。',
-  group: '视图',
+  titleKey: 'preferences.shortcuts.action.panel.agent.toggle.title',
+  descriptionKey: 'preferences.shortcuts.action.panel.agent.toggle.description',
+  group: 'view',
   scope: 'window',
   defaultBinding: {
     mac: 'Mod+R',
@@ -482,9 +505,9 @@ export const agentPanelToggleAction = defineAction({
  */
 export const dialogCancelAction = defineAction({
   id: 'dialog.cancel',
-  title: '关闭弹窗',
-  description: '关闭当前打开的模态弹窗 (Escape)。',
-  group: '系统',
+  titleKey: 'preferences.shortcuts.action.dialog.cancel.title',
+  descriptionKey: 'preferences.shortcuts.action.dialog.cancel.description',
+  group: 'system',
   scope: 'dialog',
   defaultBinding: {
     mac: 'Escape',
@@ -503,9 +526,9 @@ export const dialogCancelAction = defineAction({
  */
 export const dialogConfirmAction = defineAction({
   id: 'dialog.confirm',
-  title: '确认弹窗',
-  description: '确认当前模态弹窗的默认动作 (Enter)。',
-  group: '系统',
+  titleKey: 'preferences.shortcuts.action.dialog.confirm.title',
+  descriptionKey: 'preferences.shortcuts.action.dialog.confirm.description',
+  group: 'system',
   scope: 'dialog',
   defaultBinding: {
     mac: 'Enter',

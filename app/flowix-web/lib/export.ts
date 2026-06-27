@@ -1,6 +1,8 @@
 // Markdown export utilities for Markdown / Word (DOC) outputs.
 
 import { Marked } from 'marked';
+import { translate, type AppLanguage } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 
 const FRONTMATTER_PATTERN = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 const MAX_FILE_NAME_LENGTH = 120;
@@ -115,15 +117,20 @@ function escapeHtml(text: string): string {
 /**
  * Wrap rendered HTML in a Word-compatible HTML document (saved with a `.doc` extension).
  * Word treats these files as native documents and renders them with the declared styles.
+ *
+ * `language` 由调用方传入 (避免在 lib/util 引入 React hook); 不传则直读
+ * user-settings-store (与 errors.ts / view-note.ts 等同源)。
  */
-export function buildWordHtml(title: string, bodyHtml: string): string {
+export function buildWordHtml(title: string, bodyHtml: string, language?: AppLanguage): string {
+  const lang = language ?? useUserSettingsStore.getState().settings.language;
+  const fallback = translate(lang, 'common.untitled');
   return `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office"
       xmlns:w="urn:schemas-microsoft-com:office:word"
       xmlns="http://www.w3.org/TR/REC-html40">
 <head>
 <meta charset="utf-8" />
-<title>${escapeHtml(title || '未命名')}</title>
+<title>${escapeHtml(title || fallback)}</title>
 <!--[if gte mso 9]>
 <xml>
   <w:WordDocument>
@@ -141,8 +148,12 @@ export function buildWordHtml(title: string, bodyHtml: string): string {
 </html>`;
 }
 
-/** Strip characters that are illegal in file names on common desktop file systems. */
-export function sanitizeFileName(name: string): string {
+/** Strip characters that are illegal in file names on common desktop file systems.
+ *
+ * `language` 由调用方传入 (避免在 lib/util 引入 React hook); 不传则直读
+ * user-settings-store。空名回落当前语言下的 common.untitled。
+ */
+export function sanitizeFileName(name: string, language?: AppLanguage): string {
   const cleaned = (name || '')
     .split('')
     .map((ch) => (ILLEGAL_FILENAME_CONTROLS.has(ch) || ILLEGAL_FILENAME_CHARS.has(ch) ? '_' : ch))
@@ -150,5 +161,7 @@ export function sanitizeFileName(name: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, MAX_FILE_NAME_LENGTH);
-  return cleaned || '未命名';
+  if (cleaned) return cleaned;
+  const lang = language ?? useUserSettingsStore.getState().settings.language;
+  return translate(lang, 'common.untitled');
 }

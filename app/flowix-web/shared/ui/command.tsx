@@ -5,6 +5,7 @@ import { Command as CommandPrimitive, useCommandState } from 'cmdk';
 import { Search, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@features/i18n';
 
 /**
  * Command palette (shadcn UI 风格, 基于 cmdk).
@@ -161,6 +162,7 @@ function CommandDialog({
   showOverlay = true,
   showCloseButton = false,
 }: CommandDialogProps) {
+  const { t } = useI18n();
   // 与 dialog.tsx 一致: 独立的 mounted / visible 状态让退出动画跑完再卸载。
   const [mounted, setMounted] = React.useState(open);
   const [visible, setVisible] = React.useState(open);
@@ -225,7 +227,7 @@ function CommandDialog({
               type="button"
               onClick={() => onOpenChange(false)}
               className="absolute top-3 right-3 z-10 p-1 rounded-md text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-              aria-label="关闭"
+              aria-label={t('common.close')}
             >
               <X className="w-4 h-4" />
             </button>

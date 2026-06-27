@@ -1,16 +1,36 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { sanitizeAppLanguage, type AppLanguage } from "@features/i18n"
+import { useUserSettingsStore } from "@features/preferences/store/user-settings-store"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
 /**
- * Format a timestamp (ms) to a consistent YYYY/M/D HH:mm string
+ * Format a timestamp (ms) to a localized date string.
+ *
+ *  - zh-CN: 紧凑数字格式 `YYYY/M/D HH:mm` (列表项高密度场景)
+ *  - en-US: 简写形式 `June 24, 2025` (Intl.DateTimeFormat long month)
+ *  - 默认 language 取自当前 AppLanguage; 不传则直读 user-settings-store。
+ *
+ *  设计: 不在 lib/util 引入 React hook, 调用方按需传 language。
+ *  ── 见 errors.ts / view-note.ts / export.ts 同源约定。
  */
-export function formatDateTime(timestamp: number | null | undefined): string {
+export function formatDateTime(
+  timestamp: number | null | undefined,
+  language?: AppLanguage,
+): string {
   if (!timestamp) return ''
   const d = new Date(timestamp)
+  const lang = language ?? sanitizeAppLanguage(useUserSettingsStore.getState().settings.language)
+  if (lang === "en-US") {
+    return new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }).format(d)
+  }
   const pad = (n: number) => n.toString().padStart(2, '0')
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }

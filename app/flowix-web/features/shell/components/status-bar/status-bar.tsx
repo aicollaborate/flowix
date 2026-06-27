@@ -78,12 +78,12 @@ export function StatusBar({
         {charCount > 0 && <span className="text-[var(--muted-foreground)]">{t('status.characters')} {charCount}</span>}
       </div>
       <div className="flex-1" />
-      <Tooltip content="笔记导航">
+      <Tooltip content={t('shell.statusBar.noteNavTooltip')}>
         <button
           type="button"
           onClick={onToggleNoteNavigation}
           className="h-full flex items-center gap-1 px-1.5 py-0 hover:bg-[var(--muted)] mr-1"
-          aria-label="笔记导航"
+          aria-label={t('shell.statusBar.noteNav')}
         >
           <Hash className="w-3.5 h-3.5" />
         </button>

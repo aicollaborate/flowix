@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { memoRepository, notebookRepository, type FilterType, type SortType } from '@features/memo/services';
 import { STORAGE_KEYS } from '@/lib/constants';
+import { useTagStore } from '@features/memo/store/tag-store';
 
 import type { MemoColor, MemoItem } from '@/types/memo-item';
 
@@ -244,8 +245,10 @@ export const useMemoStore = create<MemoStore>()(
         // v4: 不再 markLocalMemoCreated — 后端 SelfWriteSuppressor 把
         // desktop 自写的 memo-event 在 watcher 端就掐掉, 不再到前端。
         // 事件去重/抑制由后端统一负责, 前端 store 不需要任何补丁。
-        const memo = await memoRepository.create(tag, notebookId);
         const state = get();
+        const selectedTagId = useTagStore.getState().selectedTagId;
+        const createTag = tag ?? (state.activeFilter === 'tagged' ? selectedTagId ?? undefined : undefined);
+        const memo = await memoRepository.create(createTag, notebookId);
         set({
           memos: upsertSortedMemo(state.memos, memo as MemoItem, state.activeFilter, state.activeSort),
         });

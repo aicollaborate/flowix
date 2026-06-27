@@ -18,6 +18,7 @@ import {
 } from "@shared/ui/dropdown-menu";
 import { Tooltip } from "@shared/ui/tooltip";
 import { AGENT_ROLES, getAgentRole } from "@/lib/agent-roles";
+import { useI18n } from "@features/i18n";
 
 interface AgentRootProps {
 	onSendMessage?: (content: string, options?: { includeSelectedFile?: boolean }) => void;
@@ -76,13 +77,14 @@ function AgentRuntimeSwitcher() {
 }
 
 function WindowsAgentHeader({ onClosePanel, onSelectThread }: AgentHeaderProps) {
+	const { t } = useI18n();
 	return (
 		<div
 			data-tauri-drag-region
 			className="shrink-0 h-9 pl-2 pr-[126px] flex items-center gap-0"
 		>
 			{onClosePanel && (
-				<Tooltip content="关闭面板">
+				<Tooltip content={t("common.close")}>
 					<button
 						onClick={onClosePanel}
 						className="w-6 h-8 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--agent-foreground)] rounded-lg transition-colors"
@@ -98,13 +100,14 @@ function WindowsAgentHeader({ onClosePanel, onSelectThread }: AgentHeaderProps) 
 }
 
 function MacAgentHeader({ onClosePanel, onSelectThread }: AgentHeaderProps) {
+	const { t } = useI18n();
 	return (
 		<div
 			data-tauri-drag-region
 			className="shrink-0 h-12 px-2 flex items-center gap-0"
 		>
 			{onClosePanel && (
-				<Tooltip content="关闭面板">
+				<Tooltip content={t("common.close")}>
 					<button
 						onClick={onClosePanel}
 						className="w-6 h-8 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--agent-foreground)] rounded-lg transition-colors"

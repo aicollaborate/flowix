@@ -123,10 +123,10 @@ export function FormatSection({ settings, updateSettings }: FormatSectionProps) 
       try {
         await ensureDownloadedFontRegistered(font.id);
         setFontCacheStatus((status) => ({ ...status, [font.id]: true }));
-        toast.success('字体已下载到本地');
+        toast.success(t('preferences.format.fontDownloaded'));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        toast.error(`字体下载失败：${message}`);
+        toast.error(t('preferences.format.fontDownloadFailed', { message }));
         return;
       } finally {
         setLoadingFontId(null);
@@ -183,7 +183,7 @@ export function FormatSection({ settings, updateSettings }: FormatSectionProps) 
               className="flex-1 text-left"
               style={{ fontFamily: settings.fontFamily }}
             >
-              {loadingFontId === currentFont?.id ? '下载中...' : fontLabel}
+              {loadingFontId === currentFont?.id ? t('preferences.format.downloading') : fontLabel}
             </span>
           </SelectTrigger>
           <SelectContent align="end" className="w-72">
@@ -194,10 +194,10 @@ export function FormatSection({ settings, updateSettings }: FormatSectionProps) 
                   {font.source === 'downloadable' && (
                     <span className="text-[10px] text-[var(--muted-foreground)]">
                       {loadingFontId === font.id
-                        ? '下载中'
+                        ? t('preferences.format.fontStatus.downloading')
                         : fontCacheStatus[font.id]
-                          ? '已下载'
-                          : '需下载'}
+                          ? t('preferences.format.fontStatus.downloaded')
+                          : t('preferences.format.fontStatus.needsDownload')}
                     </span>
                   )}
                 </span>

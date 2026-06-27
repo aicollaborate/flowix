@@ -1,6 +1,8 @@
 import { Node as TiptapNode, mergeAttributes } from '@tiptap/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { web, type WebPageMetadata } from '@platform/tauri/client';
+import { translate, type I18nKey } from '@features/i18n';
+import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -88,6 +90,13 @@ async function parsePage(url: string): Promise<WebPageMetadata> {
   }
 }
 
+// NodeView 不在 React 树内 ── 走 user-settings-store 读最新 AppLanguage,
+// 与 agent-thread-card 的 `t(key)` 模式同源 (跨窗口同步跟 I18nProvider 一致)。
+function t(key: I18nKey): string {
+  const language = useUserSettingsStore.getState().settings.language;
+  return translate(language, key);
+}
+
 function renderCard(card: HTMLElement, attrs: WebCardAttrs) {
   card.innerHTML = '';
   if (!attrs.url) return;
@@ -97,7 +106,7 @@ function renderCard(card: HTMLElement, attrs: WebCardAttrs) {
 
   const title = document.createElement('div');
   title.className = 'web-card-title';
-  title.textContent = attrs.title || attrs.url || '网页';
+  title.textContent = attrs.title || attrs.url || t('editor.webCard.titleFallback');
 
   const description = document.createElement('div');
   description.className = 'web-card-description';
@@ -201,12 +210,12 @@ export const WebCard = TiptapNode.create({
       const input = document.createElement('input');
       input.className = 'web-card-input';
       input.type = 'url';
-      input.placeholder = '粘贴网页链接';
+      input.placeholder = t('editor.webCard.urlPlaceholder');
       input.value = attrs.url;
 
       const status = document.createElement('div');
       status.className = 'web-card-status';
-      status.textContent = '输入链接后按 Enter 解析';
+      status.textContent = t('editor.webCard.inputHint');
 
       editorWrap.append(input, status);
       dom.append(editorWrap);
@@ -243,22 +252,22 @@ export const WebCard = TiptapNode.create({
       const submit = async () => {
         const url = normalizeUrlInput(input.value);
         if (!url) {
-          status.textContent = '请输入网页链接';
+          status.textContent = t('editor.webCard.emptyUrl');
           return;
         }
 
         const currentRequest = ++requestId;
-        setLoading(true, '正在解析网页...');
+        setLoading(true, t('editor.webCard.parsing'));
         try {
           const metadata = await parsePage(url);
           if (currentRequest !== requestId) return;
           writeAttrs(normalizeAttrs(metadata));
-          setLoading(false, '解析完成');
+          setLoading(false, t('editor.webCard.parsed'));
           setActive(false);
         } catch {
           if (currentRequest !== requestId) return;
           writeAttrs({ ...attrs, url });
-          setLoading(false, '解析失败，已保留链接');
+          setLoading(false, t('editor.webCard.parseFailed'));
           setActive(true);
         }
       };

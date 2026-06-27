@@ -18,7 +18,7 @@
   try {
     var cached = localStorage.getItem('flowix-theme');
     var resolved;
-    if (cached === 'dark' || cached === 'light' || cached === 'rock') {
+    if (cached === 'dark' || cached === 'light' || cached === 'rock' || cached === 'mist') {
       resolved = cached;
     } else {
       resolved = window.matchMedia('(prefers-color-scheme: dark)').matches

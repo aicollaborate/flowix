@@ -4,6 +4,7 @@ import { SparkleIcon } from '@phosphor-icons/react';
 import { useEffect } from 'react';
 import { useSettingsStore } from '@features/shell';
 import { useChatStore } from '@features/agent/store/chat-store';
+import { useI18n } from '@features/i18n';
 
 interface SelectionBubbleMenuProps {
   editor: Editor;
@@ -32,6 +33,7 @@ const TOP_FLIP_PADDING = 56;
  * the staged prompt on its next render.
  */
 export function SelectionBubbleMenu({ editor }: SelectionBubbleMenuProps) {
+  const { t } = useI18n();
   const setAgentPanelVisible = useSettingsStore((state) => state.setAgentPanelVisible);
   const setPendingPrompt = useChatStore((state) => state.setPendingPrompt);
   const setPendingCitation = useChatStore((state) => state.setPendingCitation);
@@ -154,7 +156,7 @@ export function SelectionBubbleMenu({ editor }: SelectionBubbleMenuProps) {
           onClick={handleAskAI}
         >
           <SparkleIcon className="selection-bubble-icon" size={12} weight="fill" />
-          <span className="selection-bubble-label">使用AI询问</span>
+          <span className="selection-bubble-label">{t('editor.bubble.askAI')}</span>
         </button>
       </div>
     </BubbleMenu>

@@ -1,5 +1,7 @@
 // 流式响应等待态: 跳动的圆点 + 文字上的扫光高亮。Tailwind 不生成 keyframes,
 // 故 @keyframes agentThinkingDot / agentThinkingShine 留在 index.css。
+import { useI18n } from "@features/i18n";
+
 const DOT_CLASS =
 	"w-2 h-2 rounded-full bg-primary animate-[agentThinkingDot_1.6s_ease-in-out_infinite]";
 const TEXT_CLASS =
@@ -10,11 +12,12 @@ const TEXT_CLASS =
 	"after:[filter:blur(2.5px)] after:skew-x-[-18deg] after:animate-[agentThinkingShine_2.2s_ease-in-out_infinite]";
 
 export function AgentThinkingIndicator() {
+	const { t } = useI18n();
 	return (
 		<div className="px-6 py-1">
 			<div className="inline-flex items-center gap-2">
 				<span aria-hidden="true" className={DOT_CLASS} />
-				<span className={TEXT_CLASS}>思考中</span>
+				<span className={TEXT_CLASS}>{t("agent.thinking")}</span>
 			</div>
 		</div>
 	);
