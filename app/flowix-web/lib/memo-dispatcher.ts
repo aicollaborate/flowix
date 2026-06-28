@@ -89,7 +89,7 @@ installMemoDedup();
 function refreshDerivedMetadata(event: MemoEvent): void {
   const { notebookId, derivedChanged } = event;
 
-  if (derivedChanged.tags) {
+  if (derivedChanged.tags || derivedChanged.agents || derivedChanged.todos) {
     void useTagStore.getState().loadTags(notebookId);
     useTagStore.getState().triggerMetadataRefresh();
   }
@@ -97,6 +97,11 @@ function refreshDerivedMetadata(event: MemoEvent): void {
   if (derivedChanged.todos) {
     void useTodoCountStore.getState().loadTodoCount(notebookId);
   }
+}
+
+function isEventForSelectedNotebook(event: MemoEvent): boolean {
+  const selectedNotebookId = useMemoStore.getState().selectedNotebook?.id;
+  return !selectedNotebookId || selectedNotebookId === event.notebookId;
 }
 
 // ---- 4 个 memo-store 派发 handler --------------------------------------------
@@ -109,6 +114,10 @@ memoDispatcher.subscribe(
   (event) => {
     if (event.kind !== 'created') return;
     const memoStore = useMemoStore.getState();
+    if (!isEventForSelectedNotebook(event)) {
+      refreshDerivedMetadata(event);
+      return;
+    }
     memoStore.handleMemoCreated(event.memo, { select: event.source === 'external_tool' });
     refreshDerivedMetadata(event);
     if (event.source === 'external_tool') {
@@ -128,6 +137,10 @@ memoDispatcher.subscribe(
 memoDispatcher.subscribe(
   (event) => {
     if (event.kind !== 'updated') return;
+    if (!isEventForSelectedNotebook(event)) {
+      refreshDerivedMetadata(event);
+      return;
+    }
     useMemoStore.getState().handleMemoUpdated(event.memo);
     useDocumentStore.getState().replaceActiveMemoPath(event.id, event.path);
     refreshDerivedMetadata(event);
@@ -138,6 +151,10 @@ memoDispatcher.subscribe(
 memoDispatcher.subscribe(
   (event) => {
     if (event.kind !== 'deleted') return;
+    if (!isEventForSelectedNotebook(event)) {
+      refreshDerivedMetadata(event);
+      return;
+    }
     useMemoStore.getState().handleMemoDeleted(event.id);
     refreshDerivedMetadata(event);
   },

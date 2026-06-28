@@ -62,6 +62,26 @@ export interface FormatConfig {
   documentWidth: number;
 }
 
+export type PropertyFieldType =
+  | 'Text'
+  | 'Number'
+  | 'Date'
+  | 'URL'
+  | 'Icon'
+  | 'Select'
+  | 'MultiSelect';
+
+export interface PropertyFieldConfig {
+  key: string;
+  name: string;
+  type: PropertyFieldType;
+  options?: string[];
+}
+
+export interface PropertiesConfig {
+  fields: PropertyFieldConfig[];
+}
+
 export interface UserSettings {
   personalize: PersonalizeConfig;
   format: FormatConfig;
@@ -76,6 +96,8 @@ export interface UserSettings {
    * 后端 schema 见 backend/src/user_config.rs::PreferenceFile。
    */
   shortcuts: ShortcutOverrides;
+  /** 用户主动配置过的自定义属性字段定义, 持久化到 preference.json。 */
+  properties: PropertiesConfig;
 }
 
 /**
@@ -185,6 +207,9 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   language: DEFAULT_APP_LANGUAGE,
   // 启动时无任何用户覆盖, 所有 action 走 ActionDefinition.defaultBinding。
   shortcuts: {},
+  properties: {
+    fields: [],
+  },
 };
 
 // UI 常量

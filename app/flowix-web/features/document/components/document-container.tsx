@@ -388,6 +388,12 @@ export function DocumentContainer({
           content={propertiesContentSnapshot ?? state.fullContent}
           onOpenChange={(open) => {
             if (open) {
+              // 打开属性面板前清掉 autosave debounce timer, 避免:
+              // 1. 用户敲了字后立刻打开面板 → 1s 后 timer 触发, 用
+              //    propertiesContentSnapshot (尚未含属性改动) 覆盖磁盘;
+              // 2. 用户在面板里改完属性, saveDoc(force) 已落盘, 但 timer
+              //    随后再用旧 snapshot 走 CAS-fail 之外的路径把磁盘回滚。
+              clearSaveTimer();
               const latestContent = flushPendingEditorChanges();
               if (latestContent !== null) {
                 setPropertiesContentSnapshot(latestContent);

@@ -27,6 +27,17 @@ pub(crate) fn mark_self_write_for(app: &AppHandle, path: &Path) {
     }
 }
 
+pub(crate) fn refresh_watcher_roots(state: &AppState, app: &AppHandle) {
+    let configs = read_lock(&state.memo_file, "memo_file")
+        .read_notebook_configs()
+        .unwrap_or_default();
+    if let Some(watcher) = current_watcher(app) {
+        if let Ok(mut g) = watcher.write() {
+            g.rebind_all(app.clone(), configs);
+        }
+    }
+}
+
 pub(crate) fn switch_notebook_importing_disk_as_new(
     state: &AppState,
     app: &AppHandle,
@@ -93,13 +104,6 @@ fn switch_notebook(
             poisoned.into_inner()
         })
         .set_current_notebook(notebook_id);
-
-    if let Some(watcher) = current_watcher(app) {
-        let new_dir = read_lock(&state.memo_file, "memo_file").get_memo_base();
-        if let Ok(mut g) = watcher.write() {
-            g.rebind(app.clone(), Some(new_dir));
-        }
-    }
 
     match reconcile_mode {
         ReconcileMode::Skip => {}
@@ -254,6 +258,7 @@ pub(crate) fn synthesize_minimal_memo(id: &str) -> flowix_core::memo_file::Memo 
         thumbnail: None,
         tags: vec![],
         todos: vec![],
+        agents: vec![],
         created_at: 0,
         updated_at: 0,
         favorited: false,

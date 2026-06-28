@@ -54,19 +54,19 @@ mod versions;
 
 // 公开 API re-export — 跟旧 `memo_file.rs` 的 pub use 边界一致。
 pub use derivation::{
-    apply_derived_memo_fields, extract_tags_from_body, extract_title_and_preview,
-    extract_todos_from_body,
+    apply_derived_memo_fields, extract_agent_threads_from_body, extract_tags_from_body,
+    extract_title_and_preview, extract_todos_from_body,
 };
 pub use frontmatter::{
-    build_md_content, extract_body_content, extract_frontmatter_key, merge_frontmatter,
-    MergeOverrides,
+    build_md_content, extract_body_content, extract_frontmatter_key, extract_frontmatter_properties,
+    merge_frontmatter, MergeOverrides,
 };
 pub use ops::{
     atomic_write_bytes, base_filename, resolve_filename_conflict, sanitize_filename_component, IsMd,
 };
 pub use types::{
-    Memo, MemoColor, MemoIndexEntry, MemoIndexFile, MemoLocation, MemoMetadataFile, MemoTag,
-    MemoTodoEntry, Notebook, NotebookConfig, ReconcileReport, TodoItem,
+    AgentThreadItem, Memo, MemoColor, MemoIndexEntry, MemoIndexFile, MemoLocation,
+    MemoMetadataFile, MemoTag, MemoTodoEntry, Notebook, NotebookConfig, ReconcileReport, TodoItem,
 };
 pub use versions::{
     MemoVersionManifest, MemoVersionMeta, MemoVersionSource, MEMO_AUTO_VERSION_INTERVAL_MS,

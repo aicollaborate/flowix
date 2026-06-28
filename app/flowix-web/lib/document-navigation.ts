@@ -38,6 +38,7 @@ function memoFromHistoryEntry(entry: MemoHistoryEntry): MemoItem {
     preview: '',
     tags: [],
     todos: [],
+    agents: [],
     createdAt: 0,
     updatedAt: entry.openedAt,
     favorited: false,
@@ -76,6 +77,7 @@ async function ensureNotebook(entry: MemoHistoryEntry): Promise<Notebook | null>
 }
 
 async function openMemoHistoryEntry(entry: MemoHistoryEntry): Promise<void> {
+  useMemoStore.getState().setSelectedMemo(memoFromHistoryEntry(entry));
   const notebook = await ensureNotebook(entry);
   const path = canonicalPath(entry.path);
   const memo = memoFromHistoryEntry(entry);

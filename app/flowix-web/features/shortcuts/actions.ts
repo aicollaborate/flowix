@@ -58,7 +58,7 @@ import { resolveSystemTheme, type ResolvedThemeId, type ThemeId } from '@feature
 // ── 模块常量 ──────────────────────────────────────────────
 
 /** theme.toggle 的循环顺序 — 与 lib/theme/options.ts 的 THEME_OPTIONS 同序。 */
-const THEME_CYCLE: readonly ThemeId[] = ['system', 'light', 'dark', 'rock', 'mist'];
+const THEME_CYCLE: readonly ThemeId[] = ['system', 'light', 'dark', 'rock', 'mist', 'ember'];
 
 function resolveThemeId(theme: ThemeId, prefersDark: boolean): ResolvedThemeId {
   return theme === 'system' ? resolveSystemTheme(prefersDark) : theme;
@@ -384,7 +384,7 @@ export const notebookSwitcherToggleAction = defineAction({
 // ── 视图 ──────────────────────────────────────────────────
 
 /**
- * 循环切换主题: system → light → dark → rock → mist → system。
+ * 循环切换主题: system → light → dark → rock → mist → ember → system。
  *
  * scope: 'window' — 任意位置都生效, 包括 Tiptap 编辑器内部。 这是"切主题"
  * 操作的天然诉求: 用户在编辑 memo 时也想切。`⌘⌥T` / `Ctrl+Alt+T` 是双修饰

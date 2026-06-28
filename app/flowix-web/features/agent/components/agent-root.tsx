@@ -17,7 +17,7 @@ import {
 	DropdownMenuTrigger,
 } from "@shared/ui/dropdown-menu";
 import { Tooltip } from "@shared/ui/tooltip";
-import { AGENT_ROLES, getAgentRole } from "@/lib/agent-roles";
+import { AGENT_TYPES, getAgentType } from "@/lib/agent-types";
 import { useI18n } from "@features/i18n";
 
 interface AgentRootProps {
@@ -32,10 +32,10 @@ interface AgentHeaderProps {
 
 const IS_WINDOWS = /Windows/i.test(navigator.userAgent) || /Win/i.test(navigator.platform);
 
-function AgentRuntimeSwitcher() {
-	const activeRoleKey = useChatStore((s) => s.activeAgentRoleKey);
-	const setActiveAgentRoleKey = useChatStore((s) => s.setActiveAgentRoleKey);
-	const current = getAgentRole(activeRoleKey);
+function AgentTypeSwitcher() {
+	const activeTypeKey = useChatStore((s) => s.activeAgentTypeKey);
+	const setActiveAgentTypeKey = useChatStore((s) => s.setActiveAgentTypeKey);
+	const current = getAgentType(activeTypeKey);
 
 	return (
 		<DropdownMenu>
@@ -53,12 +53,12 @@ function AgentRuntimeSwitcher() {
 				</button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" className="w-36 p-1">
-				{AGENT_ROLES.map((item) => {
-					const selected = item.key === activeRoleKey;
+				{AGENT_TYPES.map((item) => {
+					const selected = item.key === activeTypeKey;
 					return (
 						<DropdownMenuItem
 							key={item.key}
-							onClick={() => setActiveAgentRoleKey(item.key)}
+							onClick={() => setActiveAgentTypeKey(item.key)}
 							className="flex cursor-pointer items-center gap-2"
 						>
 							<img
@@ -81,7 +81,7 @@ function WindowsAgentHeader({ onClosePanel, onSelectThread }: AgentHeaderProps) 
 	return (
 		<div
 			data-tauri-drag-region
-			className="shrink-0 h-9 pl-2 pr-[126px] flex items-center gap-0"
+			className="flex h-9 shrink-0 select-none items-center gap-0 pl-2 pr-[126px]"
 		>
 			{onClosePanel && (
 				<Tooltip content={t("common.close")}>
@@ -93,7 +93,7 @@ function WindowsAgentHeader({ onClosePanel, onSelectThread }: AgentHeaderProps) 
 					</button>
 				</Tooltip>
 			)}
-			<AgentRuntimeSwitcher />
+			<AgentTypeSwitcher />
 			<ChatHistory onSelectThread={onSelectThread} />
 		</div>
 	);
@@ -104,7 +104,7 @@ function MacAgentHeader({ onClosePanel, onSelectThread }: AgentHeaderProps) {
 	return (
 		<div
 			data-tauri-drag-region
-			className="shrink-0 h-12 px-2 flex items-center gap-0"
+			className="flex h-12 shrink-0 select-none items-center gap-0 px-2"
 		>
 			{onClosePanel && (
 				<Tooltip content={t("common.close")}>
@@ -116,7 +116,7 @@ function MacAgentHeader({ onClosePanel, onSelectThread }: AgentHeaderProps) {
 					</button>
 				</Tooltip>
 			)}
-			<AgentRuntimeSwitcher />
+			<AgentTypeSwitcher />
 			<ChatHistory onSelectThread={onSelectThread} />
 		</div>
 	);
@@ -147,14 +147,14 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	//     exceeded")銆?	//  2. 鏀?threadStates shape 鏃? 鑻ユ柊澧炲瓧娈靛悓鏍烽渶瑕?module-level
 	//     绌哄父閲忓厹搴? 缁ф壙杩欎釜 pattern銆?
 	const activeThreadId = useChatStore((s) =>
-		getAgentRole(s.activeAgentRoleKey).runtime === "codex" ? s.activeCodexThreadId : s.activeThreadId
+		getAgentType(s.activeAgentTypeKey).key === "codex" ? s.activeCodexThreadId : s.activeThreadId
 	);
 	const messages = useChatStore((s) => {
-		const tid = getAgentRole(s.activeAgentRoleKey).runtime === "codex" ? s.activeCodexThreadId : s.activeThreadId;
+		const tid = getAgentType(s.activeAgentTypeKey).key === "codex" ? s.activeCodexThreadId : s.activeThreadId;
 		return tid ? s.threadStates[tid]?.messages ?? EMPTY_MESSAGES : EMPTY_MESSAGES;
 	});
 	const isLoading = useChatStore((s) => {
-		const tid = getAgentRole(s.activeAgentRoleKey).runtime === "codex" ? s.activeCodexThreadId : s.activeThreadId;
+		const tid = getAgentType(s.activeAgentTypeKey).key === "codex" ? s.activeCodexThreadId : s.activeThreadId;
 		return tid ? s.threadStates[tid]?.isLoading ?? false : false;
 	});
 	const onSendMessageStore = useChatStore((s) => s.sendMessageStream);
@@ -164,7 +164,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	const loadMoreHistory = useChatStore((s) => s.loadMoreHistory);
 	const hasMoreHistory = useChatStore((s) => {
 		const tid =
-			getAgentRole(s.activeAgentRoleKey).runtime === "codex"
+			getAgentType(s.activeAgentTypeKey).key === "codex"
 				? s.activeCodexThreadId
 				: s.activeThreadId;
 		return tid ? s.threadStates[tid]?.hasMoreHistory ?? false : false;
@@ -172,8 +172,8 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	const loadThreadList = useChatStore((s) => s.loadThreadList);
 	const loadCodexThread = useChatStore((s) => s.loadCodexThread);
 	const loadCodexThreadList = useChatStore((s) => s.loadCodexThreadList);
-	const activeRoleKey = useChatStore((s) => s.activeAgentRoleKey);
-	const activeRole = getAgentRole(activeRoleKey);
+	const activeTypeKey = useChatStore((s) => s.activeAgentTypeKey);
+	const activeType = getAgentType(activeTypeKey);
 
 	// 鍚姩鏃舵帰涓€涓?ai_config.json 鏄惁宸插～ model 鈥?浠呭喅瀹氳涓嶈鐩存帴璺冲亸濂借缃?
 	// 鐪熸鐨?provider 鐢卞悗绔湪 chat 鏃舵瀯寤恒€?
@@ -191,7 +191,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 				}
 			}
 		})();
-		if (getAgentRole(useChatStore.getState().activeAgentRoleKey).runtime === "codex") {
+		if (getAgentType(useChatStore.getState().activeAgentTypeKey).key === "codex") {
 			loadCodexThreadList();
 		} else {
 			loadThreadList();
@@ -202,18 +202,18 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	}, []);
 
 	useEffect(() => {
-		if (activeRole.runtime === "codex") {
+		if (activeType.key === "codex") {
 			loadCodexThreadList();
 		} else {
 			loadThreadList();
 		}
-	}, [activeRole.runtime, loadCodexThreadList, loadThreadList]);
+	}, [activeType.key, loadCodexThreadList, loadThreadList]);
 
 	// activeThreadId 鍙樺寲 鈫?閲嶆柊浠?SQLite 鎷変竴娆?(merge 杩涚幇鏈?in-memory
 	// state, 涓嶄細瑕嗙洊姝ｅ湪璺戠殑 streaming chunk)銆?涓嶅啀渚濊禆鍏ㄥ眬 threadId銆?
 	useEffect(() => {
 		if (activeThreadId) {
-			if (activeRole.runtime === "codex") {
+			if (activeType.key === "codex") {
 				if (!activeThreadId.startsWith("codex-local-")) {
 					loadCodexThread(activeThreadId);
 				}
@@ -221,7 +221,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 				loadThread(activeThreadId);
 			}
 		}
-	}, [activeThreadId, activeRole.runtime, loadCodexThread, loadThread]);
+	}, [activeThreadId, activeType.key, loadCodexThread, loadThread]);
 
 	// Scroll to bottom 鈥?but only when messages are being appended or
 	// updated (streaming chunks / new sends). A wholesale replace from
@@ -305,7 +305,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	}, []);
 
 	// Layer 4: 顶部触达检测 + prepend 后视口稳定.
-	// 触发条件: 滚动距离顶部 < 200px AND has-more AND 当前是 flowix runtime
+	// 触发条件: 滚动距离顶部 < 200px AND has-more AND 当前是 flowix agentType
 	// (codex 走独立 codex_thread_get, 本期不分页).
 	//
 	// 视口稳定算法: prepend 前快照 scrollHeight → prepend 完成 resolve 后,
@@ -314,7 +314,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	// 虚拟项 measure 好再写 scrollTop, 否则会跳一下.
 	//
 	// **F-1 修复 (thread-switch race)**: handler 启动时 `activeThreadId` 闭
-	// 包捕获的是 effect setup 时的值. IPC in-flight 期间用户切 thread/role
+	// 包捕获的是 effect setup 时的值. IPC in-flight 期间用户切 thread/type
 	// 会导致 rAF 回调里 `el` 已是新 thread 的 scroll container, 此时再写
 	// `el.scrollTop` 会把新 thread 的视口推到错位置. 修复: 在 `.then` 与
 	// rAF 回调里用 `useChatStore.getState()` 直读最新 active thread, 与
@@ -333,9 +333,9 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	useEffect(() => {
 		const el = scrollRef.current;
 		if (!el) return;
-		// codex runtime 不分页 ── Layer 4 仅对 flowix 后端做了 SQL 分页, codex
+		// codex agentType 不分页 ── Layer 4 仅对 flowix 后端做了 SQL 分页, codex
 		// 走 codex_history::get_session 仍是全量, 不必拦截.
-		if (activeRole.runtime === "codex") return;
+		if (activeType.key === "codex") return;
 
 		const handler = () => {
 			if (el.scrollTop > PREFETCH_TOP_THRESHOLD_PX) return;
@@ -350,9 +350,9 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 			// 期间用户切 thread 不会反映到这里. 用 `getState()` 拿实时值.
 			const isStillOnSameThread = (): boolean => {
 				const s = useChatStore.getState();
-				const role = getAgentRole(s.activeAgentRoleKey);
+				const type = getAgentType(s.activeAgentTypeKey);
 				const currentTid =
-					role.runtime === "codex" ? s.activeCodexThreadId : s.activeThreadId;
+					type.key === "codex" ? s.activeCodexThreadId : s.activeThreadId;
 				return currentTid === tidAtCall;
 			};
 
@@ -376,7 +376,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 		// 初次进入也判定一次 (短 thread 可能首屏就触顶, 自动加载更多).
 		handler();
 		return () => el.removeEventListener("scroll", handler);
-	}, [activeThreadId, activeRole.runtime, hasMoreHistory, loadMoreHistory]);
+	}, [activeThreadId, activeType.key, hasMoreHistory, loadMoreHistory]);
 
 
 	// 鎶婃枃鏈€佽繘 chat store 鐨?pendingPrompt, 鐢?Inputbox 鑷繁鐨?effect 璋?	// setInput 鍐欏叆鍙楁帶 state 鈥?鐩存帴鏀?DOM ref 浼氳 value={input} 鐨勫彈鎺?	// textarea 鍦ㄤ笅娆℃覆鏌撴椂鍥炴粴, 鍙戦€佹寜閽殑 disabled 涔熻涓嶅埌鍊笺€?
@@ -385,7 +385,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	};
 
 	const handleSendMessage = (content: string, options?: { includeSelectedFile?: boolean }) => {
-		if (activeRole.runtime === "flowix" && isAgentConfigured === false) {
+		if (activeType.key === "flowix" && isAgentConfigured === false) {
 			windows.openPreferences("agent");
 			return;
 		}
@@ -397,7 +397,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 	};
 
 	const handleSelectThread = (threadId: string) => {
-		if (activeRole.runtime === "codex") {
+		if (activeType.key === "codex") {
 			loadCodexThread(threadId);
 		} else {
 			loadThread(threadId);
@@ -467,7 +467,7 @@ export function AgentChatRoot({ onSendMessage, onClosePanel }: AgentRootProps) {
 			    瀹瑰櫒鑷劧鏀剁缉鍒?Inputbox 楂樺害銆?*/}
 			<div className="shrink-0">
 				{isLoading && <AgentThinkingIndicator />}
-				{activeRole.runtime === "codex" ? (
+				{activeType.key === "codex" ? (
 					<CodexInputbox
 						ref={textareaRef}
 						onSend={handleSendMessage}

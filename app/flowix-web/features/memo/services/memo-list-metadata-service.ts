@@ -1,31 +1,19 @@
 import type { Notebook } from '@features/memo';
 import { memos, settings, tags } from '@platform/tauri/client';
-import type { SortType } from '@features/memo/services/memo-repository';
 
 const TAG_ORDER_SETTING_PREFIX = 'tag_order:';
 const TAG_LAYOUT_SETTING_PREFIX = 'tag_layout:';
 const HIDDEN_TAGS_SETTING_PREFIX = 'hidden_tags:';
-const PARSE_LOADING_THRESHOLD_BYTES = 80_000;
-
-export interface MemoTodoMetadataEntry {
-  content: string;
-  status: string;
-  memoId: string;
-  priority?: string;
-  timeRange?: string;
-  owner?: string;
-  assignee?: string;
-  createdAt?: number;
-  updatedAt?: number;
-}
 
 export interface MemoLibraryMetadata {
   tagMap: Record<string, string>;
   tagOptions: MemoTagTreeItem[];
-  tagOrder: string[];
   tagLayout: MemoTagLayoutItem[];
   hiddenTagIds: string[];
   selectedTagId: string | null;
+  totalMemoCount: number;
+  agentMemoCount: number;
+  todoMemoCount: number;
 }
 
 export interface MemoTagLayoutItem {
@@ -36,18 +24,12 @@ export interface MemoTagLayoutItem {
 export interface MemoTagTreeItem extends MemoTagLayoutItem {
   name: string;
   depth: number;
+  count: number;
 }
 
 interface LoadMemoLibraryMetadataParams {
   notebook: Notebook;
   selectedTagId: string | null;
-  beforeLargeParse?: (content: string) => Promise<boolean>;
-}
-
-interface LoadTodoMetadataParams {
-  notebookId: string;
-  sort: SortType;
-  beforeLargeParse?: () => Promise<boolean>;
 }
 
 function getTagOrderSettingKey(notebookId: string): string {
@@ -155,9 +137,11 @@ function normalizeTagLayout({
 function buildTagTreeOptions({
   layout,
   tagById,
+  tagCounts,
 }: {
   layout: MemoTagLayoutItem[];
   tagById: Map<string, string>;
+  tagCounts: Map<string, number>;
 }): MemoTagTreeItem[] {
   const childrenByParent = new Map<string | null, MemoTagLayoutItem[]>();
   for (const item of layout) {
@@ -179,6 +163,7 @@ function buildTagTreeOptions({
       name,
       parentId: item.parentId,
       depth,
+      count: tagCounts.get(item.id) ?? 0,
     });
     for (const child of childrenByParent.get(item.id) ?? []) {
       visit(child, depth + 1);
@@ -195,29 +180,29 @@ function buildTagTreeOptions({
   return result;
 }
 
-export function shouldShowMetadataParseLoading(content: string | null | undefined): boolean {
-  return (content?.length ?? 0) >= PARSE_LOADING_THRESHOLD_BYTES;
-}
-
 export async function loadMemoLibraryMetadata({
   notebook,
   selectedTagId,
-  beforeLargeParse,
 }: LoadMemoLibraryMetadataParams): Promise<MemoLibraryMetadata | null> {
-  const [tagsResult, usedTagIdsResult, tagOrderSetting, tagLayoutSetting, hiddenTagsSetting] = await Promise.all([
+  const [
+    tagsResult,
+    usedTagIdsResult,
+    tagOrderSetting,
+    tagLayoutSetting,
+    hiddenTagsSetting,
+  ] = await Promise.all([
     tags.getAll(notebook.id).catch((error) => {
       console.warn('[memo-list-metadata-service] Failed to load tags:', error);
       return { tags: [] };
     }),
     memos.getUsedTagIds(notebook.id).catch((error) => {
       console.warn('[memo-list-metadata-service] Failed to load used tags:', error);
-      return { usedTagIds: [] };
+      return { usedTagIds: [], tagCounts: [], totalMemoCount: 0, agentMemoCount: 0, todoMemoCount: 0 };
     }),
     settings.get(getTagOrderSettingKey(notebook.id)).catch(() => ({ value: null })),
     settings.get(getTagLayoutSettingKey(notebook.id)).catch(() => ({ value: null })),
     settings.get(getHiddenTagsSettingKey(notebook.id)).catch(() => ({ value: null })),
   ]);
-  void beforeLargeParse;
 
   const tagMap: Record<string, string> = {};
   const allTagDefinitions = tagsResult.tags ?? [];
@@ -227,6 +212,9 @@ export async function loadMemoLibraryMetadata({
 
   const usedTagIds = usedTagIdsResult.usedTagIds;
   const usedTagIdSet = new Set(usedTagIds);
+  const tagCounts = new Map(
+    (usedTagIdsResult.tagCounts ?? []).map(({ tagId, count }) => [tagId, count]),
+  );
 
   const savedOrder = parseStringArraySetting(tagOrderSetting?.value, 'saved tag order');
   const savedLayout = parseTagLayoutSetting(tagLayoutSetting?.value);
@@ -235,7 +223,6 @@ export async function loadMemoLibraryMetadata({
     savedLayout,
     savedOrder,
   });
-  const tagOrder = tagLayout.map((item) => item.id);
 
   const tagById = new Map(
     usedTagIds.map((id) => [
@@ -243,7 +230,7 @@ export async function loadMemoLibraryMetadata({
       tagMap[id] ?? allTagDefinitions.find((tag) => tag.id === id)?.name ?? id,
     ]),
   );
-  const tagOptions = buildTagTreeOptions({ layout: tagLayout, tagById });
+  const tagOptions = buildTagTreeOptions({ layout: tagLayout, tagById, tagCounts });
 
   const savedHidden = parseStringArraySetting(hiddenTagsSetting?.value, 'saved hidden tags');
   const hiddenTagIds = savedHidden.filter((id) => usedTagIdSet.has(id));
@@ -251,29 +238,18 @@ export async function loadMemoLibraryMetadata({
   return {
     tagMap,
     tagOptions,
-    tagOrder,
     tagLayout,
     hiddenTagIds,
     selectedTagId: selectedTagId && usedTagIdSet.has(selectedTagId) ? selectedTagId : null,
+    totalMemoCount: usedTagIdsResult.totalMemoCount ?? 0,
+    agentMemoCount: usedTagIdsResult.agentMemoCount ?? 0,
+    todoMemoCount: usedTagIdsResult.todoMemoCount ?? 0,
   };
 }
 
-export async function loadTodoMetadata({
-  notebookId,
-  sort,
-  beforeLargeParse,
-}: LoadTodoMetadataParams): Promise<MemoTodoMetadataEntry[] | null> {
-  void beforeLargeParse;
-  return await memos.getTodoMetadata(notebookId, sort);
-}
-
 export async function getNotebookTodoCount(notebookId: string): Promise<number> {
-  return await memos.getTodoCount(notebookId);
-}
-
-export async function persistTagOrder(nextOrder: string[], notebookId: string | null | undefined): Promise<void> {
-  if (!notebookId) return;
-  await settings.set(getTagOrderSettingKey(notebookId), JSON.stringify(nextOrder));
+  const metadata = await memos.getUsedTagIds(notebookId);
+  return metadata.todoMemoCount ?? 0;
 }
 
 export async function persistTagLayout(
@@ -285,9 +261,4 @@ export async function persistTagLayout(
     settings.set(getTagLayoutSettingKey(notebookId), JSON.stringify(nextLayout)),
     settings.set(getTagOrderSettingKey(notebookId), JSON.stringify(nextLayout.map((item) => item.id))),
   ]);
-}
-
-export async function persistHiddenTags(nextHidden: string[], notebookId: string | null | undefined): Promise<void> {
-  if (!notebookId) return;
-  await settings.set(getHiddenTagsSettingKey(notebookId), JSON.stringify(nextHidden));
 }

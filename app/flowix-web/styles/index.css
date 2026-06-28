@@ -21,12 +21,13 @@
 @import './editor-attachment-link.css';
 
 /* 主题色板单一真源在 css/theme, JS 只通过 data-theme 切换;
- * 3 个主题 import 在 @layer base 之外, 保证 [data-theme="..."]
+ * 5 个主题 import 在 @layer base 之外, 保证 [data-theme="..."]
  * 选择器特异性优先于 tailwind base。 */
 @import './theme/light.css';
 @import './theme/dark.css';
 @import './theme/rock.css';
 @import './theme/mist.css';
+@import './theme/ember.css';
 
 @import "shadcn/tailwind.css";
 
@@ -254,6 +255,21 @@
 	90%, 100% {
 		left: 130%;
 		opacity: 0;
+	}
+}
+
+/* MemoList Agent 图标 (memo-card.tsx) "运行中" 的呼吸效果 ──
+ * opacity 在 1 ↔ 0.4 之间往返, 1.8s 一周期 ease-in-out,
+ * 让图标感觉在缓慢呼吸。配套 Tailwind arbitrary value:
+ *   animate-[agentStarBreathe_1.8s_ease-in-out_infinite]
+ *
+ * 关键帧必须留在 CSS 里, Tailwind arbitrary value 不会自动生成 @keyframes。 */
+@keyframes agentStarBreathe {
+	0%, 100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.4;
 	}
 }
 

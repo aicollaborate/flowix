@@ -3,7 +3,7 @@
 import { memo, useEffect, useState } from 'react';
 import { displayTitleFromFilename } from '@/lib/utils';
 import { MoreHorizontal } from 'lucide-react';
-import { PushPin } from "@phosphor-icons/react";
+import { StarFourIcon, CheckSquareIcon, PushPin } from "@phosphor-icons/react";
 import { MEMO_COLOR_HEX, type MemoItem } from '@features/memo';
 import { cn } from '@/lib/utils';
 import { useI18n, type I18nParams } from '@features/i18n';
@@ -31,6 +31,7 @@ interface MemoCardProps {
   onSelect: (memo: MemoItem) => void;
   onFavoriteToggle: (memo: MemoItem) => void;
   onDelete: (memo: MemoItem) => void;
+  isAgentRunning?: boolean;
 }
 
 function formatTimeAgo(timestamp: number, t: (key: import("@features/i18n").I18nKey, params?: I18nParams) => string): string {
@@ -67,11 +68,14 @@ export function MemoCardImpl({
   onSelect,
   onFavoriteToggle,
   onDelete,
+  isAgentRunning = false,
 }: MemoCardProps) {
   const { t } = useI18n();
   const selectedIdentifier = selectedMemo?.id || null;
   const thumbnail = thumbnailSrc(memo.thumbnail);
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const hasAgents = (memo.agents?.length ?? 0) > 0;
+  const hasTodos = (memo.todos?.length ?? 0) > 0;
 
   useEffect(() => {
     setThumbnailFailed(false);
@@ -116,6 +120,25 @@ export function MemoCardImpl({
                           style={{ backgroundColor: MEMO_COLOR_HEX[c] }}
                         />
                       ))}
+                    </span>
+                  )}
+                  {(hasAgents || hasTodos) && (
+                    <span
+                      aria-hidden="true"
+                      className="mr-0.5 inline-flex items-center gap-0.5 align-[-0.125em] text-[var(--muted-foreground)]"
+                    >
+                      {hasAgents && (
+                        <StarFourIcon
+                          className={cn(
+                            "h-3.5 w-3.5",
+                            isAgentRunning && "animate-[agentStarBreathe_1.8s_ease-in-out_infinite] text-[var(--primary)]"
+                          )}
+                          weight="regular"
+                        />
+                      )}
+                      {hasTodos && (
+                        <CheckSquareIcon className="h-3.5 w-3.5" weight="regular" />
+                      )}
                     </span>
                   )}
                   <span className="min-w-0">

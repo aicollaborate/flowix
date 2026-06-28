@@ -31,3 +31,7 @@ vite-dev.err.log
 
 # Build outputs
 *.tsbuildinfo
+
+# Local runtime / scratch
+app/flowix-desktop/index.db
+momo-yellow.png

@@ -2,7 +2,7 @@ import { Extension, type Editor } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { Plugin, TextSelection } from '@tiptap/pm/state';
 
-import { DEFAULT_AGENT_ROLE_KEY } from '@/lib/agent-roles';
+import { DEFAULT_AGENT_TYPE_KEY } from '@/lib/agent-types';
 
 const TABLE_CELL_TYPES = new Set(['tableCell', 'tableHeader']);
 const DOUBLE_TAB_WINDOW_MS = 650;
@@ -96,7 +96,7 @@ export const TabCharacter = Extension.create({
               pendingTab = null;
               view.dispatch(view.state.tr.delete(tab.insertedFrom, tab.insertedTo));
               editor.chain().focus().insertAgentThreadCard({
-                roleKey: DEFAULT_AGENT_ROLE_KEY,
+                typeKey: DEFAULT_AGENT_TYPE_KEY,
                 replaceRange: { from: tab.from, to: tab.to },
                 initialPrompt: tab.prompt,
                 autoSubmit: true,

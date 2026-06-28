@@ -21,7 +21,6 @@ import type { NodeView as ProseMirrorNodeView, EditorView } from '@tiptap/pm/vie
 import { Node, nodeInputRule, nodePasteRule, type InputRuleMatch, type PasteRuleMatch } from '@tiptap/core';
 import { NodeSelection, Plugin } from '@tiptap/pm/state';
 
-import { setInlineAtomTextSelectionFromMouse } from '@features/editor/extensions/shared/inline-atom-selection';
 import { readMarkdownLinkDestination } from '@features/editor/extensions/shared/markdown-link-destination';
 import { openNoteByMemoId, openNoteByPhysicalPath, resolveMemoById, resolveMemoByPath } from '@features/editor/extensions/note-link/memo-resolver';
 import { escapeHtml, parseBooleanAttr, pickAttr, splitDisplay, stripMdSuffix, unescapeHtml } from '@features/editor/extensions/note-link/markdown';
@@ -231,8 +230,6 @@ class NoteReferenceView implements ProseMirrorNodeView {
   private view: EditorView;
   private getPos: (() => number | undefined) | undefined;
   private clickHandler: (e: MouseEvent) => void;
-  private mousedownHandler: (e: MouseEvent) => void;
-  private suppressNextClickSelection = false;
   /** 节点已销毁标记. 异步 refresh 跑完后写回 doc 时如果发现 destroyed,
    * 立即放弃 dispatch, 避免 dispatch 到已死的 view 触发 PM 内部错误,
    * 或把 attrs 写到错的 noteReference 节点 (pos 处已被别的节点占据). */
@@ -244,9 +241,6 @@ class NoteReferenceView implements ProseMirrorNodeView {
     this.getPos = getPos;
     this.dom = this.createCard();
     this.clickHandler = (e) => this.handleClick(e);
-    this.mousedownHandler = (e) => this.handleMouseDown(e);
-    // 监听挂在外层 wrapper 上, 与 view-file 同源
-    this.dom.addEventListener('mousedown', this.mousedownHandler);
     this.dom.addEventListener('click', this.clickHandler);
 
     // mount 时异步校验: 用 memoId 反查最新 title / notebookName / 路径,
@@ -333,8 +327,7 @@ class NoteReferenceView implements ProseMirrorNodeView {
     //  - 必须是 TextNode (createTextNode), <span> 不行——
     //    span 的边缘问题与 icon 相同, caret 仍会贴其左/右边缘.
     //  - 零宽空格 U+200B 不可见、不占字宽, 视觉上无副作用.
-    //  - wrapper 整体 contentEditable=false + user-select:none
-    //    (见 editor-note-reference.css), 用户无法选中或编辑.
+    //  - wrapper 整体 contentEditable=false, 用户无法编辑节点内部 DOM.
     //  - ignoreMutation 返回 true, PM 不会把这段 DOM 视为内容变更.
     //  - 前后对称两个 spacer: 保证从左侧进卡片 (← / Home) 与从右侧
     //    出卡片 (→ / End) 时 caret 着陆点一致.
@@ -343,12 +336,6 @@ class NoteReferenceView implements ProseMirrorNodeView {
     wrapper.appendChild(caretSpacerLeading);
     wrapper.appendChild(card);
     wrapper.appendChild(caretSpacerTrailing);
-
-    // 选中态 toggle (与 view-file 的 selectNode/deselectNode 同源,
-    // 但挂在 card 上, 因为高亮背景在 .is-selected .editor-note-reference__card)
-    card.addEventListener('selectstart', (e) => {
-      e.preventDefault();
-    });
 
     return wrapper;
   }
@@ -359,11 +346,6 @@ class NoteReferenceView implements ProseMirrorNodeView {
 
     // 双击才触发跳转; 单击 / ⌘+click / Ctrl+click 都不打开。
     if (e.detail < 2) {
-      if (this.suppressNextClickSelection) {
-        this.suppressNextClickSelection = false;
-        return;
-      }
-
       // 键盘触发的 click 没有前置 mousedown, 仍保留节点选中语义。
       const pos = this.getPos?.();
       if (pos !== undefined) {
@@ -372,8 +354,6 @@ class NoteReferenceView implements ProseMirrorNodeView {
       }
       return;
     }
-
-    this.suppressNextClickSelection = false;
 
     const attrs = this.node.attrs as NoteReferenceAttrs;
 
@@ -409,25 +389,6 @@ class NoteReferenceView implements ProseMirrorNodeView {
       // eslint-disable-next-line no-console
       console.warn('[note-reference] open failed:', err);
     }
-  }
-
-  private handleMouseDown(e: MouseEvent): void {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    const pos = this.getPos?.();
-    if (pos === undefined) return;
-
-    const card = this.dom.querySelector('.editor-note-reference__card');
-    setInlineAtomTextSelectionFromMouse({
-      view: this.view,
-      node: this.node,
-      pos,
-      event: e,
-      referenceElement: card ?? this.dom,
-    });
-    this.suppressNextClickSelection = true;
   }
 
   private refreshCard(): void {
@@ -580,7 +541,6 @@ class NoteReferenceView implements ProseMirrorNodeView {
 
   destroy(): void {
     this.destroyed = true;
-    this.dom.removeEventListener('mousedown', this.mousedownHandler);
     this.dom.removeEventListener('click', this.clickHandler);
   }
 }

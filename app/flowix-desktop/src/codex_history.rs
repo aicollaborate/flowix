@@ -7,7 +7,7 @@ use walkdir::WalkDir;
 use crate::agent::AgentId;
 use crate::threads::{ChatMessage, ThreadInfo};
 
-const RUNTIME: &str = "codex";
+const AGENT_TYPE: &str = "codex";
 
 pub async fn list_sessions() -> Result<Vec<ThreadInfo>, String> {
     tokio::task::spawn_blocking(list_codex_sessions)
@@ -73,7 +73,7 @@ fn list_codex_sessions() -> Result<Vec<ThreadInfo>, String> {
                 .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
             ThreadInfo {
                 thread_id: draft.id,
-                agent_id: AgentId::new(RUNTIME),
+                agent_id: AgentId::new(AGENT_TYPE),
                 title: draft
                     .title
                     .filter(|t| !t.trim().is_empty())

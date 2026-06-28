@@ -380,12 +380,17 @@ export function createSuggestionExtension<TItem>(config: SuggestionMenuConfig<TI
 
             return {
               update(updatedView) {
+                if (updatedView.isDestroyed) return;
                 if (updatedView !== view || !menuState) return;
                 refreshMenuFromEditor(updatedView);
               },
               destroy() {
-                view.dom.removeEventListener('compositionstart', handleCompositionStart);
-                view.dom.removeEventListener('compositionend', handleCompositionEnd);
+                // view 可能已经被所属 Editor 销毁 (e.g. 语言切换触发重建) —
+                // 再读 view.dom 会触发 "editor view is not available"。
+                if (!view.isDestroyed) {
+                  view.dom.removeEventListener('compositionstart', handleCompositionStart);
+                  view.dom.removeEventListener('compositionend', handleCompositionEnd);
+                }
                 closeMenu();
               },
             };

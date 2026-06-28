@@ -312,6 +312,13 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
 }, ref) {
   const { t } = useI18n();
   const resolvedPlaceholder = placeholder || t('editor.placeholder');
+  // placeholder 是 mount effect 的输入字符串，但本身不应成为 mount 的依赖：
+  // i18n 切换会让 resolvedPlaceholder 重新生成，导致 Editor 被 destroy→重建，
+  // 重建间隙各 extension 读 view.dom 触发 "editor view is not available"。
+  // 这里把最新值放在 ref 里：mount 时读一次初值，运行时通过下面的同步 effect
+  // 原地更新 Placeholder.options 并 dispatch meta 触发重新装饰。
+  const resolvedPlaceholderRef = useRef(resolvedPlaceholder);
+  resolvedPlaceholderRef.current = resolvedPlaceholder;
   const elementRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
   const [isScrolling, setIsScrolling] = useState(false);
@@ -352,7 +359,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
 
   const serializePendingChanges = useCallback((options?: { force?: boolean }) => {
     const editor = editorRef.current;
-    if (!editor || !pendingSerializeDirtyRef.current) {
+    if (!editor || editor.isDestroyed || !pendingSerializeDirtyRef.current) {
       return null;
     }
 
@@ -510,7 +517,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
           },
         }),
         Placeholder.configure({
-          placeholder: resolvedPlaceholder,
+          placeholder: resolvedPlaceholderRef.current,
         }),
         Tag,
         ManagedPasteRules,
@@ -627,7 +634,24 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       editor.destroy();
       editorRef.current = null;
     };
-  }, [applyExternalContent, findScrollable, resolvedPlaceholder, schedulePendingSerialization, serializePendingChanges]);
+  }, [applyExternalContent, findScrollable, schedulePendingSerialization, serializePendingChanges]);
+
+  // 语言切换时，原地把 Placeholder extension 的 placeholder 字符串换掉，
+  // 再 dispatch 一条带 'placeholder-update' meta 的空事务触发装饰重算。
+  // 不重建 Editor — 重建会让 view.dom 瞬间失效，extension 子树的 unmount
+  // 路径里读 view.dom 会触发 "The editor view is not available"。
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || editor.isDestroyed) return;
+    const placeholderExt = editor.extensionManager.extensions.find(
+      (ext) => ext.name === 'placeholder',
+    );
+    if (!placeholderExt) return;
+    placeholderExt.options.placeholder = resolvedPlaceholder;
+    editor.view.dispatch(
+      editor.state.tr.setMeta('placeholder-update', true),
+    );
+  }, [resolvedPlaceholder]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -635,7 +659,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     if (editor && pendingSerializeDirtyRef.current) {
       serializePendingChanges({ force: true });
     }
-    if (!editor || normalizedContent === contentRef.current) {
+    if (!editor || editor.isDestroyed || normalizedContent === contentRef.current) {
       return;
     }
 

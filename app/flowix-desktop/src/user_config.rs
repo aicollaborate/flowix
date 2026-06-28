@@ -56,11 +56,31 @@ pub struct FormatConfig {
     pub document_width: f64,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyFieldConfig {
+    #[serde(default)]
+    pub key: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub r#type: String,
+    #[serde(default)]
+    pub options: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertiesConfig {
+    #[serde(default)]
+    pub fields: Vec<PropertyFieldConfig>,
+}
+
 /// 合法主题枚举 — 替代原来的裸 `String`, 在 serde 边界上约束取值。
 ///
 /// 序列化形式是小写字符串 (`"system"` / `"light"` / ...), 与前端 `ThemeId` 联合
 /// 类型字面量一一对应; 老的 preference.json (字符串) 仍然兼容读取。
-/// 任何不在 5 个变体里的字符串 (例如用户手改磁盘 / 未来客户端加新主题) 会在
+/// 任何不在 6 个变体里的字符串 (例如用户手改磁盘 / 未来客户端加新主题) 会在
 /// 反序列化阶段直接报错, 不会写回内存 — 兜底由前端的 sanitizeTheme 兜底成 "system"。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -71,6 +91,9 @@ pub enum Theme {
     Dark,
     Rock,
     Mist,
+    /// 暖米纸面 + 珊瑚橙焦点 (主色 #FB6A42), 与 rock/mist 占据同一"克制单
+    /// 色 + 单色锚"槽位但走暖色路线。 前端 css/theme/ember.css 提供色板。
+    Ember,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -92,6 +115,9 @@ pub struct PreferenceFile {
     /// 时由 `#[serde(default)]` 兜底为空, 不抛错。
     #[serde(default)]
     pub shortcuts: HashMap<String, String>,
+    /// 用户主动配置过的自定义属性字段定义。前端用于属性弹窗回显。
+    #[serde(default)]
+    pub properties: PropertiesConfig,
     /// 文件监听白/黑名单 (skip_dirs / skip_files / allowed_extensions /
     /// max_file_size / watch_hidden)。PR2: 持久化到 preference.json,
     /// PR3 接入 IPC 热更新。

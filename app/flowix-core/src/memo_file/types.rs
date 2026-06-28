@@ -46,7 +46,7 @@ pub enum MemoColor {
 /// - `id`: 6 位 shortid, memo index 的内部 key / 深链 / noteReference 节点 id。
 /// - `filename`: 磁盘文件名, 含 `.md` 后缀 (如 `Hello.md` / `Hello-1.md`)。
 ///   列表展示前端去掉 `.md`; 编辑器内展示用 `MemoItem.filename` 直接可。
-/// - `preview` / `tags` / `todos`: 从 body 派生的 memo index 缓存字段。
+/// - `preview` / `tags` / `todos` / `agents`: 从 body 派生的 memo index 缓存字段。
 /// - `favorited` / `icon` / `colors`: 装饰字段, 仅 memo index 持久化。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Memo {
@@ -60,6 +60,8 @@ pub struct Memo {
     pub tags: Vec<String>,
     #[serde(rename = "todos")]
     pub todos: Vec<TodoItem>,
+    #[serde(default, rename = "agents")]
+    pub agents: Vec<AgentThreadItem>,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
     #[serde(rename = "updatedAt")]
@@ -76,6 +78,18 @@ pub struct Memo {
 pub struct TodoItem {
     pub content: String,
     pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentThreadItem {
+    #[serde(rename = "threadId")]
+    pub thread_id: String,
+    pub title: String,
+    // agent_type ── 与前端 `AgentTypeKey` (types/agent.ts) 对齐。 之前
+    // 用 `role_key` + serde rename "roleKey" 容易跟 agent role (角色
+    // persona) 混淆, 改名为 agent_type + serde rename "agentType"。
+    #[serde(rename = "agentType")]
+    pub agent_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,6 +151,8 @@ pub struct MemoIndexEntry {
     pub thumbnail: Option<String>,
     pub tags: Vec<String>,
     pub todos: Vec<TodoItem>,
+    #[serde(default)]
+    pub agents: Vec<AgentThreadItem>,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
     #[serde(rename = "updatedAt")]

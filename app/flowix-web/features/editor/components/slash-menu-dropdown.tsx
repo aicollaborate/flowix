@@ -15,7 +15,7 @@ import {
   VideoCameraIcon,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
-import { getAgentRole } from '@/lib/agent-roles';
+import { getAgentType } from '@/lib/agent-types';
 import { ShortcutKbd } from '@shared/ui/shortcut-kbd';
 import {
   OverlayScrollbar,
@@ -41,7 +41,7 @@ export type SlashMenuItemId =
   | 'create-child-note'
   | 'reference-note';
 
-// Agent 角色项用图片资源展示角色图标（与 agent-roles.ts 集中管理的图标同源）；
+// Agent 类型项用图片资源展示角色图标（与 agent-types.ts 集中管理的图标同源）；
 // 其它项用 Phosphor 图标组件。两种渲染分支在 SlashMenuDropdown 内分发。
 export type SlashMenuIcon = PhosphorIcon | string;
 
@@ -90,18 +90,18 @@ export function getSlashMenuItemSection(item: SlashMenuItem, language: AppLangua
 export const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   {
     id: 'agent-thread-flowix',
-    label: getAgentRole('flowix').name,
+    label: getAgentType('flowix').name,
     description: 'AI Agent',
     keywords: ['ai', 'agent', 'thread', 'chat', 'duihua', 'flowix', '任务', 'renwu', 'task'],
-    icon: getAgentRole('flowix').icon,
+    icon: getAgentType('flowix').icon,
     section: 'AI',
   },
   {
     id: 'agent-thread-codex',
-    label: getAgentRole('codex').name,
+    label: getAgentType('codex').name,
     description: 'AI Agent',
     keywords: ['codex', 'openai', 'code', 'bianma', '任务', 'renwu', 'task'],
-    icon: getAgentRole('codex').icon,
+    icon: getAgentType('codex').icon,
     section: 'AI',
   },
   {

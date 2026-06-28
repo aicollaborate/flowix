@@ -299,7 +299,7 @@ const BaseInputbox = forwardRef<HTMLTextAreaElement, BaseInputboxProps>((props, 
 	const canSend = !isLoading && input.trim() !== "";
 
 	return (
-		<div className="px-4 pb-2.5 max-h-[45vh]">
+		<div className="max-h-[45vh] select-none px-4 pb-2.5">
 			<div className="relative rounded-2xl border border-[var(--ring)]">
 				<div className="px-3 pt-2 pb-1.5">
 					{selectedMemos.length > 0 && (

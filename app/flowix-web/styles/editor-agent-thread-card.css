@@ -7,7 +7,7 @@
   --atc-header-h: 40px;
 }
 
-.agent-role-badge {
+.agent-type-badge {
   display: inline-flex;
   align-items: center;
 	justify-content: center;
@@ -22,7 +22,7 @@
   user-select: none;
 }
 
-.agent-role-badge__icon {
+.agent-type-badge__icon {
   display: block;
   width: 1rem;
   height: 1rem;
@@ -34,7 +34,7 @@
   margin-bottom: 0 !important;
 }
 
-.agent-role-badge__name {
+.agent-type-badge__name {
   display: inline-block;
   font-size: 12px;        /* text-xs */
   line-height: 1;
@@ -47,11 +47,35 @@
 .markdown-editor .agent-thread-card {
   margin: 1rem 0;
   background: var(--document-bg);
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.markdown-editor .agent-thread-card * {
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.markdown-editor .agent-thread-card button,
+.markdown-editor .agent-thread-card a,
+.markdown-editor .agent-thread-card [role="button"] {
+  cursor: pointer;
+}
+
+.markdown-editor .agent-thread-card button *,
+.markdown-editor .agent-thread-card a *,
+.markdown-editor .agent-thread-card [role="button"] * {
+  cursor: inherit;
 }
 
 .markdown-editor .agent-thread-card__container {
   display: grid;
   grid-template-rows: var(--atc-header-h) 1fr auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   max-height: var(--atc-max-height);
   padding: 0;
@@ -60,6 +84,10 @@
   overflow: hidden;
   background: var(--editor-block-bg);
   color: var(--foreground);
+}
+
+.markdown-editor .agent-thread-card--thread-cache-loading:not(.agent-thread-card--collapsed) .agent-thread-card__container {
+  min-height: var(--atc-min-height);
 }
 
 .markdown-editor .agent-thread-card--fullscreen {
@@ -91,6 +119,8 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* NodeSelection 选中态 ── 覆盖 editor.css:729 的全局 .ProseMirror-selectednode
@@ -134,6 +164,7 @@
   justify-content: space-between;
   gap: 10px;
   height: var(--atc-header-h);
+  min-width: 0;
   padding: 0 0.8rem;
   box-sizing: border-box;
   /* 与 body 视觉合一: 背景透明, header 继承 container 的
@@ -143,9 +174,9 @@
   background: transparent;
 }
 
-/* 左侧: agent-role-badge (icon + role 名) + 对话标题 单行排版, 整体
+/* 左侧: agent-type-badge (icon + role 名) + 对话标题 单行排版, 整体
  * flex 1 让 meta 推到右边。role 名称已迁出到 badge 内, 这里只剩 title。
- * badge 样式见本文件顶部的 .agent-role-badge 块, 这里只负责外层布局。 */
+ * badge 样式见本文件顶部的 .agent-type-badge 块, 这里只负责外层布局。 */
 .markdown-editor .agent-thread-card__agent {
   display: flex;
   align-items: center;
@@ -320,7 +351,7 @@
  *
  * ── 颜色 ──
  *   - var(--border) ── 跨三套主题 (light/dark/rock) 都有定义, 与卡片
- *     其它 1px 描边 (e.g. agent-role-badge) 用同一 token, 视觉一致。
+ *     其它 1px 描边 (e.g. agent-type-badge) 用同一 token, 视觉一致。
  *   - 不用 var(--muted-foreground) ── 那是文字色 token, 在分割线这
  *     种"非文字"几何元素上复用偏亮, 会让分割线变成"第二条文字"。 */
 .markdown-editor .agent-thread-card__actions-divider {
@@ -384,7 +415,13 @@
   /* transition 配合 .--collapsed 折叠: padding 3.6rem 12px → 0, 150ms ease 塌缩。
    * 注: 现在折叠改用 display: none ── body 直接消失; padding transition
    * 仍保留, 给后续若想"保留行只压内容"的玩法留接口。 */
-  transition: padding 150ms ease;
+  opacity: 1;
+  transition: padding 150ms ease, opacity 120ms ease;
+}
+
+.markdown-editor .agent-thread-card--thread-cache-loading .agent-thread-card__body {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* 折叠态 ── 隐藏 body / error / composer, 卡片仅保留 header。
@@ -435,7 +472,8 @@
   padding: 0;
   border-radius: 0;
   background: transparent;
-  user-select: text;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* ── user: 气泡 + 靠右 ──────────────────────────────────────────
@@ -458,6 +496,26 @@
 .markdown-editor .agent-thread-card__message--assistant {
   padding: 4px 0 0;
   color: var(--foreground);
+}
+
+/* ── assistant 消息: 允许文本选择 + 默认 text 光标 ────────────────
+ * 覆盖父级 .agent-thread-card * (user-select: none; cursor: default) ──
+ * AI 输出的纯文本应当可被选中复制, 光标在消息区呈现输入 (I-beam) 样式。
+ *
+ * cursor: text 只挂在 message 本体 ── 内部 <a> 等子元素保留自身的 cursor
+ * 规则 (e.g. .agent-thread-card a { cursor: pointer }), 不被 text 覆盖。
+ * cursor 是继承属性, 没有自身 cursor 的子元素自然继承 text。
+ *
+ * user-select 在 message 与 * 双重声明 text ── 即便浏览器把 user-select
+ * 视为非继承, 子元素的 text 也能独立覆盖 * 的 none, 阻断祖先链上的禁用。 */
+.markdown-editor .agent-thread-card__message--assistant,
+.markdown-editor .agent-thread-card__message--assistant * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.markdown-editor .agent-thread-card__message--assistant {
+  cursor: text;
 }
 
 /* ── reasoning: 可折叠 ── 对齐面板 message-reasoning 布局 ─────────
@@ -815,6 +873,7 @@
   display: flex;
   align-items: center;
   gap: 0.3rem;
+  width: fit-content;
   flex-shrink: 0;
   height: 38px;
   padding: 0rem;
@@ -830,13 +889,50 @@
   height: 0.5rem;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: currentColor;
-  animation: agentThinkingDot 1.6s ease-in-out infinite;
+  background: var(--muted-foreground);
+  animation:
+    agentThinkingDot 1.45s ease-in-out infinite,
+    agentThreadCardWorkingDot 1.45s linear infinite;
+}
+
+.markdown-editor .agent-thread-card__loading-text {
+  color: transparent;
+  /* 单层扫光: 3 stop (暗→亮→暗) — 只一个亮度峰, 没有 white 核叠在 foreground 晕上 */
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--muted-foreground) 55%, transparent) 0%,
+      var(--foreground) 50%,
+      color-mix(in oklch, var(--muted-foreground) 55%, transparent) 100%
+    );
+  background-size: 200% 100%;
+  background-position: 100% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: agentThreadCardWorkingText 1.2s linear infinite;
 }
 
 .markdown-editor .agent-thread-card__loading-dot[hidden],
 .markdown-editor .agent-thread-card__loading-text[hidden] {
   display: none;
+}
+
+@keyframes agentThreadCardWorkingText {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: -100% 50%;
+  }
+}
+
+@keyframes agentThreadCardWorkingDot {
+  0%, 100% {
+    background: var(--muted-foreground);
+  }
+  45%, 55% {
+    background: white;
+  }
 }
 
 /* 折叠态 ── 与 body 一起消失, 不留孤立的 24px 空白带。 */
@@ -880,7 +976,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 5px;
   align-self: end;
   width: calc(100% - 24px);
   margin: 0 0.8rem 0.6rem;
@@ -890,6 +986,7 @@
   background: transparent;
   box-sizing: border-box;
   max-height: 15rem;
+  user-select: none;
 }
 
 .markdown-editor .agent-thread-card__composer--disabled {
@@ -898,6 +995,76 @@
 
 .markdown-editor .agent-thread-card__composer--multi-line {
   align-items: flex-end;
+}
+
+.markdown-editor .agent-thread-card__composer-role-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  align-self: center;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  border-radius: 6px;
+  background: var(--muted);
+  color: var(--secondary-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+/* 之前 `hidden` 时 display: none ── 现在 composerRoleIcon 永远是 button,
+ * 不再设 hidden 属性, 这条规则保留作兜底, 防止后续调用方误设 hidden 时
+ * 留下 24px 空白 (auto 行高 collapse 已处理, 但显式更稳)。 */
+.markdown-editor .agent-thread-card__composer-role-icon[hidden] {
+  display: none;
+}
+
+.markdown-editor .agent-thread-card__composer-role-icon img,
+.markdown-editor .agent-thread-card__composer-role-icon svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  /* 子元素 SVG / img 不接收 pointer events ── 点击落到底层 button,
+   * 走统一的 click handler。 否则某些浏览器 (尤其带 ::after 高亮的
+   * svg) 会把事件吞掉, 让 button 的 onclick 不触发。 */
+  pointer-events: none;
+}
+
+/* 空态 Plus 图标 ── 14×14, 复用 access popover 新增资料夹按钮
+ * (`.agent-thread-card__access-add-icon`) 的尺寸。 20×20 对 Plus
+ * filled cross 来说偏大, 与按钮 24×24 容器几乎填满, 视觉上比 memo
+ * 文档图标更"重", 与"未设置"的轻量占位语义不符。 缩到 14×14 后,
+ * 与 access popover 新增资料夹视觉同源, "次级 indicator" 这一类
+ * UI 元素有统一节奏。 */
+.markdown-editor .agent-thread-card__composer-role-icon svg.agent-thread-card__composer-role-icon-empty {
+  width: 14px;
+  height: 14px;
+}
+
+/* hover / open 态 ── 与文件内 __icon-btn 的 hover 风格同源, 用 var(--muted)
+ * 与 var(--foreground) 混合色 + transition 150ms。 popover 打开时挂
+ * --open 修饰类, 视觉上"按钮被按下"。 */
+.markdown-editor .agent-thread-card__composer-role-icon:hover,
+.markdown-editor .agent-thread-card__composer-role-icon--open,
+.markdown-editor .agent-thread-card__composer-role-icon:focus-visible {
+  background: color-mix(in oklch, var(--muted) 80%, var(--foreground) 12%);
+  color: var(--foreground);
+  outline: none;
+}
+
+.markdown-editor .agent-thread-card__composer-role-icon.agent-thread-card__role-icon--svg {
+  color: #3f3f46;
+}
+
+[data-theme='dark'] .markdown-editor .agent-thread-card__composer-role-icon.agent-thread-card__role-icon--svg {
+  color: #fff;
 }
 
 .markdown-editor .agent-thread-card__composer textarea {
@@ -918,7 +1085,9 @@
   padding: 0;
   font: inherit;
   font-size: 15px;
+  cursor: text;
   outline: none;
+  user-select: none;
 }
 
 .markdown-editor .agent-thread-card__composer textarea:focus {
@@ -933,7 +1102,7 @@
 
 /* 发送按钮 ── 28×28 圆形, 内嵌 16×16 Phosphor 图标。
  * 尺寸取自 --atc-send-size, 与 textarea min-height 公式联动。 */
-.markdown-editor .agent-thread-card__access-trigger {
+.agent-thread-card__access-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -951,19 +1120,27 @@
   white-space: nowrap;
 }
 
-.markdown-editor .agent-thread-card__access-trigger:hover,
-.markdown-editor .agent-thread-card__access-trigger--open {
+.agent-thread-card__access-trigger:hover,
+.agent-thread-card__access-trigger--open {
   color: var(--foreground);
 }
 
-.markdown-editor .agent-thread-card__access-popover {
-  position: absolute;
-  right: calc(var(--atc-send-size) + 0.4rem);
-  bottom: calc(100% + 8px);
-  z-index: 20;
-  width: 260px;
-  max-height: 20rem;
-  overflow-y: auto;
+/* 整体外框 ── position: fixed, 不写 max-height 也不写 overflow。
+ *
+ * 关键设计 ── overflow: visible (默认) ── 让内嵌子节点越界时不被裁
+ * 剪 (例如 future inline submenu)。 max-height 不写 ── 由 JS 写到内层
+ * .access-popover-scroll 上, 控制 items 的滚动高度; outer 的高度 =
+ * scroll 实际高度 + footer 高度。
+ *
+ * 副作用 ── overflow visible 配合 box-shadow: shadow 仍按 outer 矩形
+ * 渲染, 不会因 visible 失效; border-radius 8px 配合 children 圆角 ──
+ * children 在 rounded 边缘内时被裁, 在外时不被裁。 */
+.agent-thread-card__access-popover {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9000;
+  width: 208px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
@@ -972,18 +1149,90 @@
   padding: 6px 4px;
 }
 
-.markdown-editor .agent-thread-card__access-popover[hidden] {
+/* 列表滚动容器 ── max-height 由 JS 动态计算 (= 可用空间 - footer 高度)。
+ * 列表行超出时只在列表区域内滚动, footer (添加资料夹按钮) 始终可见。 */
+.agent-thread-card__access-popover-scroll {
+  overflow-y: auto;
+}
+
+/* 底部 footer ── 装"添加资料夹"按钮。 仅 margin-top: 4px 给一个柔和
+ * 的呼吸空间 ── 不加 border-top 或 padding-top, 让 footer 与列表视觉
+ * 连续 (按钮是列表自然延伸, 不需要视觉"切断"的分割线)。 与 access
+ * popover 自身的 6px 内边距配合, 按钮不贴 outer 底边。
+ *
+ * 之前是 `.access-popover-actions` 在顶部 ── 用户先看到按钮再看列表;
+ * 现在 footer 在底部 ── 视觉路径变成"先扫列表 → 末尾才看到添加", 跟
+ * 邮件应用 / 文件管理器的 list-with-CTA 模式一致。 */
+.agent-thread-card__access-popover-footer {
+  margin-top: 4px;
+}
+
+.agent-thread-card__access-popover[hidden] {
   display: none;
 }
 
-.markdown-editor .agent-thread-card__access-empty {
+/* ── 角色选择下拉弹窗 (composer role popover) ────────────────────────
+ * 独立挂在 document.body, 通过 JS 算 position: fixed 坐标 (top/left)
+ * 锚定到 composerRoleIcon button 上方/下方。 视觉与 accessPopover 同源
+ * (border / radius / box-shadow / padding), 但去掉 actions/scroll 双
+ * 层结构 ── 单层 list + header, 因为它只承担"选择角色"一件事。
+ *
+ * 旧实现 (accessPopover → 「角色」按钮 → typeSettingsPopover 二级展开)
+ * 的 CSS 已删除 ── 现在走单级方案, 点击 composerRoleIcon 直接出这个
+ * 弹窗。 */
+.agent-thread-card__composer-role-popover {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9002;
+  width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--agent-foreground);
+  box-shadow: 0 10px 30px color-mix(in oklch, var(--foreground) 16%, transparent);
+  /* 弹窗入场动画 ── 与旧 type-settings-popover 一致: opacity 0→1 +
+   * scale 0.95→1, transform-origin top left (从 trigger 右上角弹出)。 */
+  opacity: 0;
+  transform: scale(0.95);
+  transform-origin: top left;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.agent-thread-card__composer-role-popover:not([hidden]) {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.agent-thread-card__composer-role-popover[hidden] {
+  display: none;
+}
+
+.agent-thread-card__composer-role-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 8px;
+}
+
+.agent-thread-card__composer-role-popover-title {
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.agent-thread-card__access-empty {
   padding: 12px 8px;
   text-align: center;
   color: var(--muted-foreground);
   font-size: 12px;
 }
 
-.markdown-editor .agent-thread-card__access-section-label {
+.agent-thread-card__access-section-label {
   padding: 6px 8px 4px;
   color: var(--muted-foreground);
   font-size: 11px;
@@ -991,14 +1240,14 @@
   letter-spacing: 0;
 }
 
-.markdown-editor .agent-thread-card__access-divider {
+.agent-thread-card__access-divider {
   margin: 4px 8px;
   border: 0;
   border-top: 1px solid var(--border);
   opacity: 0.5;
 }
 
-.markdown-editor .agent-thread-card__access-row {
+.agent-thread-card__access-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1009,20 +1258,20 @@
   transition: background-color 120ms ease;
 }
 
-.markdown-editor .agent-thread-card__access-row:hover {
-  background: var(--accent);
+.agent-thread-card__access-row:hover {
+  background: var(--muted);
 }
 
-.markdown-editor .agent-thread-card__access-row--disabled {
+.agent-thread-card__access-row--disabled {
   cursor: default;
   opacity: 0.6;
 }
 
-.markdown-editor .agent-thread-card__access-row--disabled:hover {
+.agent-thread-card__access-row--disabled:hover {
   background: transparent;
 }
 
-.markdown-editor .agent-thread-card__access-avatar {
+.agent-thread-card__access-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1036,13 +1285,29 @@
   font-weight: 600;
 }
 
-.markdown-editor .agent-thread-card__access-row-icon {
+.agent-thread-card__access-avatar--icon {
+  background: var(--muted);
+  color: #3f3f46;
+}
+
+[data-theme='dark'] .agent-thread-card__access-avatar--icon {
+  color: #fff;
+}
+
+.agent-thread-card__access-avatar--icon svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  opacity: 0.9;
+}
+
+.agent-thread-card__access-row-icon {
   width: 14px;
   height: 14px;
   color: var(--muted-foreground);
 }
 
-.markdown-editor .agent-thread-card__access-name-wrap {
+.agent-thread-card__access-name-wrap {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1050,7 +1315,7 @@
   flex: 1 1 auto;
 }
 
-.markdown-editor .agent-thread-card__access-name {
+.agent-thread-card__access-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1058,14 +1323,14 @@
   font-size: 13px;
 }
 
-.markdown-editor .agent-thread-card__access-alert-icon {
+.agent-thread-card__access-alert-icon {
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
   color: var(--warning);
 }
 
-.markdown-editor .agent-thread-card__access-default-badge {
+.agent-thread-card__access-default-badge {
   display: inline-flex;
   align-items: center;
   height: 20px;
@@ -1078,7 +1343,7 @@
   line-height: 1;
 }
 
-.markdown-editor .agent-thread-card__access-remove {
+.agent-thread-card__access-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1094,21 +1359,21 @@
   padding: 0;
 }
 
-.markdown-editor .agent-thread-card__access-row:hover .agent-thread-card__access-remove,
-.markdown-editor .agent-thread-card__access-remove:focus {
+.agent-thread-card__access-row:hover .agent-thread-card__access-remove,
+.agent-thread-card__access-remove:focus {
   opacity: 1;
 }
 
-.markdown-editor .agent-thread-card__access-remove:hover {
+.agent-thread-card__access-remove:hover {
   color: var(--destructive);
 }
 
-.markdown-editor .agent-thread-card__access-remove .agent-thread-card__trash-icon {
+.agent-thread-card__access-remove .agent-thread-card__trash-icon {
   width: 14px;
   height: 14px;
 }
 
-.markdown-editor .agent-thread-card__access-checkbox {
+.agent-thread-card__access-checkbox {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1125,40 +1390,214 @@
   line-height: 1;
 }
 
-.markdown-editor .agent-thread-card__access-checkbox--checked {
+.agent-thread-card__access-checkbox--checked {
   border-color: var(--primary);
   background: var(--primary);
 }
 
-.markdown-editor .agent-thread-card__access-checkbox:disabled {
+.agent-thread-card__access-checkbox:disabled {
   cursor: not-allowed;
 }
 
-.markdown-editor .agent-thread-card__access-add {
+.agent-thread-card__access-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  text-align: left;
+  box-sizing: border-box;
+  user-select: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.agent-thread-card__access-add:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.agent-thread-card__access-add-icon-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  background: var(--muted);
+  color: var(--secondary-foreground);
+}
+
+.agent-thread-card__access-add-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-thread-card__access-add-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+/* ── 角色设置弹窗 (composer role popover) ────────────────────────────
+ * 旧实现 (accessPopover → 「角色」按钮 → typeSettingsPopover 二级展开)
+ * 的 CSS 已删除 ── 现在走单级方案, 点击 composerRoleIcon 直接出这个
+ * 弹窗。 视觉与 accessPopover 同源 (border / radius / box-shadow /
+ * padding), 但内容只承载"选择角色"单层 list + header, 不需要 actions/
+ * scroll 双层结构。
+ *
+ * 角色项 ── 与旧 type-settings-item 完全同源视觉: min-height 36px /
+ * radius 6px / padding 6px 8px / gap 10px / hover bg var(--muted) /
+ * selected 走 muted 持续高亮 / disabled opacity 0.55 + not-allowed。
+ * icon 是 24×24 (与旧 notebook-icon 同尺寸, 因为现在 popover 更宽 ──
+ * 260px, 旧 submenu 也是 260px, 视觉对齐)。 */
+
+.agent-thread-card__composer-role-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  margin-top: 4px;
-  border: 1px solid var(--border);
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--agent-foreground);
   cursor: pointer;
-  padding: 6px 8px;
   font: inherit;
   font-size: 13px;
+  line-height: 1.2;
+  text-align: left;
+  box-sizing: border-box;
+  user-select: none;
+  transition: background-color 120ms ease;
 }
 
-.markdown-editor .agent-thread-card__access-add:hover {
+.agent-thread-card__composer-role-item + .agent-thread-card__composer-role-item {
+  margin-top: 2px;
+}
+
+.agent-thread-card__composer-role-item:hover {
   background: var(--muted);
 }
 
-.markdown-editor .agent-thread-card__access-add-icon {
-  width: 14px;
-  height: 14px;
+/* 当前 Role ── 选中态直接走 muted 底色 (无需独立 highlight token),
+ * hover 态保持一致 ── 让选中态在视觉上是"持续高亮", 而非"额外标记"。 */
+.agent-thread-card__composer-role-item--selected {
+  background: var(--muted);
+}
+
+.agent-thread-card__composer-role-item--selected:hover {
+  background: var(--muted);
+}
+
+/* 加载中 / 没有角色 ── 透明度 0.55 + not-allowed 光标 + hover 不显示背景 ──
+ * disabled 属性让 click 事件不触发, 避免误操作。 */
+.agent-thread-card__composer-role-item--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.agent-thread-card__composer-role-item--disabled:hover {
+  background: transparent;
+}
+
+/* icon ── 24×24 圆角头像, 复用旧 type-settings-notebook-icon 的视觉 ──
+ * 因为现在 popover 内容不再嵌套在 accessPopover 里, 这个 24px 头像的
+ * 视觉节奏与 role list 单层布局更搭 (旧 18px 太挤)。 */
+.agent-thread-card__composer-role-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--muted);
+  color: var(--secondary-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.agent-thread-card__composer-role-item-icon--svg {
+  background: var(--muted);
+  color: #3f3f46;
+}
+
+[data-theme='dark'] .agent-thread-card__composer-role-item-icon--svg {
+  color: #fff;
+}
+
+.agent-thread-card__composer-role-item-icon svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  opacity: 0.9;
+}
+
+.agent-thread-card__composer-role-item-icon img {
+  display: block;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+/* 文本 fallback (在 appendRoleIconContent 没拿到 memoIcon 时) ── 与
+ * icon 同尺寸, 字体风格一致, 让"无 icon"项的视觉与"有 icon"项对齐。 */
+.agent-thread-card__composer-role-item-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  background: var(--muted);
+  color: var(--secondary-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.agent-thread-card__composer-role-item-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.agent-thread-card__composer-role-item-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-thread-card__composer-role-item-desc {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .markdown-editor .agent-thread-card__send {

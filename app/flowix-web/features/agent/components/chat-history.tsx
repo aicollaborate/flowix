@@ -13,7 +13,7 @@ import { toast } from '@/lib/toast';
 import { useChatStore } from '@features/agent/store/chat-store';
 import { cn } from '@/lib/utils';
 import type { ThreadListItem } from '@/types';
-import { getAgentRole } from '@/lib/agent-roles';
+import { getAgentType } from '@/lib/agent-types';
 import { useI18n, type I18nParams } from '@features/i18n';
 
 interface ChatHistoryProps {
@@ -89,13 +89,13 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 	const { t, language } = useI18n();
 	const [open, setOpen] = useState(false);
 
-	const activeRoleKey = useChatStore((state) => state.activeAgentRoleKey);
-	const activeRole = getAgentRole(activeRoleKey);
+	const activeTypeKey = useChatStore((state) => state.activeAgentTypeKey);
+	const activeType = getAgentType(activeTypeKey);
 	const threadList = useChatStore((state) =>
-		getAgentRole(state.activeAgentRoleKey).runtime === 'codex' ? state.codexThreadList : state.threadList
+		getAgentType(state.activeAgentTypeKey).key === 'codex' ? state.codexThreadList : state.threadList
 	);
 	const currentThreadTitle = useChatStore((state) =>
-		getAgentRole(state.activeAgentRoleKey).runtime === 'codex'
+		getAgentType(state.activeAgentTypeKey).key === 'codex'
 			? state.currentCodexThreadTitle
 			: state.currentThreadTitle
 	);
@@ -105,12 +105,12 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 
 	useEffect(() => {
 		if (!open) return;
-		if (activeRole.runtime === 'codex') {
+		if (activeType.key === 'codex') {
 			loadCodexThreadList();
 		} else {
 			loadThreadList();
 		}
-	}, [activeRole.runtime, loadCodexThreadList, loadThreadList, open]);
+	}, [activeType.key, loadCodexThreadList, loadThreadList, open]);
 
 	const handleSelectThread = (threadId: string) => {
 		onSelectThread?.(threadId);
@@ -119,7 +119,7 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 
 	const handleCreateThread = () => {
 		const store = useChatStore.getState();
-		if (getAgentRole(store.activeAgentRoleKey).runtime === 'codex') {
+		if (getAgentType(store.activeAgentTypeKey).key === 'codex') {
 			store.createCodexThread();
 		} else {
 			store.createThread();
@@ -175,7 +175,7 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="start" className="w-[280px] space-y-1 px-1 py-1.5">
 					<DropdownMenuLabel className="px-2 pb-1 text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
-						{t('agent.chat.historyLabel', { role: activeRole.name } satisfies I18nParams)}
+						{t('agent.chat.historyLabel', { role: activeType.name } satisfies I18nParams)}
 					</DropdownMenuLabel>
 					<div className="max-h-[300px] space-y-1 overflow-y-auto">
 						{threadList.length === 0 ? (
@@ -188,7 +188,7 @@ export function ChatHistory({ onSelectThread }: ChatHistoryProps) {
 									key={item.threadId}
 									item={item}
 									onSelect={handleSelectThread}
-									onDelete={activeRole.runtime === 'codex' ? undefined : handleDeleteThread}
+									onDelete={activeType.key === 'codex' ? undefined : handleDeleteThread}
 									formatTime={formatTime}
 								/>
 							))

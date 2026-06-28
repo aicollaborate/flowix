@@ -20,17 +20,17 @@ pub async fn chat_with_agent_stream(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<AgentChatResponse, String> {
-    let runtime = message
-        .runtime
+    let agent_type = message
+        .agent_type
         .as_deref()
         .unwrap_or("flowix")
         .to_ascii_lowercase();
     tracing::info!(
-        "[Command] chat_with_agent_stream called for thread: {}, runtime: {}",
+        "[Command] chat_with_agent_stream called for thread: {}, agent_type: {}",
         threadId,
-        runtime
+        agent_type
     );
-    if runtime == "codex" {
+    if agent_type == "codex" {
         let result = state
             .codex_cli_manager
             .chat_stream(&threadId, message, &app_handle)

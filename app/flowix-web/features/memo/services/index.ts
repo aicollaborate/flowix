@@ -7,13 +7,8 @@ export {
 export {
   getNotebookTodoCount,
   loadMemoLibraryMetadata,
-  loadTodoMetadata,
-  persistHiddenTags,
   persistTagLayout,
-  persistTagOrder,
-  shouldShowMetadataParseLoading,
   type MemoLibraryMetadata,
   type MemoTagLayoutItem,
   type MemoTagTreeItem,
-  type MemoTodoMetadataEntry,
 } from '@features/memo/services/memo-list-metadata-service';

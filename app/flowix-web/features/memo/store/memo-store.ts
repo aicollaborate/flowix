@@ -79,6 +79,8 @@ function memoMatchesFilter(memo: MemoItem, filter: FilterType): boolean {
   switch (filter) {
     case 'todos':
       return memo.todos.length > 0;
+    case 'agents':
+      return memo.agents.length > 0;
     case 'favorited':
       return memo.favorited;
     case 'tagged':
@@ -170,6 +172,12 @@ function omitUndefined<T extends object>(value: T): Partial<T> {
   ) as Partial<T>;
 }
 
+export function getVisibleCreateFilter(filter: FilterType): FilterType {
+  return filter === 'agents' || filter === 'todos' ? 'all' : filter;
+}
+
+let loadMemosRequestSeq = 0;
+
 export const useMemoStore = create<MemoStore>()(
   persist(
     (set, get) => ({
@@ -189,7 +197,16 @@ export const useMemoStore = create<MemoStore>()(
         return { notebooks, selectedNotebook };
       }),
       setSelectedMemo: (memo) => set({ selectedMemo: memo }),
-      setSelectedNotebook: (notebook) => set({ selectedNotebook: notebook }),
+      setSelectedNotebook: (notebook) => {
+        const currentNotebookId = get().selectedNotebook?.id ?? null;
+        const nextNotebookId = notebook?.id ?? null;
+        if (currentNotebookId !== nextNotebookId) {
+          useTagStore.getState().setSelectedTagId(null);
+          set({ selectedNotebook: notebook, activeFilter: 'all' });
+          return;
+        }
+        set({ selectedNotebook: notebook });
+      },
       setActiveFilter: (filter) => set({ activeFilter: filter }),
       setActiveSort: (sort) => set({ activeSort: sort }),
       triggerRefresh: () => set((state) => ({ refreshTrigger: state.refreshTrigger + 1 })),
@@ -217,13 +234,21 @@ export const useMemoStore = create<MemoStore>()(
       },
 
       loadMemos: async (params) => {
+        const requestSeq = ++loadMemosRequestSeq;
         const state = get();
+        const notebookId = params?.notebookId || state.selectedNotebook?.id;
+        const filter = params?.filter || state.activeFilter;
+        const sort = params?.sort || state.activeSort;
+        const tagId = params?.tagId;
         const response = await memoRepository.list({
-          notebookId: params?.notebookId || state.selectedNotebook?.id,
-          filter: params?.filter || state.activeFilter,
-          sort: params?.sort || state.activeSort,
-          tagId: params?.tagId,
+          notebookId,
+          filter,
+          sort,
+          tagId,
         });
+        if (requestSeq !== loadMemosRequestSeq) {
+          return;
+        }
         const nextMemos = response.memos as MemoItem[];
         const latestSelectedMemo = get().selectedMemo;
         const selectedMemo = latestSelectedMemo
@@ -247,10 +272,15 @@ export const useMemoStore = create<MemoStore>()(
         // 事件去重/抑制由后端统一负责, 前端 store 不需要任何补丁。
         const state = get();
         const selectedTagId = useTagStore.getState().selectedTagId;
-        const createTag = tag ?? (state.activeFilter === 'tagged' ? selectedTagId ?? undefined : undefined);
+        const createFilter = getVisibleCreateFilter(state.activeFilter);
+        if (createFilter !== state.activeFilter) {
+          useTagStore.getState().setSelectedTagId(null);
+          set({ activeFilter: createFilter });
+        }
+        const createTag = tag ?? (createFilter === 'tagged' ? selectedTagId ?? undefined : undefined);
         const memo = await memoRepository.create(createTag, notebookId);
         set({
-          memos: upsertSortedMemo(state.memos, memo as MemoItem, state.activeFilter, state.activeSort),
+          memos: upsertSortedMemo(get().memos, memo as MemoItem, createFilter, state.activeSort),
         });
         return memo as MemoItem;
       },

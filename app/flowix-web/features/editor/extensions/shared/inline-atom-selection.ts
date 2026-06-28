@@ -10,6 +10,9 @@ export function setInlineAtomTextSelectionFromMouse(options: {
   referenceElement: Element | HTMLElement | null;
 }): void {
   const { view, node, pos, event, referenceElement } = options;
+  // view 可能已经被所属 Editor 销毁；继续读 view.dom 会触发
+  // "The editor view is not available" 警告。
+  if (view.isDestroyed) return;
   const rect = (referenceElement instanceof HTMLElement ? referenceElement : view.dom).getBoundingClientRect();
   const after = event.clientX >= rect.left + rect.width / 2;
   const targetPos = pos + (after ? node.nodeSize : 0);

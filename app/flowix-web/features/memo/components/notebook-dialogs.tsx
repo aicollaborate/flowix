@@ -208,26 +208,48 @@ export function NotebookDialogs({
               onChange={onEditNotebookIconChange}
             />
           </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onCancelEdit}
-              className="h-8 px-3 text-sm rounded-lg hover:bg-[var(--muted)]"
-            >
-              {t("notebook.edit.cancel")}
-            </button>
-            <button
-              type="button"
-              onClick={onConfirmEdit}
-              className="h-8 px-3 text-sm rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
-              disabled={
-                !editNotebookName.trim() ||
-                (editNotebookName.trim() === editingNotebook?.name &&
-                  (editNotebookIcon ?? '') === (normalizeNotebookIconId(editingNotebook?.icon) ?? ''))
-              }
-            >
-              {t("notebook.edit.confirm")}
-            </button>
+          <div className="mt-4 flex items-center justify-between gap-2">
+            {editingNotebook && !editingNotebook.isDefault ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!editingNotebook) return;
+                  const target = editingNotebook;
+                  // 复用 main-layout 已有的 NotebookDeleteDialog:
+                  // 先关掉当前弹窗, 再派发全局事件打开删除确认。
+                  onCancelEdit();
+                  window.dispatchEvent(
+                    new CustomEvent<Notebook>('flowix:request-delete-notebook', { detail: target })
+                  );
+                }}
+                className="h-8 px-3 text-sm rounded-lg bg-white text-[var(--foreground)] border border-[var(--border)] hover:bg-[var(--muted)] hover:text-[var(--destructive)]"
+              >
+                {t("notebook.edit.remove")}
+              </button>
+            ) : (
+              <span />
+            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onCancelEdit}
+                className="h-8 px-3 text-sm rounded-lg hover:bg-[var(--muted)]"
+              >
+                {t("notebook.edit.cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={onConfirmEdit}
+                className="h-8 px-3 text-sm rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+                disabled={
+                  !editNotebookName.trim() ||
+                  (editNotebookName.trim() === editingNotebook?.name &&
+                    (editNotebookIcon ?? '') === (normalizeNotebookIconId(editingNotebook?.icon) ?? ''))
+                }
+              >
+                {t("notebook.edit.confirm")}
+              </button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

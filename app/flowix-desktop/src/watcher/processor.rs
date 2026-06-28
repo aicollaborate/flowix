@@ -13,11 +13,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::memo_events::{emit, MemoChangeSource, MemoDerivedChanged, MemoEvent};
 use crate::watcher::event::{FsEventKind, RawFsEvent};
 use flowix_core::memo_file::{extract_frontmatter_key, Memo, MemoFile};
+
+#[derive(Debug, Clone)]
+pub struct NotebookWatchContext {
+    pub notebook_id: String,
+    pub root: PathBuf,
+}
 
 /// 业务处理器 — 状态由调用方注入 (memo_file / app)。
 ///
@@ -39,47 +45,32 @@ enum DispatchOutcome {
     },
 }
 
-/// 把 `Memo` 包成 `DispatchOutcome::Updated`, 路径用 memo index 里权威的
-/// `entry.filename`, 不直接用事件 path (可能已变化)。
-fn current_notebook_id(mf: &MemoFile) -> String {
-    mf.current_notebook_id_value()
-        .unwrap_or_else(|| "nb_default".to_string())
-}
-
-fn notebook_id_for_memo(mf: &MemoFile, id: &str) -> String {
-    mf.resolve_memo_location(id)
-        .ok()
-        .flatten()
-        .map(|location| location.notebook.id)
-        .unwrap_or_else(|| current_notebook_id(mf))
-}
-
-fn emit_updated(mf: &MemoFile, before: Option<&Memo>, memo: Memo) -> DispatchOutcome {
-    let entry_path = mf
-        .get_memo_base()
-        .join(&memo.filename)
-        .display()
-        .to_string();
-    let notebook_id = notebook_id_for_memo(mf, &memo.id);
+fn emit_updated_for_context(
+    ctx: &NotebookWatchContext,
+    before: Option<&Memo>,
+    memo: Memo,
+) -> DispatchOutcome {
+    let entry_path = ctx.root.join(&memo.filename).display().to_string();
     let derived_changed = MemoDerivedChanged::from_memos(before, &memo);
     DispatchOutcome::Updated(MemoEvent::Updated {
         id: memo.id.clone(),
         path: entry_path,
-        notebook_id,
+        notebook_id: ctx.notebook_id.clone(),
         memo,
         derived_changed,
         source: MemoChangeSource::ExternalTool,
     })
 }
 
-/// 把 `Memo` 包成 `DispatchOutcome::Created`, path 用事件原始 path
-/// (rename 后这是新位置的绝对路径)。
-fn emit_created(memo_file: &MemoFile, memo: Memo, new_abs_path: PathBuf) -> DispatchOutcome {
-    let notebook_id = notebook_id_for_memo(memo_file, &memo.id);
+fn emit_created_for_context(
+    ctx: &NotebookWatchContext,
+    memo: Memo,
+    new_abs_path: PathBuf,
+) -> DispatchOutcome {
     let derived_changed = MemoDerivedChanged::from_memos(None, &memo);
     DispatchOutcome::Created {
         event: MemoEvent::Created {
-            notebook_id,
+            notebook_id: ctx.notebook_id.clone(),
             derived_changed,
             memo,
             source: MemoChangeSource::ExternalTool,
@@ -110,7 +101,11 @@ fn emit_created(memo_file: &MemoFile, memo: Memo, new_abs_path: PathBuf) -> Disp
 ///
 /// 从 `process()` 抽出来好做单测 (process 本身依赖 AppHandle, 不易测);
 /// 分流规则只跟 MemoFile 状态有关, 跟 Tauri 解耦。
-fn dispatch_modify_event(memo_file: &MemoFile, path: &Path) -> Result<DispatchOutcome, String> {
+fn dispatch_modify_event(
+    memo_file: &MemoFile,
+    ctx: &NotebookWatchContext,
+    path: &Path,
+) -> Result<DispatchOutcome, String> {
     let filename = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -124,41 +119,50 @@ fn dispatch_modify_event(memo_file: &MemoFile, path: &Path) -> Result<DispatchOu
         .and_then(|c| extract_frontmatter_key(&c));
 
     match disk_key {
-        Some(id) => match memo_file.read_current_memo(&id) {
+        Some(id) => match memo_file.read_memo_for_notebook_id(&ctx.notebook_id, &id) {
             Some(existing) if existing.filename == filename => {
-                reload_existing_memo(memo_file, &filename)
+                reload_existing_memo(memo_file, ctx, &filename)
             }
             Some(existing) => {
                 // Rename handling must be idempotent. The internal save path can
                 // update the index before this watcher event obtains the index lock,
                 // so the locked sync below resolves by id and accepts both old->new
                 // and already-new index states.
-                let old_path = memo_file.get_memo_base().join(&existing.filename);
+                let old_path = ctx.root.join(&existing.filename);
                 if is_physical_rename_candidate(&old_path) {
-                    sync_renamed_memo_from_key(memo_file, &existing, &id, &old_path, path)
+                    sync_renamed_memo_from_key(memo_file, ctx, &existing, &id, &old_path, path)
                 } else {
-                    register_pasted_copy_as_new(memo_file, path, Some(&id))
+                    register_pasted_copy_as_new(memo_file, ctx, path, Some(&id))
                 }
             }
-            None => register_pasted_copy_as_new(memo_file, path, Some(&id)),
+            None => register_pasted_copy_as_new(memo_file, ctx, path, Some(&id)),
         },
         None => {
             // Disk 无 frontmatter key: 不能用 id 反查, 退到 filename-based。
-            if memo_file.find_memo_by_filename(&filename).is_some() {
-                reload_existing_memo(memo_file, &filename)
+            if memo_file
+                .find_memo_by_filename_for_notebook_id(&ctx.notebook_id, &filename)
+                .is_some()
+            {
+                reload_existing_memo(memo_file, ctx, &filename)
             } else {
                 // 新文件无 key: register_unnamed_file 走 generate-new-id + stamp 路径
-                let (memo, new_abs_path) = memo_file.register_unnamed_file(path)?;
-                Ok(emit_created(memo_file, memo, new_abs_path))
+                let memo =
+                    memo_file.register_existing_file_for_notebook_id(&ctx.notebook_id, path)?;
+                Ok(emit_created_for_context(ctx, memo, path.to_path_buf()))
             }
         }
     }
 }
 
-fn reload_existing_memo(memo_file: &MemoFile, filename: &str) -> Result<DispatchOutcome, String> {
-    let before = memo_file.find_memo_by_filename(filename);
-    let updated = memo_file.reload_memo_from_disk_by_filename(filename)?;
-    Ok(emit_updated(memo_file, before.as_ref(), updated))
+fn reload_existing_memo(
+    memo_file: &MemoFile,
+    ctx: &NotebookWatchContext,
+    filename: &str,
+) -> Result<DispatchOutcome, String> {
+    let before = memo_file.find_memo_by_filename_for_notebook_id(&ctx.notebook_id, filename);
+    let updated =
+        memo_file.reload_memo_from_disk_by_filename_for_notebook_id(&ctx.notebook_id, filename)?;
+    Ok(emit_updated_for_context(ctx, before.as_ref(), updated))
 }
 
 fn is_physical_rename_candidate(old_path: &Path) -> bool {
@@ -179,18 +183,16 @@ fn is_physical_rename_candidate(old_path: &Path) -> bool {
 ///   绕过这道防线
 /// - 不再用 component-level 匹配 (`parent.file_name == "attachments"`),
 ///   那种匹配会误杀 `bar/attachments/foo.md` 这种"嵌套同名子目录"路径.
-fn is_under_attachments_dir(memo_file: &Arc<std::sync::RwLock<MemoFile>>, path: &Path) -> bool {
-    let Ok(mf) = memo_file.read() else {
-        return false;
-    };
+fn is_under_attachments_dir(ctx: &NotebookWatchContext, path: &Path) -> bool {
     let attachments_dir =
-        crate::watcher::path::normalize_for_compare(&mf.get_memo_base().join("attachments"));
+        crate::watcher::path::normalize_for_compare(&ctx.root.join("attachments"));
     let path_norm = crate::watcher::path::normalize_for_compare(path);
     path_norm.starts_with(&attachments_dir)
 }
 
 fn sync_renamed_memo_from_key(
     memo_file: &MemoFile,
+    ctx: &NotebookWatchContext,
     before: &Memo,
     id: &str,
     old_path: &Path,
@@ -202,12 +204,17 @@ fn sync_renamed_memo_from_key(
         old_path.display(),
         new_path.display(),
     );
-    let updated = memo_file.sync_memo_filename_from_disk_key(id, new_path)?;
-    Ok(emit_updated_at(memo_file, Some(before), updated, new_path))
+    let updated = memo_file.sync_memo_filename_from_disk_key_for_notebook_id(
+        &ctx.notebook_id,
+        id,
+        new_path,
+    )?;
+    Ok(emit_updated_at(ctx, Some(before), updated, new_path))
 }
 
 fn register_pasted_copy_as_new(
     memo_file: &MemoFile,
+    ctx: &NotebookWatchContext,
     path: &Path,
     disk_key: Option<&str>,
 ) -> Result<DispatchOutcome, String> {
@@ -218,24 +225,23 @@ fn register_pasted_copy_as_new(
             path.display(),
         );
     }
-    let memo = memo_file.register_existing_file_as_new(path)?;
-    Ok(emit_created(memo_file, memo, path.to_path_buf()))
+    let memo = memo_file.register_existing_file_as_new_for_notebook_id(&ctx.notebook_id, path)?;
+    Ok(emit_created_for_context(ctx, memo, path.to_path_buf()))
 }
 
 /// 同 [`emit_updated`] 但路径用事件原始 path (rename 场景下是新位置的绝对路径)。
 fn emit_updated_at(
-    memo_file: &MemoFile,
+    ctx: &NotebookWatchContext,
     before: Option<&Memo>,
     memo: Memo,
     abs_path: &Path,
 ) -> DispatchOutcome {
     let entry_path = abs_path.display().to_string();
-    let notebook_id = notebook_id_for_memo(memo_file, &memo.id);
     let derived_changed = MemoDerivedChanged::from_memos(before, &memo);
     DispatchOutcome::Updated(MemoEvent::Updated {
         id: memo.id.clone(),
         path: entry_path,
-        notebook_id,
+        notebook_id: ctx.notebook_id.clone(),
         memo,
         derived_changed,
         source: MemoChangeSource::ExternalTool,
@@ -270,6 +276,18 @@ fn wait_for_markdown_copy_to_settle(path: &Path) {
     }
 }
 
+fn try_update_search_index(app: &AppHandle, id: &str) {
+    if let Some(state) = app.try_state::<crate::commands::AppState>() {
+        crate::commands::helpers::try_index_upsert(state.inner(), id);
+    }
+}
+
+fn try_remove_from_search_index(app: &AppHandle, id: &str) {
+    if let Some(state) = app.try_state::<crate::commands::AppState>() {
+        crate::commands::helpers::try_index_remove(state.inner(), id);
+    }
+}
+
 impl MemoEventProcessor {
     /// 入口 — pipeline 跑过之后调用, 事件已通过 4 段 filter。
     ///
@@ -281,6 +299,7 @@ impl MemoEventProcessor {
         event: &RawFsEvent,
         app: &AppHandle,
         memo_file: &Arc<std::sync::RwLock<MemoFile>>,
+        ctx: &NotebookWatchContext,
     ) {
         // 防御性拦截: 附件目录下的 .md 文件不是 memo, 一律不处理.
         // 后端 `save_attachment` / `save_attachment_content` 会把任意被选
@@ -291,7 +310,7 @@ impl MemoEventProcessor {
         // 这道防线独立于 whitelist (whitelist 可能被用户的 preference.json
         // 覆盖, 或者 hot-update 期间窗口短暂不一致), 走 processor 入口
         // 拒掉, 是 create / modify / remove 三种 kind 的最后一道闸。
-        if is_under_attachments_dir(memo_file, &event.path) {
+        if is_under_attachments_dir(ctx, &event.path) {
             tracing::debug!(
                 "[MemoWatcher] processor skipped attachments/ path: {}",
                 event.path.display()
@@ -304,18 +323,23 @@ impl MemoEventProcessor {
                 let path = &event.path;
                 if !path.exists() {
                     // Modify 事件但文件没了 — 走 Delete 路径
-                    Self::unregister_and_emit(app, memo_file, path);
+                    Self::unregister_and_emit(app, memo_file, ctx, path);
                     return;
                 }
                 wait_for_markdown_copy_to_settle(path);
 
                 // Frontmatter-key-first 分流 ── 详情见 [`dispatch_modify_event`]。
                 let outcome = match memo_file.read() {
-                    Ok(mf) => dispatch_modify_event(&mf, path),
+                    Ok(mf) => dispatch_modify_event(&mf, ctx, path),
                     Err(_) => return,
                 };
                 match outcome {
-                    Ok(DispatchOutcome::Updated(event)) => emit(app, event),
+                    Ok(DispatchOutcome::Updated(event)) => {
+                        if let MemoEvent::Updated { id, .. } = &event {
+                            try_update_search_index(app, id);
+                        }
+                        emit(app, event)
+                    }
                     Ok(DispatchOutcome::Created {
                         event,
                         new_abs_path,
@@ -325,6 +349,9 @@ impl MemoEventProcessor {
                             if let Ok(g) = w.read() {
                                 g.mark_self_write(&new_abs_path);
                             }
+                        }
+                        if let MemoEvent::Created { memo, .. } = &event {
+                            try_update_search_index(app, &memo.id);
                         }
                         emit(app, event);
                     }
@@ -344,7 +371,7 @@ impl MemoEventProcessor {
                 //   entry, id 保留 (但 createdAt/updatedAt 会重置成 now, 因为
                 //   从磁盘读不到原始时间戳; 这是 frontmatter-key-first 在外部
                 //   rename 场景下相对 inode_tracker 的取舍)
-                Self::unregister_and_emit(app, memo_file, &event.path);
+                Self::unregister_and_emit(app, memo_file, ctx, &event.path);
             }
             FsEventKind::Other => {
                 // Access / Other — 忽略
@@ -355,6 +382,7 @@ impl MemoEventProcessor {
     pub(crate) fn unregister_and_emit(
         app: &AppHandle,
         memo_file: &Arc<std::sync::RwLock<MemoFile>>,
+        ctx: &NotebookWatchContext,
         path: &Path,
     ) {
         // v2: inode 还在 tracker 里的话, 这是 rename 的旧位置, 跳过 unregister
@@ -380,7 +408,8 @@ impl MemoEventProcessor {
         let Some(filename) = path.file_name().and_then(|n| n.to_str()) else {
             return;
         };
-        let Some(memo) = mf.find_memo_by_filename(filename) else {
+        let Some(memo) = mf.find_memo_by_filename_for_notebook_id(&ctx.notebook_id, filename)
+        else {
             tracing::debug!(
                 "[MemoWatcher] unregister_and_emit: no memo index entry for filename={}, skipping emit (unregister will also no-op)",
                 filename
@@ -388,12 +417,12 @@ impl MemoEventProcessor {
             return;
         };
         let id = memo.id.clone();
-        let notebook_id = notebook_id_for_memo(&mf, &id);
         let derived_changed = MemoDerivedChanged::from_deleted(&memo);
-        if !mf.unregister_memo_by_path(path) {
+        if !mf.unregister_memo_by_path_for_notebook_id(&ctx.notebook_id, path) {
             return;
         }
         let entry_path = path.display().to_string();
+        try_remove_from_search_index(app, &id);
         // emit 带真实 id 的 Deleted, 让前端 handleMemoDeleted 能精准从
         // 列表 filter 掉 (避免 id=“” 时 filter 什么都不丢、只能靠
         // triggerRefresh 重拉补救)。 path 依然传出, 供会话点以 path 匹配。
@@ -402,7 +431,7 @@ impl MemoEventProcessor {
             MemoEvent::Deleted {
                 id,
                 path: entry_path,
-                notebook_id,
+                notebook_id: ctx.notebook_id.clone(),
                 derived_changed,
             },
         );
@@ -422,7 +451,7 @@ mod tests {
     use super::*;
     use flowix_core::memo_file::MemoFile;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -467,6 +496,13 @@ mod tests {
         (memo_file, tmp)
     }
 
+    fn watch_ctx(base: &Path) -> NotebookWatchContext {
+        NotebookWatchContext {
+            notebook_id: "nb_test".to_string(),
+            root: base.to_path_buf(),
+        }
+    }
+
     /// 写一个 .md 到 notebook 根目录, 走 register_existing_file 把它登记
     /// 进 memo index。返回 (memo, abs_path)。
     fn seed_registered_md(mf: &MemoFile, base: &PathBuf, title: &str) -> (String, PathBuf) {
@@ -492,7 +528,7 @@ mod tests {
         fs::write(&path, format!("# Hello\n\nexternal edit content\n")).unwrap();
 
         // (3) 调 dispatch_modify_event, 期望 Updated
-        let outcome = dispatch_modify_event(&mf, &path).expect("dispatch ok");
+        let outcome = dispatch_modify_event(&mf, &watch_ctx(&base), &path).expect("dispatch ok");
         let event = match outcome {
             DispatchOutcome::Updated(e) => e,
             DispatchOutcome::Created { .. } => panic!("expected Updated, got Created"),
@@ -536,7 +572,7 @@ mod tests {
         fs::write(&path, "# Stranger\n\nnew file content\n").unwrap();
 
         // (2) 调 dispatch_modify_event, 期望 Created + new_abs_path
-        let outcome = dispatch_modify_event(&mf, &path).expect("dispatch ok");
+        let outcome = dispatch_modify_event(&mf, &watch_ctx(&base), &path).expect("dispatch ok");
         let (event, new_abs_path) = match outcome {
             DispatchOutcome::Updated(_) => panic!("expected Created, got Updated"),
             DispatchOutcome::Created {
@@ -570,7 +606,7 @@ mod tests {
         let (_, path) = seed_registered_md(&mf, &base, "Note");
 
         // 第一次 dispatch: 拿到 id
-        let e1 = match dispatch_modify_event(&mf, &path).unwrap() {
+        let e1 = match dispatch_modify_event(&mf, &watch_ctx(&base), &path).unwrap() {
             DispatchOutcome::Updated(e) => e,
             _ => panic!("expected Updated"),
         };
@@ -581,7 +617,7 @@ mod tests {
 
         // 模拟第二次外部改
         fs::write(&path, "# Note\n\nsecond edit\n").unwrap();
-        let e2 = match dispatch_modify_event(&mf, &path).unwrap() {
+        let e2 = match dispatch_modify_event(&mf, &watch_ctx(&base), &path).unwrap() {
             DispatchOutcome::Updated(e) => e,
             _ => panic!("expected Updated on second dispatch"),
         };
@@ -685,7 +721,8 @@ mod tests {
         std::fs::rename(&old_path, &new_path).expect("physical rename must succeed");
 
         // 喂 To 事件形态: dispatch_modify_event 读磁盘 → 抽 key → 反查 entry
-        let outcome = dispatch_modify_event(&mf, &new_path).expect("dispatch ok");
+        let outcome =
+            dispatch_modify_event(&mf, &watch_ctx(&base), &new_path).expect("dispatch ok");
         let event = match outcome {
             DispatchOutcome::Updated(e) => e,
             DispatchOutcome::Created { .. } => {
@@ -767,7 +804,8 @@ mod tests {
         let pasted_path = base.join(&pasted_filename);
         std::fs::copy(&original_path, &pasted_path).expect("copy should succeed");
 
-        let outcome = dispatch_modify_event(&mf, &pasted_path).expect("dispatch ok");
+        let outcome =
+            dispatch_modify_event(&mf, &watch_ctx(&base), &pasted_path).expect("dispatch ok");
         let memo = match outcome {
             DispatchOutcome::Created {
                 event: MemoEvent::Created { memo, .. },
@@ -814,7 +852,8 @@ mod tests {
         assert!(mf.read_current_memo(orphan_id).is_none());
 
         // dispatch: 应创建新 memo, 不沿用磁盘旧 key
-        let outcome = dispatch_modify_event(&mf, &orphan_path).expect("dispatch ok");
+        let outcome =
+            dispatch_modify_event(&mf, &watch_ctx(&base), &orphan_path).expect("dispatch ok");
         let memo = match outcome {
             DispatchOutcome::Created {
                 event: MemoEvent::Created { memo, .. },
@@ -926,7 +965,8 @@ mod tests {
         );
 
         // ====== Step 4: processor dispatch_modify_event(NEW) ── 走 (a) 分支 ======
-        let outcome = dispatch_modify_event(&mf, &new_path).expect("dispatch ok");
+        let outcome =
+            dispatch_modify_event(&mf, &watch_ctx(&base), &new_path).expect("dispatch ok");
         let event = match outcome {
             DispatchOutcome::Updated(e) => e,
             DispatchOutcome::Created { .. } => {
@@ -1000,7 +1040,8 @@ mod tests {
             .expect("pre-sync should succeed");
         assert_eq!(synced.filename, new_filename);
 
-        let outcome = dispatch_modify_event(&mf, &new_path).expect("dispatch ok");
+        let outcome =
+            dispatch_modify_event(&mf, &watch_ctx(&base), &new_path).expect("dispatch ok");
         let event = match outcome {
             DispatchOutcome::Updated(event) => event,
             DispatchOutcome::Created { .. } => {

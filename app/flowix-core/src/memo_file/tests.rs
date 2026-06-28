@@ -199,6 +199,55 @@ fn read_memos_for_notebook_id_does_not_switch_current_notebook() {
 }
 
 #[test]
+fn register_existing_file_for_other_notebook_does_not_switch_current_notebook() {
+    let (mf, tmp) = fresh_memo_file();
+    let current_memo = mf.create_memo("Current", "# Current", None).unwrap();
+
+    let other_dir = tmp.join("other-register");
+    fs::create_dir_all(&other_dir).unwrap();
+    let mut configs = mf.read_notebook_configs().expect("read notebooks");
+    configs.push(super::types::NotebookConfig {
+        id: "nb_other".to_string(),
+        name: "Other".to_string(),
+        icon: None,
+        path: format!("{}/", other_dir.display()),
+        is_default: false,
+        created_at: 1,
+        updated_at: 1,
+    });
+    mf.write_notebook_configs(&configs)
+        .expect("write notebooks");
+
+    let other_path = other_dir.join("External Agent Note.md");
+    fs::write(&other_path, "# External Agent Note\n\ncreated elsewhere").unwrap();
+
+    let registered = mf
+        .register_existing_file_for_notebook_id("nb_other", &other_path)
+        .expect("register other notebook file");
+
+    assert_eq!(mf.current_notebook_id_value().as_deref(), Some("nb_test"));
+
+    let other_memos = mf.read_all_memos_for_notebook_id(Some("nb_other"));
+    assert_eq!(other_memos.len(), 1);
+    assert_eq!(other_memos[0].id, registered.id);
+    assert_eq!(other_memos[0].filename, "External Agent Note.md");
+
+    let current_memos = mf.read_all_memos_for_notebook_id(Some("nb_test"));
+    assert_eq!(current_memos.len(), 1);
+    assert_eq!(current_memos[0].id, current_memo.id);
+
+    let conn = rusqlite::Connection::open(mf.get_index_db_path()).unwrap();
+    let notebook_id: String = conn
+        .query_row(
+            "SELECT notebook_id FROM memos WHERE id = ?1",
+            rusqlite::params![registered.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(notebook_id, "nb_other");
+}
+
+#[test]
 fn read_memo_by_id_resolves_global_notebook_location() {
     let (mut mf, tmp) = fresh_memo_file();
     let current_memo = mf.create_memo("Current", "# Current", None).unwrap();
@@ -387,6 +436,7 @@ fn write_index_persists_to_memos_table() {
                 content: "todo".to_string(),
                 status: "pending".to_string(),
             }],
+            agents: vec![],
             created_at: 1,
             updated_at: 2,
             favorited: true,

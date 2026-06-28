@@ -15,7 +15,9 @@ use crate::lock_utils::{read_lock, write_lock};
 use flowix_core::memo_file::{MemoIndexFile, Notebook, NotebookConfig};
 
 use super::agent_access::AGENT_ACCESS_CHANGED_EVENT;
-use super::helpers::{switch_notebook_importing_disk_as_new, switch_notebook_trusting_index};
+use super::helpers::{
+    refresh_watcher_roots, switch_notebook_importing_disk_as_new, switch_notebook_trusting_index,
+};
 use super::AppState;
 
 const NOTEBOOK_IMPORT_COMPLETE_EVENT: &str = "notebook-import-complete";
@@ -130,6 +132,7 @@ pub fn create_notebook(
     if agent_access_added {
         dispatcher::emit_to(&app, AGENT_ACCESS_CHANGED_EVENT, ());
     }
+    refresh_watcher_roots(state.inner(), &app);
 
     if let Err(e) = switch_notebook_trusting_index(state.inner(), &app, Some(id.clone())) {
         tracing::warn!("[create_notebook] failed to select new notebook after registry write: {e}");
@@ -214,6 +217,7 @@ pub fn update_notebook(
     if state.agent_access.add_or_update_notebook(&updated) {
         dispatcher::emit_to(&app, AGENT_ACCESS_CHANGED_EVENT, ());
     }
+    refresh_watcher_roots(state.inner(), &app);
 
     Some(Notebook {
         id: updated.id,
@@ -251,6 +255,7 @@ pub fn delete_notebook(id: String, state: State<AppState>, app: AppHandle) -> Re
     if state.agent_access.remove_notebook(&id) {
         dispatcher::emit_to(&app, AGENT_ACCESS_CHANGED_EVENT, ());
     }
+    refresh_watcher_roots(state.inner(), &app);
     Ok(true)
 }
 
@@ -279,6 +284,7 @@ pub fn clear_notebooks(state: State<AppState>, app: AppHandle) -> bool {
     if any_removed {
         dispatcher::emit_to(&app, AGENT_ACCESS_CHANGED_EVENT, ());
     }
+    refresh_watcher_roots(state.inner(), &app);
     ok
 }
 

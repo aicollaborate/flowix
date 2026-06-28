@@ -63,10 +63,6 @@
 .markdown-editor .tiptap .editor-note-reference,
 .markdown-editor .tiptap .editor-note-reference__card,
 .markdown-editor .tiptap .editor-note-reference__card * {
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
   -webkit-user-drag: none;
   -moz-user-drag: none;
   -ms-user-drag: none;

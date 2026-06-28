@@ -425,7 +425,7 @@ function handleSelect(item: SlashMenuItem): void {
     // 框住 + 内部文本高亮'的副作用。焦点在 deleteTriggerText 里已经抢回
     // 编辑器, 这里不再 .focus() 不会丢焦点。
     editor.chain().insertAgentThreadCard({
-      roleKey: item.id === 'agent-thread-codex' ? 'codex' : 'flowix',
+      typeKey: item.id === 'agent-thread-codex' ? 'codex' : 'flowix',
       replaceRange,
     }).run();
     return;

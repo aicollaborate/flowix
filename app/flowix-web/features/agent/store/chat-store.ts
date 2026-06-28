@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ChatMessage, ThreadListItem } from '@/types';
-import type { AgentChunk, AgentCodexModel, AgentPermissionMode, AgentRoleKey, AgentRuntime } from '@/types/agent';
+import type { AgentChunk, AgentCodexModel, AgentPermissionMode, AgentTypeKey } from '@/types/agent';
 import { STORAGE_KEYS } from '@/lib/constants';
 import { agent, listenToAgentStream } from '@platform/tauri/client';
 import { useMemoStore } from '@features/memo/store/memo-store';
@@ -15,7 +15,7 @@ import { translate, type AppLanguage } from '@features/i18n';
 function getLanguage(): AppLanguage {
   return useUserSettingsStore.getState().settings.language;
 }
-import { DEFAULT_AGENT_ROLE_KEY, getAgentRole, getAgentRoleByRuntime, normalizeAgentRoleKey } from '@/lib/agent-roles';
+import { DEFAULT_AGENT_TYPE_KEY, getAgentType, normalizeAgentTypeKey } from '@/lib/agent-types';
 
 function joinPath(basePath: string, filePath: string): string {
   if (/^[a-zA-Z]:[\\/]/.test(filePath) || filePath.startsWith('/') || filePath.startsWith('\\')) {
@@ -77,6 +77,23 @@ function toToolInput(input: unknown): Record<string, unknown> | undefined {
 function buildThreadTitle(content: string, fallback: string = '新对话'): string {
   const title = content.replace(/\s+/g, ' ').trim();
   return title ? title.slice(0, 28) : fallback;
+}
+
+/**
+ * 构造 "thread 分支 + type 字段" 的原子更新块 ── 设某个 type 的 active threadId
+ * 时同步把 `activeAgentTypeKey` 钉到对应字符串，保证 (activeThreadId,
+ * activeCodexThreadId, activeAgentTypeKey) 三元组内部一致。
+ *
+ * 9 个 setter / action 用同一组字符串散落 ('flowix' x 5, 'codex' x 5) ── 用这个
+ * helper 集中维护，将来增删 type 只改一处。
+ */
+function pickBranchUpdate(
+  type: AgentTypeKey,
+  threadId: string | undefined
+): Partial<Pick<ChatStore, 'activeThreadId' | 'activeCodexThreadId' | 'activeAgentTypeKey'>> {
+  return type === 'codex'
+    ? { activeCodexThreadId: threadId, activeAgentTypeKey: 'codex' }
+    : { activeThreadId: threadId, activeAgentTypeKey: 'flowix' };
 }
 
 function userMessageStableKey(message: ChatMessage): string | null {
@@ -219,9 +236,8 @@ export interface ChatStore {
   threadStates: ThreadsMap;
   activeThreadId: string | undefined;
   activeCodexThreadId: string | undefined;
-  activeAgentRoleKey: AgentRoleKey;
-  agentRuntime: AgentRuntime;
-  threadRoles: Record<string, AgentRoleKey>;
+  activeAgentTypeKey: AgentTypeKey;
+  threadTypes: Record<string, AgentTypeKey>;
   agentPermissionMode: AgentPermissionMode;
   agentCodexModel: AgentCodexModel;
   threadList: ThreadListItem[];
@@ -252,10 +268,9 @@ export interface ChatStore {
    */
   setActiveThreadId: (threadId: string | undefined) => void;
   setActiveCodexThreadId: (threadId: string | undefined) => void;
-  setActiveAgentRoleKey: (roleKey: AgentRoleKey) => void;
-  setActiveAgentThread: (roleKey: AgentRoleKey, threadId: string | undefined) => void;
-  bindThreadRole: (threadId: string, roleKey: AgentRoleKey) => void;
-  setAgentRuntime: (runtime: AgentRuntime) => void;
+  setActiveAgentTypeKey: (typeKey: AgentTypeKey) => void;
+  setActiveAgentThread: (typeKey: AgentTypeKey, threadId: string | undefined) => void;
+  bindThreadType: (threadId: string, typeKey: AgentTypeKey) => void;
   setAgentPermissionMode: (mode: AgentPermissionMode) => void;
   setAgentCodexModel: (model: AgentCodexModel) => void;
   setPendingPrompt: (prompt: string | undefined) => void;
@@ -281,8 +296,8 @@ export interface ChatStore {
   sendMessageToThread: (
     threadId: string,
     content: string,
-    roleKey?: AgentRoleKey,
-    options?: { currentNoteContent?: string }
+    typeKey?: AgentTypeKey,
+    options?: { currentNoteContent?: string; agentRoleMemoId?: string; agentRoleName?: string }
   ) => Promise<void>;
   sendMessageStream: (content: string) => Promise<void>;
   /**
@@ -313,22 +328,20 @@ export const useChatStore = create<ChatStore>()(
       // 首次 send 时若没有 active thread, 先创建一个。 thread 不再绑定 agent 信息 ─
       // 后端按需读 ~/.flowix/flowix-ai-config.toml, 取消了 agent_id 透传。
       const ensureThread = async (content: string): Promise<string> => {
-        const role = getAgentRole(get().activeAgentRoleKey);
-        if (role.runtime === 'codex') {
+        const type = getAgentType(get().activeAgentTypeKey);
+        if (type.key === 'codex') {
           const existingCodexThreadId = get().activeCodexThreadId;
           if (existingCodexThreadId) {
-            get().bindThreadRole(existingCodexThreadId, role.key);
+            get().bindThreadType(existingCodexThreadId, type.key);
             return existingCodexThreadId;
           }
           const threadId = `codex-local-${Date.now()}`;
           set((state) => ({
-            activeCodexThreadId: threadId,
-            activeAgentRoleKey: role.key,
-            agentRuntime: role.runtime,
+            ...pickBranchUpdate(type.key, threadId),
             currentCodexThreadTitle: buildThreadTitle(content, translate(getLanguage(), 'agent.chat.newConversation')),
-            threadRoles: {
-              ...state.threadRoles,
-              [threadId]: role.key,
+            threadTypes: {
+              ...state.threadTypes,
+              [threadId]: type.key,
             },
             threadStates: {
               ...state.threadStates,
@@ -340,7 +353,7 @@ export const useChatStore = create<ChatStore>()(
 
         const existingThreadId = get().activeThreadId;
         if (existingThreadId) {
-          get().bindThreadRole(existingThreadId, role.key);
+          get().bindThreadType(existingThreadId, type.key);
           return existingThreadId;
         }
 
@@ -351,13 +364,11 @@ export const useChatStore = create<ChatStore>()(
             [thread.threadId]: state.threadStates[thread.threadId] ?? emptyThreadState(),
           };
           return {
-            activeThreadId: thread.threadId,
-            activeAgentRoleKey: role.key,
-            agentRuntime: role.runtime,
+            ...pickBranchUpdate(type.key, thread.threadId),
             currentThreadTitle: thread.title,
-            threadRoles: {
-              ...state.threadRoles,
-              [thread.threadId]: role.key,
+            threadTypes: {
+              ...state.threadTypes,
+              [thread.threadId]: type.key,
             },
             threadStates: nextStates,
           };
@@ -370,9 +381,8 @@ export const useChatStore = create<ChatStore>()(
         threadStates: {},
         activeThreadId: undefined,
         activeCodexThreadId: undefined,
-        activeAgentRoleKey: DEFAULT_AGENT_ROLE_KEY,
-        agentRuntime: 'flowix',
-        threadRoles: {},
+        activeAgentTypeKey: DEFAULT_AGENT_TYPE_KEY,
+        threadTypes: {},
         agentPermissionMode: 'inherit',
         agentCodexModel: 'inherit',
         threadList: [],
@@ -385,50 +395,38 @@ export const useChatStore = create<ChatStore>()(
         setThreadList: (list) => set({ threadList: list }),
         setCurrentThreadTitle: (title) => set({ currentThreadTitle: title }),
         setActiveThreadId: (threadId) => set((state) => ({
-          activeThreadId: threadId,
-          activeAgentRoleKey: 'flowix',
-          agentRuntime: 'flowix',
+          ...pickBranchUpdate('flowix', threadId),
           ...(threadId
-            ? { threadRoles: { ...state.threadRoles, [threadId]: 'flowix' } }
+            ? { threadTypes: { ...state.threadTypes, [threadId]: 'flowix' } }
             : {}),
         })),
         setActiveCodexThreadId: (threadId) => set((state) => ({
-          activeCodexThreadId: threadId,
-          activeAgentRoleKey: 'codex',
-          agentRuntime: 'codex',
+          ...pickBranchUpdate('codex', threadId),
           ...(threadId
-            ? { threadRoles: { ...state.threadRoles, [threadId]: 'codex' } }
+            ? { threadTypes: { ...state.threadTypes, [threadId]: 'codex' } }
             : {}),
         })),
-        setActiveAgentRoleKey: (roleKey) => {
-          const role = getAgentRole(roleKey);
-          set({ activeAgentRoleKey: role.key, agentRuntime: role.runtime });
+        setActiveAgentTypeKey: (typeKey) => {
+          const type = getAgentType(typeKey);
+          set({ activeAgentTypeKey: type.key });
         },
-        setActiveAgentThread: (roleKey, threadId) => {
-          const role = getAgentRole(roleKey);
+        setActiveAgentThread: (typeKey, threadId) => {
+          const type = getAgentType(typeKey);
           set((state) => ({
-            activeAgentRoleKey: role.key,
-            agentRuntime: role.runtime,
-            ...(role.runtime === 'codex'
-              ? { activeCodexThreadId: threadId }
-              : { activeThreadId: threadId }),
+            ...pickBranchUpdate(type.key, threadId),
             ...(threadId
-              ? { threadRoles: { ...state.threadRoles, [threadId]: role.key } }
+              ? { threadTypes: { ...state.threadTypes, [threadId]: type.key } }
               : {}),
           }));
         },
-        bindThreadRole: (threadId, roleKey) => {
-          const role = getAgentRole(roleKey);
+        bindThreadType: (threadId, typeKey) => {
+          const type = getAgentType(typeKey);
           set((state) => ({
-            threadRoles: {
-              ...state.threadRoles,
-              [threadId]: role.key,
+            threadTypes: {
+              ...state.threadTypes,
+              [threadId]: type.key,
             },
           }));
-        },
-        setAgentRuntime: (runtime) => {
-          const role = getAgentRoleByRuntime(runtime);
-          set({ activeAgentRoleKey: role.key, agentRuntime: role.runtime });
         },
         setAgentPermissionMode: (mode) => set({ agentPermissionMode: mode }),
         setAgentCodexModel: (model) => set({ agentCodexModel: model }),
@@ -470,12 +468,10 @@ export const useChatStore = create<ChatStore>()(
               // 掉); 只补齐 SQLite 里有但 store 里没有的"历史行"。
               const merged = mergeHistoricalMessages(existing.messages, messages);
               return {
-                activeThreadId: threadId,
-                activeAgentRoleKey: 'flowix',
-                agentRuntime: 'flowix',
-                threadRoles: {
-                  ...state.threadRoles,
-                  [threadId]: state.threadRoles[threadId] ?? 'flowix',
+                ...pickBranchUpdate('flowix', threadId),
+                threadTypes: {
+                  ...state.threadTypes,
+                  [threadId]: state.threadTypes[threadId] ?? 'flowix',
                 },
                 threadStates: {
                   ...state.threadStates,
@@ -589,12 +585,10 @@ export const useChatStore = create<ChatStore>()(
             set((state) => {
               const existing = state.threadStates[threadId] ?? emptyThreadState();
               return {
-                activeCodexThreadId: threadId,
-                activeAgentRoleKey: 'codex',
-                agentRuntime: 'codex',
-                threadRoles: {
-                  ...state.threadRoles,
-                  [threadId]: state.threadRoles[threadId] ?? 'codex',
+                ...pickBranchUpdate('codex', threadId),
+                threadTypes: {
+                  ...state.threadTypes,
+                  [threadId]: state.threadTypes[threadId] ?? 'codex',
                 },
                 threadStates: {
                   ...state.threadStates,
@@ -641,12 +635,10 @@ export const useChatStore = create<ChatStore>()(
           try {
             const thread = await agent.createThread(finalTitle);
             set((state) => ({
-              activeThreadId: thread.threadId,
-              activeAgentRoleKey: 'flowix',
-              agentRuntime: 'flowix',
+              ...pickBranchUpdate('flowix', thread.threadId),
               currentThreadTitle: thread.title,
-              threadRoles: {
-                ...state.threadRoles,
+              threadTypes: {
+                ...state.threadTypes,
                 [thread.threadId]: 'flowix',
               },
               threadStates: {
@@ -663,12 +655,10 @@ export const useChatStore = create<ChatStore>()(
         createCodexThread: () => {
           const threadId = `codex-local-${Date.now()}`;
           set((state) => ({
-            activeCodexThreadId: threadId,
-            activeAgentRoleKey: 'codex',
-            agentRuntime: 'codex',
+            ...pickBranchUpdate('codex', threadId),
             currentCodexThreadTitle: translate(getLanguage(), 'agent.codexSession.title'),
-            threadRoles: {
-              ...state.threadRoles,
+            threadTypes: {
+              ...state.threadTypes,
               [threadId]: 'codex',
             },
             threadStates: {
@@ -709,13 +699,13 @@ export const useChatStore = create<ChatStore>()(
           return get().sendMessageStream(content);
         },
 
-        sendMessageToThread: async (threadId, content, roleKey, options) => {
+        sendMessageToThread: async (threadId, content, typeKey, options) => {
           const trimmed = content.trim();
           if (!threadId || !trimmed) return;
-          const role = getAgentRole(
-            roleKey ?? get().threadRoles[threadId] ?? get().activeAgentRoleKey
+          const type = getAgentType(
+            typeKey ?? get().threadTypes[threadId] ?? get().activeAgentTypeKey
           );
-          get().bindThreadRole(threadId, role.key);
+          get().bindThreadType(threadId, type.key);
 
           const currentMessages = get().threadStates[threadId]?.messages ?? [];
           const userPayload = buildUserLlmContent(trimmed, currentMessages);
@@ -759,9 +749,11 @@ export const useChatStore = create<ChatStore>()(
               llmContent,
               systemReminderDirectory: userPayload.systemReminderDirectory,
               systemReminderDocumentPath: userPayload.systemReminderDocumentPath,
-              runtime: role.runtime,
+              agentType: type.key,
               permissionMode,
               codexModel,
+              agentRoleMemoId: options?.agentRoleMemoId,
+              agentRoleName: options?.agentRoleName,
             });
           } catch (err) {
             console.error('Failed to dispatch thread card chat_stream:', err);
@@ -795,9 +787,9 @@ export const useChatStore = create<ChatStore>()(
           // listener 统一接收), 也不再 set isLoading=true (由
           // `stream_start` chunk 收敛)。 这里只负责: 建 user message,
           // 调后端 IPC 触发 spawn, 后端一切错误/完成信号走 chunk 事件。
-          const activeRole = getAgentRole(get().activeAgentRoleKey);
+          const activeType = getAgentType(get().activeAgentTypeKey);
           const { activeThreadId, activeCodexThreadId, threadStates } = get();
-          const activeId = activeRole.runtime === 'codex' ? activeCodexThreadId : activeThreadId;
+          const activeId = activeType.key === 'codex' ? activeCodexThreadId : activeThreadId;
           const currentState = activeId ? threadStates[activeId] : undefined;
           const isFirstMessage = !currentState || currentState.messages.length === 0;
 
@@ -841,7 +833,7 @@ export const useChatStore = create<ChatStore>()(
           });
 
           // 独立于 ensureThread 的首条消息重命名 ── 与旧版同形。
-          if (isFirstMessage && activeRole.runtime === 'flowix') {
+          if (isFirstMessage && activeType.key === 'flowix') {
             const previousTitle = get().currentThreadTitle;
             const placeholder = translate(getLanguage(), 'agent.chat.newConversation');
             const nextTitle = buildThreadTitle(content, placeholder);
@@ -870,7 +862,7 @@ export const useChatStore = create<ChatStore>()(
               llmContent: userPayload.llmContent,
               systemReminderDirectory: userPayload.systemReminderDirectory,
               systemReminderDocumentPath: userPayload.systemReminderDocumentPath,
-              runtime: activeRole.runtime,
+              agentType: activeType.key,
               permissionMode,
               codexModel,
             });
@@ -907,9 +899,9 @@ export const useChatStore = create<ChatStore>()(
         },
 
         stopStream: async () => {
-          const role = getAgentRole(get().activeAgentRoleKey);
+          const type = getAgentType(get().activeAgentTypeKey);
           const { activeThreadId, activeCodexThreadId } = get();
-          const activeId = role.runtime === 'codex' ? activeCodexThreadId : activeThreadId;
+          const activeId = type.key === 'codex' ? activeCodexThreadId : activeThreadId;
           if (!activeId) return;
           // Layer 2: 停流前先 flush 流式缓冲 ── 否则缓冲里残留的 token
           // 会在下一帧 rAF 被 apply 到刚停的 thread, 形成"已停但又冒一段
@@ -1047,28 +1039,23 @@ export const useChatStore = create<ChatStore>()(
       partialize: (state) => ({
         activeThreadId: state.activeThreadId,
         activeCodexThreadId: state.activeCodexThreadId,
-        activeAgentRoleKey: state.activeAgentRoleKey,
-        threadRoles: state.threadRoles,
+        activeAgentTypeKey: state.activeAgentTypeKey,
+        threadTypes: state.threadTypes,
         currentThreadTitle: state.currentThreadTitle,
         currentCodexThreadTitle: state.currentCodexThreadTitle,
-        agentRuntime: state.agentRuntime,
         agentPermissionMode: state.agentPermissionMode,
         agentCodexModel: state.agentCodexModel,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as Partial<ChatStore> | undefined;
-        const roleKey = normalizeAgentRoleKey(
-          persistedState?.activeAgentRoleKey ??
-          (persistedState?.agentRuntime
-            ? getAgentRoleByRuntime(persistedState.agentRuntime).key
-            : current.activeAgentRoleKey)
+        const typeKey = normalizeAgentTypeKey(
+          persistedState?.activeAgentTypeKey ?? current.activeAgentTypeKey
         );
         return {
           ...current,
           ...persistedState,
-          activeAgentRoleKey: roleKey,
-          agentRuntime: getAgentRole(roleKey).runtime,
-          threadRoles: persistedState?.threadRoles ?? current.threadRoles,
+          activeAgentTypeKey: typeKey,
+          threadTypes: persistedState?.threadTypes ?? current.threadTypes,
         };
       },
     }

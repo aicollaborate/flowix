@@ -102,6 +102,9 @@ export const BlockDragExtension = Extension.create({
 })
 
 export function startBlockDrag(editor: Editor, info?: CurrentBlockInfo | null): boolean {
+  // editor 可能已经被销毁 (e.g. 语言切换触发重建, 仍有 in-flight 调用);
+  // 继续读 editor.view.dom 会触发 "editor view is not available"。
+  if (editor.isDestroyed) return false
   const block = info ?? getCurrentBlockInfo(editor)
   if (!block) return false
 
@@ -120,6 +123,7 @@ export function startBlockDrag(editor: Editor, info?: CurrentBlockInfo | null): 
 }
 
 export function endBlockDrag(editor: Editor): void {
+  if (editor.isDestroyed) return
   editor.view.dispatch(editor.state.tr.setMeta(blockDragPluginKey, null))
 }
 

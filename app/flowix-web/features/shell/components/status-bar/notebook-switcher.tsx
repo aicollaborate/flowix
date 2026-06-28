@@ -93,7 +93,7 @@ export function NotebookSwitcher({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="h-[27px] flex px-1 bg-[var(--primary)] items-center hover:opacity-90 gap-1"
+          className="h-[26px] flex px-1 bg-[var(--primary)] items-center hover:opacity-90 gap-1"
           aria-label={t('status.switchNotebook')}
         >
           <span className="pl-2 h-full py-0 text-[var(--primary-foreground)] flex items-center overflow-hidden whitespace-nowrap">

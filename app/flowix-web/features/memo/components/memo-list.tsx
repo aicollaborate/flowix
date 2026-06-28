@@ -6,8 +6,11 @@ import { useShallow } from 'zustand/react/shallow';
 import { useShortcutScope, pushHandler } from '@features/shortcuts';
 import { SquarePen, Search, ChevronDown, Check, Loader2 } from 'lucide-react';
 import { useDocumentStore } from '@features/document';
+import { useChatStore } from '@features/agent/store/chat-store';
 import {
+  getVisibleCreateFilter,
   getNotebookIconOption,
+  useMemoLibraryMetadataStore,
   useMemoStore,
   useTagStore,
   type MemoItem,
@@ -23,7 +26,6 @@ import { Button } from '@shared/ui/button';
 import { Tooltip } from '@shared/ui/tooltip';
 import { OverlayScrollbar } from '@shared/ui/overlay-scrollbar';
 import { MemoCard } from '@features/memo/components/memo-card';
-import { MemoCardTodo, type MemoTodoListEntry } from '@features/memo/components/memo-card-todo';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -42,10 +44,6 @@ import { Kbd } from '@shared/ui/kbd';
 import { LazyGlobalSearchCommand } from '@features/memo/components/lazy-global-search-command';
 import { openMemoSession } from '@features/memo/components/open-memo-session';
 import { memoRepository, notebookRepository } from '@features/memo/services/memo-repository';
-import {
-  loadMemoLibraryMetadata,
-  loadTodoMetadata,
-} from '@features/memo/services/memo-list-metadata-service';
 import { useI18n, type I18nParams } from '@features/i18n';
 
 const LazyNotebookDialogs = lazy(() =>
@@ -120,16 +118,6 @@ function DeleteDialogShortcuts({
   return null;
 }
 
-function getTodoSelectionKey(todo: MemoTodoListEntry, index: number): string {
-  return [
-    todo.memoId,
-    todo.createdAt ?? '',
-    todo.updatedAt ?? '',
-    todo.content,
-    index,
-  ].join(':');
-}
-
 function EmptyState() {
   const { t } = useI18n();
   return (
@@ -187,8 +175,21 @@ export function MemoList() {
   const activeSort = useMemoStore((s) => s.activeSort);
   const selectedNotebookId = selectedNotebook?.id;
   const selectedTagId = useTagStore((s) => s.selectedTagId);
+  const tagMetadataRefreshVersion = useTagStore((s) => s.metadataRefreshVersion);
+  const runningAgentThreadIds = useChatStore(
+    useShallow((s) => (
+      Object.entries(s.threadStates)
+        .filter(([, threadState]) => threadState.isLoading)
+        .map(([threadId]) => threadId)
+    )),
+  );
+  const runningAgentThreadIdSet = useMemo(
+    () => new Set(runningAgentThreadIds),
+    [runningAgentThreadIds],
+  );
   const activeTagId = activeFilter === 'tagged' ? selectedTagId : null;
   const setSelectedTagId = useTagStore((s) => s.setSelectedTagId);
+  const loadLibraryMetadata = useMemoLibraryMetadataStore((s) => s.loadMetadata);
   const {
     setSelectedMemo,
     setSelectedNotebook,
@@ -225,8 +226,6 @@ export function MemoList() {
   const [editNotebookName, setEditNotebookName] = useState('');
   const [editNotebookIcon, setEditNotebookIcon] = useState<string | null>(null);
   const [tagMap, setTagMap] = useState<Record<string, string>>({});
-  const [todoEntries, setTodoEntries] = useState<MemoTodoListEntry[]>([]);
-  const [selectedTodoKey, setSelectedTodoKey] = useState<string | null>(null);
 
   useEffect(() => {
     return listenToNotebookImportComplete((notebookId) => {
@@ -235,20 +234,18 @@ export function MemoList() {
       }
     });
   }, [triggerRefresh]);
-  const [libraryBlockingLoadingText, setLibraryBlockingLoadingText] = useState<string | null>(null);
-  const [todoBlockingLoadingText, setTodoBlockingLoadingText] = useState<string | null>(null);
   const [isMemoListLoading, setIsMemoListLoading] = useState(false);
   const [loadedMemoListQueryKey, setLoadedMemoListQueryKey] = useState<string | null>(null);
   const [visibleMemoCount, setVisibleMemoCount] = useState(MEMO_LIST_INITIAL_RENDER_COUNT);
-  const blockingLoadingText = libraryBlockingLoadingText ?? todoBlockingLoadingText;
-  const libraryParseTaskSeqRef = useRef(0);
-  const todoParseTaskSeqRef = useRef(0);
+  const [blockingLoadingText, setBlockingLoadingText] = useState<string | null>(null);
+  const loadDataSeqRef = useRef(0);
   const activeDocumentMemoId = useDocumentStore((store) => store.activeMemoSession?.memoId ?? null);
   const currentDocumentSource = useDocumentStore((store) => store.currentDocumentSource);
 
   useEffect(() => {
+    const { selectedMemo: latestSelectedMemo } = useMemoStore.getState();
     const { currentDocumentSource, clearDocument } = useDocumentStore.getState();
-    if (!selectedMemo && currentDocumentSource !== 'external') {
+    if (!selectedMemo && !latestSelectedMemo && currentDocumentSource !== 'external') {
       clearDocument();
     }
   }, [selectedMemo]);
@@ -336,71 +333,61 @@ export function MemoList() {
   }, []);
 
   const loadData = useCallback(async () => {
-    const parseTaskSeq = ++libraryParseTaskSeqRef.current;
+    const loadSeq = ++loadDataSeqRef.current;
     const state = useMemoStore.getState();
     const currentSelectedTagId = useTagStore.getState().selectedTagId;
     let currentNotebook = state.selectedNotebook;
 
-    try {
-      const notebooksResult = await notebookRepository.list();
-      if (!notebooksResult || notebooksResult.length === 0) {
-        return;
-      }
-      setNotebooks(notebooksResult);
+    const notebooksResult = await notebookRepository.list();
+    if (!notebooksResult || notebooksResult.length === 0) {
+      return;
+    }
+    setNotebooks(notebooksResult);
 
-      if (currentNotebook) {
-        const currentId = currentNotebook.id;
-        const exists = notebooksResult.some((n: Notebook) => n.id === currentId);
-        if (exists) {
-          currentNotebook = notebooksResult.find((n: Notebook) => n.id === currentId) || null;
-          if (currentNotebook) {
-            setSelectedNotebook(currentNotebook);
-          }
-        } else {
-          // Persisted notebook no longer exists, find default
-          const defaultNb = notebooksResult.find((n: Notebook) => n.isDefault) || notebooksResult[0];
-          setSelectedNotebook(defaultNb);
-          currentNotebook = defaultNb;
+    if (currentNotebook) {
+      const currentId = currentNotebook.id;
+      const exists = notebooksResult.some((n: Notebook) => n.id === currentId);
+      if (exists) {
+        currentNotebook = notebooksResult.find((n: Notebook) => n.id === currentId) || null;
+        if (currentNotebook) {
+          setSelectedNotebook(currentNotebook);
         }
       } else {
-        // No persisted notebook, find default
+        // Persisted notebook no longer exists, find default
         const defaultNb = notebooksResult.find((n: Notebook) => n.isDefault) || notebooksResult[0];
         setSelectedNotebook(defaultNb);
         currentNotebook = defaultNb;
       }
-
-      if (!currentNotebook) {
-        return;
-      }
-
-      // 闭包 (`then`) 内访问 `currentNotebook.path` 会丢失 TS narrowing ──
-      // 把 path 提前捕获到本地 const, 闭包内只读 const, 类型收窄到 string。
-      const libraryMetadata = await loadMemoLibraryMetadata({
-        notebook: currentNotebook,
-        selectedTagId: currentSelectedTagId,
-        beforeLargeParse: async () => {
-          setLibraryBlockingLoadingText(t('memo.list.loadingLibrary'));
-          await waitForNextPaint();
-          return parseTaskSeq === libraryParseTaskSeqRef.current;
-        },
-      });
-      if (!libraryMetadata) return;
-
-      setTagMap(libraryMetadata.tagMap);
-
-      // Tag 列表与顺序的 UI 已迁出 memo-list, 此处只取 selectedTagId 校验,
-      // 仍能防止 useTagStore 持久化出 "已不存在的 tag" 残留选中态。
-      const nextSelectedTagId = libraryMetadata.selectedTagId;
-      if (currentSelectedTagId !== nextSelectedTagId) {
-        setSelectedTagId(nextSelectedTagId);
-      }
-    } finally {
-      if (parseTaskSeq === libraryParseTaskSeqRef.current) {
-        setLibraryBlockingLoadingText(null);
-      }
+    } else {
+      // No persisted notebook, find default
+      const defaultNb = notebooksResult.find((n: Notebook) => n.isDefault) || notebooksResult[0];
+      setSelectedNotebook(defaultNb);
+      currentNotebook = defaultNb;
     }
 
-  }, [setNotebooks, setSelectedNotebook, setSelectedTagId]);
+    if (!currentNotebook) {
+      return;
+    }
+
+    const libraryMetadata = await loadLibraryMetadata(
+      currentNotebook,
+      currentSelectedTagId,
+      tagMetadataRefreshVersion
+    );
+    if (!libraryMetadata) return;
+    if (loadSeq !== loadDataSeqRef.current) return;
+    if (useMemoStore.getState().selectedNotebook?.id !== currentNotebook.id) return;
+
+    setTagMap(libraryMetadata.tagMap);
+
+    // Tag 列表与顺序的 UI 已迁出 memo-list, 此处只取 selectedTagId 校验,
+    // 仍能防止 useTagStore 持久化出 "已不存在的 tag" 残留选中态。
+    const nextSelectedTagId = libraryMetadata.selectedTagId;
+    if (currentSelectedTagId !== nextSelectedTagId) {
+      setSelectedTagId(nextSelectedTagId);
+    }
+
+  }, [loadLibraryMetadata, setNotebooks, setSelectedNotebook, setSelectedTagId, tagMetadataRefreshVersion]);
 
   useEffect(() => {
     void loadData().catch((error) => {
@@ -432,8 +419,14 @@ export function MemoList() {
         });
         if (cancelled) return;
         setLoadedMemoListQueryKey(queryKey);
-        if (!useMemoStore.getState().selectedMemo && useDocumentStore.getState().currentDocumentSource !== 'external') {
-          useDocumentStore.getState().clearDocument();
+        const latestMemoState = useMemoStore.getState();
+        const latestDocumentState = useDocumentStore.getState();
+        if (
+          !latestMemoState.selectedMemo &&
+          !latestDocumentState.activeMemoSession &&
+          latestDocumentState.currentDocumentSource !== 'external'
+        ) {
+          latestDocumentState.clearDocument();
         }
       } catch (error) {
         if (!cancelled) {
@@ -454,51 +447,6 @@ export function MemoList() {
     };
   }, [activeFilter, activeSort, activeTagId, loadMemos, refreshTrigger, selectedNotebookId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const parseTaskSeq = ++todoParseTaskSeqRef.current;
-
-    async function loadTodoEntries() {
-      if (activeFilter !== 'todos' || !selectedNotebook?.id) {
-        setTodoEntries([]);
-        if (parseTaskSeq === todoParseTaskSeqRef.current) {
-          setTodoBlockingLoadingText(null);
-        }
-        return;
-      }
-
-      try {
-        const sortedTodos = await loadTodoMetadata({
-          notebookId: selectedNotebook.id,
-          sort: activeSort,
-          beforeLargeParse: async () => {
-            setTodoBlockingLoadingText(t('memo.list.loadingTodos'));
-            await waitForNextPaint();
-            return !cancelled && parseTaskSeq === todoParseTaskSeqRef.current;
-          },
-        });
-        if (cancelled || !sortedTodos) return;
-        setTodoEntries(sortedTodos);
-      } catch (error) {
-        if (!cancelled) {
-          console.warn('[MemoList] Failed to read memo metadata todos:', error);
-          setTodoEntries([]);
-        }
-      } finally {
-        if (!cancelled && parseTaskSeq === todoParseTaskSeqRef.current) {
-          setTodoBlockingLoadingText(null);
-        }
-      }
-    }
-
-    loadTodoEntries();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeFilter, activeSort, refreshTrigger, selectedNotebook?.id, memos.length]);
-
-  const isTodosView = activeFilter === 'todos';
   const currentMemoListQueryKey = getMemoListQueryKey(
     selectedNotebookId,
     activeFilter,
@@ -534,16 +482,16 @@ export function MemoList() {
   }, [memos.length, minimumVisibleMemoCount]);
 
   const handleMemoListScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
-    if (isTodosView || !hasMoreMemos) return;
+    if (!hasMoreMemos) return;
     const scroller = event.currentTarget;
     const distanceToBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
     if (distanceToBottom <= MEMO_LIST_LOAD_MORE_THRESHOLD_PX) {
       loadMoreRenderedMemos();
     }
-  }, [hasMoreMemos, isTodosView, loadMoreRenderedMemos]);
+  }, [hasMoreMemos, loadMoreRenderedMemos]);
 
   useLayoutEffect(() => {
-    if (isTodosView || showMemoListLoading || !hasMoreMemos) return;
+    if (showMemoListLoading || !hasMoreMemos) return;
     const scroller = listContainerRef.current;
     if (!scroller) return;
     if (scroller.scrollHeight - scroller.clientHeight <= MEMO_LIST_LOAD_MORE_THRESHOLD_PX) {
@@ -551,7 +499,6 @@ export function MemoList() {
     }
   }, [
     hasMoreMemos,
-    isTodosView,
     loadMoreRenderedMemos,
     normalizedVisibleMemoCount,
     showMemoListLoading,
@@ -582,24 +529,7 @@ export function MemoList() {
     rowRefCacheRef.current.set(id, cb);
     return cb;
   };
-  const memoById = useMemo(
-    () => new Map(memos.map((memo) => [memo.id, memo])),
-    [memos]
-  );
-  const displayTodoEntries = useMemo(
-    () => isTodosView
-      ? todoEntries.filter((todo) => memoById.has(todo.memoId))
-      : [],
-    [isTodosView, memoById, todoEntries]
-  );
-
   const handleSelectMemo = useCallback((memo: MemoItem) => {
-    setSelectedTodoKey(null);
-    openMemoSession(memo, useMemoStore.getState().selectedNotebook);
-  }, []);
-
-  const handleSelectTodo = useCallback((memo: MemoItem, todoKey: string) => {
-    setSelectedTodoKey(todoKey);
     openMemoSession(memo, useMemoStore.getState().selectedNotebook);
   }, []);
 
@@ -611,9 +541,6 @@ export function MemoList() {
   }, [triggerRefresh]);
 
   const handleFilterChange = (filter: typeof activeFilter) => {
-    if (filter !== 'todos') {
-      setSelectedTodoKey(null);
-    }
     if (filter !== 'tagged') {
       setSelectedTagId(null);
     }
@@ -627,7 +554,11 @@ export function MemoList() {
   const handleCreateMemo = useCallback(async () => {
     if (!selectedNotebook) return;
     const previousSelectedMemo = useMemoStore.getState().selectedMemo;
-    setSelectedTodoKey(null);
+    const createFilter = getVisibleCreateFilter(activeFilter);
+    if (createFilter !== activeFilter) {
+      setSelectedTagId(null);
+      setActiveFilter(createFilter);
+    }
     setSelectedMemo(null);
 
     let result: any;
@@ -645,10 +576,10 @@ export function MemoList() {
 
     const newMemo = result as MemoItem;
     const shouldSelectNewMemo =
-      activeFilter === 'all' ||
-      (activeFilter === 'tagged' && Boolean(activeTagId)) ||
-      activeFilter === 'thisWeek' ||
-      activeFilter === 'thisMonth';
+      createFilter === 'all' ||
+      (createFilter === 'tagged' && Boolean(activeTagId)) ||
+      createFilter === 'thisWeek' ||
+      createFilter === 'thisMonth';
 
     // Synchronously capture pre-render positions BEFORE the store update that
     // adds the new memo. The animation itself runs in the useLayoutEffect below,
@@ -667,7 +598,9 @@ export function MemoList() {
     handleMemoCreated,
     prepareForInsert,
     selectedNotebook,
+    setActiveFilter,
     setSelectedMemo,
+    setSelectedTagId,
   ]);
 
   useEffect(() => {
@@ -691,7 +624,7 @@ export function MemoList() {
     const notebookPath = newNotebookPath.trim();
 
     setCreateNotebookOpen(false);
-    setLibraryBlockingLoadingText(t('memo.list.scanningLibrary'));
+    setBlockingLoadingText(t('memo.list.scanningLibrary'));
     await waitForNextPaint();
 
     try {
@@ -716,7 +649,6 @@ export function MemoList() {
       setMemos([]);
       useDocumentStore.getState().clearDocument();
       setSelectedTagId(null);
-      setTodoEntries([]);
       setLoadedMemoListQueryKey(null);
       setIsMemoListLoading(true);
 
@@ -728,7 +660,7 @@ export function MemoList() {
       console.warn('[MemoList] Failed to create notebook:', error);
       toast.error(notebookCreateErrorMessage(error));
     } finally {
-      setLibraryBlockingLoadingText(null);
+      setBlockingLoadingText(null);
     }
   };
 
@@ -771,7 +703,7 @@ export function MemoList() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[var(--card)] relative">
+    <div className="relative flex h-full select-none flex-col bg-[var(--card)]">
       {/* Memo Tab */}
       <div className="flex items-center justify-between pl-2 pr-4 pb-2 gap-2">
         <div className="min-w-0 flex-1">
@@ -858,33 +790,7 @@ export function MemoList() {
         scrollerRef={listContainerRef}
         onScroll={handleMemoListScroll}
       >
-        {isTodosView ? (
-          showMemoListLoading && memoListLoadingText ? (
-            <ListLoadingState text={memoListLoadingText} />
-          ) : displayTodoEntries.length > 0 ? (
-            <div className="flex flex-col">
-              {displayTodoEntries.map((todo, index) => {
-                const memo = memoById.get(todo.memoId);
-                if (!memo) return null;
-                const todoKey = getTodoSelectionKey(todo, index);
-                return (
-                  <div key={todoKey}>
-                    <MemoCardTodo
-                      memo={memo}
-                      todo={todo}
-                      todoKey={todoKey}
-                      selectedTodoKey={selectedTodoKey}
-                      onSelect={handleSelectTodo}
-                    />
-                    <hr className="mx-3 border-t border-[var(--border)] opacity-50" />
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <EmptyState />
-          )
-        ) : showMemoListLoading && memoListLoadingText ? (
+        {showMemoListLoading && memoListLoadingText ? (
           <ListLoadingState text={memoListLoadingText} />
         ) : memos.length > 0 ? (
           // 普通列渲染: 父容器是 flex-col, 每张卡在文档流里自然堆叠, 高度
@@ -909,6 +815,7 @@ export function MemoList() {
                       tagMap={tagMap}
                       selectedMemo={selectedMemo}
                       openDropdown={openDropdown}
+                      isAgentRunning={memo.agents.some((agent) => runningAgentThreadIdSet.has(agent.threadId))}
                       onOpenDropdown={setOpenDropdown}
                       onSelect={handleSelectMemo}
                       onFavoriteToggle={handleFavoriteToggle}
@@ -951,10 +858,10 @@ export function MemoList() {
             <button
               type="button"
               onClick={handleDeleteConfirm}
-              className="relative h-8 pl-3 pr-7 text-sm rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90"
+              className="relative h-8 pl-3 pr-7 text-sm rounded-lg bg-[var(--destructive)] text-white hover:opacity-90"
             >
               {t('memo.delete.confirm')}
-              <Kbd className="!text-primary-foreground border-0">↵</Kbd>
+              <Kbd className="!text-white border-0">↵</Kbd>
             </button>
           </div>
         </DialogContent>

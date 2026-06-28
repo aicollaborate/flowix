@@ -435,10 +435,9 @@ pub fn run() {
     ));
     let codex_cli_manager = Arc::new(CodexCliManager::new(thread_manager_arc.clone()));
 
-    // 笔记本目录文件监听器 — 把外部编辑器 / 其他 AI 的磁盘变更转成
-    // `memo-event` 推前端。绑定到启动时的当前 notebook 目录, 切换 notebook
-    // 时由 commands::switch_notebook_and_rebuild 负责 rebind。`AppHandle` 在
-    // `run()` 阶段拿不到, 实际 rebind 在 .setup() 闭包里完成。
+    // 笔记本目录文件监听器 — 把外部编辑器 / 其他 AI 对任意已注册 notebook
+    // 的磁盘变更转成 `memo-event` 推前端。`AppHandle` 在 `run()` 阶段拿不到,
+    // 实际绑定在 .setup() 闭包里完成。
     let memo_watcher = Arc::new(RwLock::new(fs_watcher::MemoWatcher::new(
         memo_file_arc.clone(),
     )));
@@ -500,17 +499,18 @@ pub fn run() {
                 crate::watcher::dispatcher::TauriDispatcher::new(app.handle().clone()),
             );
             app.manage(dispatcher);
-            // 启动时绑定到当前 notebook 目录。后续切 notebook 由
-            // commands::switch_notebook_and_rebuild 触发 rebind。
-            let initial_dir =
-                crate::lock_utils::read_lock(&memo_file_arc, "memo_file").get_memo_base();
+            // 启动时监听所有已注册 notebook。后续 notebook registry 变更由
+            // notebook CRUD 命令刷新 roots；普通切换 current notebook 不重绑 watcher。
+            let initial_notebooks = crate::lock_utils::read_lock(&memo_file_arc, "memo_file")
+                .read_notebook_configs()
+                .unwrap_or_default();
             memo_watcher
                 .write()
                 .unwrap_or_else(|poisoned| {
                     tracing::error!("memo_watcher write lock poisoned, recovering");
                     poisoned.into_inner()
                 })
-                .rebind(app.handle().clone(), Some(initial_dir));
+                .rebind_all(app.handle().clone(), initial_notebooks);
 
             // 启动不变量: 双向对账 memo index ↔ 磁盘, 跟
             // switch_notebook_and_rebuild 走同一函数。 让 memo index 反映
@@ -682,6 +682,7 @@ pub fn run() {
             // 笔记 / Doc (13 个, 合并 section 3+4+5+Doc)
             commands::memo::get_memos,
             commands::memo::search_mention_notes,
+            commands::memo::list_agent_role_memos,
             commands::memo::get_used_memo_tag_ids,
             commands::memo::get_memo_todo_metadata,
             commands::memo::get_memo_todo_count,

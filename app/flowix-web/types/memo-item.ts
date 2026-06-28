@@ -6,6 +6,15 @@
 
 export type MemoColor = 'red' | 'orange' | 'yellow' | 'green' | 'cyan' | 'blue' | 'gray';
 
+export interface AgentThreadItem {
+  threadId: string;
+  title: string;
+  // agentType ── 与 Rust struct `AgentThreadItem.agent_type` (`#[serde(rename
+  // = "agentType")]`) 对齐, 区分于 agentRole* (角色 persona)。 之前用
+  // roleKey 容易跟 agent role 字段混淆, 改名为 agentType。
+  agentType: string;
+}
+
 export interface MemoItem {
   id: string;
   filename: string;
@@ -13,6 +22,7 @@ export interface MemoItem {
   thumbnail?: string | null;
   tags: string[];
   todos: { content: string; status: string }[];
+  agents: AgentThreadItem[];
   createdAt: number;
   updatedAt: number;
   favorited: boolean;

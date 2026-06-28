@@ -25,7 +25,7 @@ export { TOOL_ICON_PATHS, type ToolIconPathKey } from "@features/agent/message/t
  *    - Rust 文件快照 invalidation      ── agent.rs (行为)
  *
  *  ── 模式参考 ──
- *    与 lib/agent-roles.ts (角色图标) 同构:
+ *    与 lib/agent-types.ts (类型图标) 同构:
  *      Array<Record> + getX(key) 查找 + 默认 fallback。
  *    与 slash-menu-dropdown.tsx (命令注册) 共享 keywords 概念,
  *      但本表用 aliases 而非 keywords ── 本表的别名是"等价映射"

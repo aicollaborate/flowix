@@ -45,16 +45,17 @@ use tauri::AppHandle;
 
 use crate::watcher::filter::SELF_WRITE_TTL;
 use crate::watcher::{
-    filter::PathFilter, normalize_for_compare, FsEventKind, MemoEventProcessor, RawFsEvent,
-    WhitelistConfig,
+    filter::PathFilter, normalize_for_compare, FsEventKind, MemoEventProcessor,
+    NotebookWatchContext, RawFsEvent, WhitelistConfig,
 };
-use flowix_core::memo_file::{extract_frontmatter_key, MemoFile};
+use flowix_core::memo_file::{extract_frontmatter_key, MemoFile, NotebookConfig};
 
 const REMOVE_TOMBSTONE_DELAY: Duration = Duration::from_millis(450);
 
 #[derive(Debug, Clone)]
 struct PendingRemove {
     path: PathBuf,
+    ctx: NotebookWatchContext,
     created_at: Instant,
 }
 
@@ -87,7 +88,7 @@ struct PendingRemove {
 ///   这是路径规范化 + 自写抑制双重失效时的最后防线。
 pub struct MemoWatcher {
     _watcher: Option<RecommendedWatcher>,
-    bound_dir: Option<PathBuf>,
+    watched_roots: Arc<std::sync::RwLock<Vec<NotebookWatchContext>>>,
     recent_self_writes: Arc<Mutex<HashMap<PathBuf, Instant>>>,
     last_emit: Arc<Mutex<HashMap<PathBuf, Instant>>>,
     pending_removes: Arc<Mutex<HashMap<String, PendingRemove>>>,
@@ -101,7 +102,7 @@ impl MemoWatcher {
     pub fn new(memo_file: Arc<std::sync::RwLock<MemoFile>>) -> Self {
         Self {
             _watcher: None,
-            bound_dir: None,
+            watched_roots: Arc::new(std::sync::RwLock::new(Vec::new())),
             recent_self_writes: Arc::new(Mutex::new(HashMap::new())),
             last_emit: Arc::new(Mutex::new(HashMap::new())),
             pending_removes: Arc::new(Mutex::new(HashMap::new())),
@@ -118,23 +119,34 @@ impl MemoWatcher {
         }
     }
 
-    /// 切换监听目录。`None` = 停止监听 (notebook 切换到非法路径时使用)。
-    ///
-    /// 先 `_watcher = None` 显式 Drop 旧 watcher (避免两个 watcher 同监一目录
-    /// 触发回调翻倍), 再启动新 watcher。
-    pub fn rebind(&mut self, app: AppHandle, dir: Option<PathBuf>) {
+    pub fn rebind_all(&mut self, app: AppHandle, configs: Vec<NotebookConfig>) {
         // Drop 旧 watcher — 此赋值 `take` 出 Option, 旧 RecommendedWatcher 立即析构
         let _ = self._watcher.take();
-        self.bound_dir = dir.clone();
         if let Ok(mut map) = self.pending_removes.lock() {
             map.clear();
         }
 
-        let Some(dir) = dir else {
-            return;
-        };
-        if !dir.is_dir() {
-            tracing::warn!("[MemoWatcher] rebind skipped, not a dir: {}", dir.display());
+        let roots: Vec<NotebookWatchContext> = configs
+            .into_iter()
+            .filter_map(|config| {
+                let root = PathBuf::from(&config.path);
+                if !root.is_dir() {
+                    tracing::warn!(
+                        "[MemoWatcher] watch skipped, notebook path is not a dir: {}",
+                        root.display()
+                    );
+                    return None;
+                }
+                Some(NotebookWatchContext {
+                    notebook_id: config.id,
+                    root,
+                })
+            })
+            .collect();
+        if let Ok(mut watched) = self.watched_roots.write() {
+            *watched = roots.clone();
+        }
+        if roots.is_empty() {
             return;
         }
 
@@ -144,6 +156,7 @@ impl MemoWatcher {
         let pending_removes = self.pending_removes.clone();
         let memo_file = self.memo_file.clone();
         let whitelist = self.whitelist.clone();
+        let watched_roots = self.watched_roots.clone();
 
         let mut watcher: RecommendedWatcher =
             match notify::recommended_watcher(move |res: notify::Result<Event>| {
@@ -157,6 +170,7 @@ impl MemoWatcher {
                     &last_emit,
                     &pending_removes,
                     &whitelist,
+                    &watched_roots,
                     event,
                 );
             }) {
@@ -167,12 +181,23 @@ impl MemoWatcher {
                 }
             };
 
-        if let Err(e) = watcher.watch(&dir, RecursiveMode::Recursive) {
-            tracing::error!("[MemoWatcher] failed to watch {}: {e}", dir.display());
+        let mut watched_count = 0usize;
+        for ctx in roots {
+            if let Err(e) = watcher.watch(&ctx.root, RecursiveMode::Recursive) {
+                tracing::error!("[MemoWatcher] failed to watch {}: {e}", ctx.root.display());
+                continue;
+            }
+            tracing::info!(
+                "[MemoWatcher] watching notebook {} at {}",
+                ctx.notebook_id,
+                ctx.root.display()
+            );
+            watched_count += 1;
+        }
+        if watched_count == 0 {
             return;
         }
 
-        tracing::info!("[MemoWatcher] watching {}", dir.display());
         self._watcher = Some(watcher);
     }
 
@@ -219,12 +244,17 @@ fn handle_notify_event(
     >,
     pending_removes: &Arc<std::sync::Mutex<std::collections::HashMap<String, PendingRemove>>>,
     whitelist: &Arc<std::sync::RwLock<WhitelistConfig>>,
+    watched_roots: &Arc<std::sync::RwLock<Vec<NotebookWatchContext>>>,
     event: notify::Event,
 ) {
     let path_filter = PathFilter {
         whitelist: whitelist.clone(),
     };
     for path in event.paths {
+        let Some(ctx) = context_for_path(watched_roots, &path) else {
+            tracing::debug!("[MemoWatcher] no notebook root for {}", path.display());
+            continue;
+        };
         // PR2: 跑 4 段 filter pipeline (whitelist / self-write / debounce / id-dedup),
         // 行为与原 5 段完全一致, 短路语义保留。
         let fs_kind = FsEventKind::from_notify(&event.kind);
@@ -258,6 +288,7 @@ fn handle_notify_event(
                     app.clone(),
                     memo_file.clone(),
                     pending_removes.clone(),
+                    ctx.clone(),
                     &path,
                 ) {
                     continue;
@@ -267,30 +298,52 @@ fn handle_notify_event(
             FsEventKind::Other => {}
         }
 
-        MemoEventProcessor::process(&raw, app, memo_file);
+        MemoEventProcessor::process(&raw, app, memo_file, &ctx);
     }
+}
+
+fn context_for_path(
+    watched_roots: &Arc<std::sync::RwLock<Vec<NotebookWatchContext>>>,
+    path: &Path,
+) -> Option<NotebookWatchContext> {
+    let path_norm = normalize_for_compare(path);
+    let roots = watched_roots.read().ok()?;
+    roots
+        .iter()
+        .filter_map(|ctx| {
+            let root_norm = normalize_for_compare(&ctx.root);
+            path_norm
+                .starts_with(&root_norm)
+                .then_some((root_norm.components().count(), ctx.clone()))
+        })
+        .max_by_key(|(depth, _)| *depth)
+        .map(|(_, ctx)| ctx)
 }
 
 fn resolve_removed_memo_id(
     memo_file: &Arc<std::sync::RwLock<MemoFile>>,
+    ctx: &NotebookWatchContext,
     path: &Path,
 ) -> Option<String> {
     let filename = path.file_name().and_then(|n| n.to_str())?;
     let mf = memo_file.read().ok()?;
-    mf.find_memo_by_filename(filename).map(|memo| memo.id)
+    mf.find_memo_by_filename_for_notebook_id(&ctx.notebook_id, filename)
+        .map(|memo| memo.id)
 }
 
 fn schedule_pending_remove(
     app: AppHandle,
     memo_file: Arc<std::sync::RwLock<MemoFile>>,
     pending_removes: Arc<Mutex<HashMap<String, PendingRemove>>>,
+    ctx: NotebookWatchContext,
     path: &Path,
 ) -> bool {
-    let Some(id) = resolve_removed_memo_id(&memo_file, path) else {
+    let Some(id) = resolve_removed_memo_id(&memo_file, &ctx, path) else {
         return false;
     };
     let marker = PendingRemove {
         path: path.to_path_buf(),
+        ctx,
         created_at: Instant::now(),
     };
     let token = marker.created_at;
@@ -312,7 +365,7 @@ fn schedule_pending_remove(
             }
         };
         if let Some(pending) = pending {
-            MemoEventProcessor::unregister_and_emit(&app, &memo_file, &pending.path);
+            MemoEventProcessor::unregister_and_emit(&app, &memo_file, &pending.ctx, &pending.path);
         }
     });
     true
@@ -423,6 +476,10 @@ mod tests {
             id.clone(),
             PendingRemove {
                 path: PathBuf::from("Old.md"),
+                ctx: NotebookWatchContext {
+                    notebook_id: "nb_test".to_string(),
+                    root: PathBuf::from("."),
+                },
                 created_at: Instant::now(),
             },
         );

@@ -11,14 +11,12 @@ export interface ThreadListItem {
 }
 
 // Core message type used throughout the app
-export type AgentRuntime = "flowix" | "codex";
-export type AgentRoleKey = "flowix" | "codex";
+export type AgentTypeKey = "flowix" | "codex";
 
-export interface AgentRole {
-  key: AgentRoleKey;
-  runtime: AgentRuntime;
+export interface AgentType {
+  key: AgentTypeKey;
   /** 图片资产路径(Vite 静态资源 import 解析后的 URL)。
-   *  所有 agent 图标统一在 agent-roles.ts 集中管理。 */
+   *  所有 agent 图标统一在 agent-types.ts 集中管理。 */
   icon: string;
   name: string;
   desc: string;

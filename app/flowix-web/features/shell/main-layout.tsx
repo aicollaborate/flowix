@@ -35,6 +35,8 @@ import { useI18n } from '@features/i18n';
 const NOTE_NAVIGATION_PANEL_WIDTH = 192;
 const NOTE_NAVIGATION_PANEL_MIN_WIDTH = 180;
 const NOTE_NAVIGATION_PANEL_MAX_WIDTH = 420;
+const DOCUMENT_PANEL_MIN_WIDTH = 420;
+const PANEL_DIVIDER_WIDTH = 1;
 
 function isWindowsPlatform(): boolean {
   return /Windows/i.test(navigator.userAgent) || /Win/i.test(navigator.platform);
@@ -132,20 +134,24 @@ export function MainLayout() {
 
   const {
     memoListVisible,
+    noteNavigationVisible,
     agentPanelVisible,
     agentColWidth,
     toolbarCollapsed,
     setMemoListVisible,
+    setNoteNavigationVisible,
     setAgentPanelVisible,
     setAgentColWidth,
     setToolbarCollapsed,
   } = useSettingsStore(
     useShallow((s) => ({
       memoListVisible: s.memoListVisible,
+      noteNavigationVisible: s.noteNavigationVisible,
       agentPanelVisible: s.agentPanelVisible,
       agentColWidth: s.agentColWidth,
       toolbarCollapsed: s.toolbarCollapsed,
       setMemoListVisible: s.setMemoListVisible,
+      setNoteNavigationVisible: s.setNoteNavigationVisible,
       setAgentPanelVisible: s.setAgentPanelVisible,
       setAgentColWidth: s.setAgentColWidth,
       setToolbarCollapsed: s.setToolbarCollapsed,
@@ -160,7 +166,6 @@ export function MainLayout() {
   const [isMenuBoardOpen, setIsMenuBoardOpen] = useState(false);
   const [notebookPopupOpen, setNotebookPopupOpen] = useState(false);
   const [notebookToDelete, setNotebookToDelete] = useState<Notebook | null>(null);
-  const [noteNavigationVisible, setNoteNavigationVisible] = useState(false);
   const { request } = useTauriRpc();
   const [isSearchPanelOpen, setIsSearchPanelOpen] = useState(false);
   const [charCount, setCharCount] = useState(0);
@@ -188,10 +193,30 @@ export function MainLayout() {
   } = useResizablePanels({
     agentColWidth,
     agentPanelVisible,
+    documentPanelMinWidth: DOCUMENT_PANEL_MIN_WIDTH,
     memoListVisible,
+    noteNavigationWidth: noteNavigationColumnWidth,
     setAgentColWidth,
     setMemoListVisible,
   });
+
+  const getNoteNavigationPanelMaxWidth = useCallback(() => {
+    const visibleDividerWidth =
+      (noteNavigationVisible ? PANEL_DIVIDER_WIDTH : 0) +
+      (!isMemoListHidden ? PANEL_DIVIDER_WIDTH : 0) +
+      (rightPanelVisible ? PANEL_DIVIDER_WIDTH : 0);
+    const availableWidth =
+      window.innerWidth -
+      memoListWidth -
+      agentPanelWidth -
+      DOCUMENT_PANEL_MIN_WIDTH -
+      visibleDividerWidth;
+
+    return Math.min(
+      NOTE_NAVIGATION_PANEL_MAX_WIDTH,
+      Math.max(NOTE_NAVIGATION_PANEL_MIN_WIDTH, availableWidth),
+    );
+  }, [agentPanelWidth, isMemoListHidden, memoListWidth, noteNavigationVisible, rightPanelVisible]);
 
   const handleNoteNavigationDividerMouseDown = useCallback((event: ReactMouseEvent) => {
     event.preventDefault();
@@ -211,7 +236,7 @@ export function MainLayout() {
       const diff = event.clientX - noteNavigationDividerStartRef.current.x;
       const nextWidth = noteNavigationDividerStartRef.current.width + diff;
       const clampedWidth = Math.min(
-        NOTE_NAVIGATION_PANEL_MAX_WIDTH,
+        getNoteNavigationPanelMaxWidth(),
         Math.max(NOTE_NAVIGATION_PANEL_MIN_WIDTH, nextWidth),
       );
       noteNavigationPanelWidthRef.current = clampedWidth;
@@ -228,7 +253,20 @@ export function MainLayout() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDraggingNoteNavigationDivider]);
+  }, [getNoteNavigationPanelMaxWidth, isDraggingNoteNavigationDivider]);
+
+  useEffect(() => {
+    if (!noteNavigationVisible || isDraggingNoteNavigationDivider) return;
+    const maxWidth = getNoteNavigationPanelMaxWidth();
+    if (noteNavigationPanelWidth <= maxWidth) return;
+    noteNavigationPanelWidthRef.current = maxWidth;
+    setNoteNavigationPanelWidth(maxWidth);
+  }, [
+    getNoteNavigationPanelMaxWidth,
+    isDraggingNoteNavigationDivider,
+    noteNavigationPanelWidth,
+    noteNavigationVisible,
+  ]);
 
   const handlePanelSwipe = useCallback((direction: MacosTrackpadSwipeDirection) => {
     const transition = resolvePanelSwipeTransition(
@@ -265,8 +303,8 @@ export function MainLayout() {
   }, [agentPanelVisible, setAgentPanelVisible]);
 
   const handleToggleNoteNavigation = useCallback(() => {
-    setNoteNavigationVisible((visible) => !visible);
-  }, []);
+    setNoteNavigationVisible(!noteNavigationVisible);
+  }, [noteNavigationVisible, setNoteNavigationVisible]);
 
   // 关闭 memo-list 侧栏时同步收起笔记导航 ── 避免左侧两列同时打开占满
   // 视口宽度。手势 (左滑) 走 resolvePanelSwipeTransition, 不经过此路径,
@@ -276,7 +314,7 @@ export function MainLayout() {
     if (noteNavigationVisible) {
       setNoteNavigationVisible(false);
     }
-  }, [noteNavigationVisible, setMemoListVisible]);
+  }, [noteNavigationVisible, setMemoListVisible, setNoteNavigationVisible]);
 
   // document 顶栏的侧栏 toggle: 打开走纯开, 关闭走级联 (带笔记导航),
   // 行为与 memo-list 顶栏的折叠按钮对齐 ── 任一入口关闭都同步收起左侧
@@ -356,6 +394,20 @@ export function MainLayout() {
     const handleToggle = () => setNotebookPopupOpen(prev => !prev);
     window.addEventListener('flowix:toggle-notebook-switcher', handleToggle);
     return () => window.removeEventListener('flowix:toggle-notebook-switcher', handleToggle);
+  }, []);
+
+  // 监听 Edit notebook 弹窗内「移除笔记本」按钮 — 派发
+  // `flowix:request-delete-notebook` 即可复用下方 NotebokDeleteDialog
+  // 走标准的删除确认流程。 Edit 弹窗自己会先关掉, 这里只需要 set 一次。
+  useEffect(() => {
+    const handleRequest = (event: Event) => {
+      const ce = event as CustomEvent<Notebook>;
+      const notebook = ce.detail;
+      if (!notebook) return;
+      setNotebookToDelete(notebook);
+    };
+    window.addEventListener('flowix:request-delete-notebook', handleRequest as EventListener);
+    return () => window.removeEventListener('flowix:request-delete-notebook', handleRequest as EventListener);
   }, []);
 
   const handleOpenTodos = useCallback(async () => {
@@ -493,7 +545,6 @@ export function MainLayout() {
                   selectedNotebook={selectedNotebook}
                   onSelectNotebook={handleSelectNotebook}
                   onEditNotebook={handleEditNotebook}
-                  onDeleteNotebook={handleDeleteNotebook}
                   onTogglePanel={handleToggleNoteNavigation}
                 />
               )}
@@ -545,7 +596,7 @@ export function MainLayout() {
             </div>
           )}
           {/* Memo detail */}
-            <div className="h-full min-w-0 relative flex flex-col" style={{ minWidth: 200, flex: 1 }}>
+            <div className="h-full min-w-0 relative flex flex-col" style={{ minWidth: DOCUMENT_PANEL_MIN_WIDTH, flex: 1 }}>
             {/* Fixed top navigation bar */}
             {isWindowsPlatform() ? (
               <DocumentTitlebarWin

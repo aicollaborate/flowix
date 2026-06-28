@@ -15,6 +15,9 @@ import type { BlockMenuItem } from '@features/editor/components/drag-context-men
 // rendered by ProseMirror's view-update pipeline (see extensions/menu-pin.ts),
 // not by direct DOM mutation, so it survives any external class-stripping.
 export function pinBlock(editor: Editor, info: CurrentBlockInfo): void {
+  // blur / click-outside 事件可能在 editor 已销毁后还 flush 进来 ──
+  // 这里读 editor.view.dom 会触发 "editor view is not available"。
+  if (editor.isDestroyed) return
   editor.view.dispatch(editor.view.state.tr.setMeta(menuPinPluginKey, {
     pos: info.pos,
     typeName: info.typeName,
@@ -23,6 +26,7 @@ export function pinBlock(editor: Editor, info: CurrentBlockInfo): void {
 }
 
 export function unpinBlock(editor: Editor): void {
+  if (editor.isDestroyed) return
   editor.view.dispatch(editor.view.state.tr.setMeta(menuPinPluginKey, null))
 }
 

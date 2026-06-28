@@ -45,6 +45,7 @@ pub enum MemoChangeSource {
 pub struct MemoDerivedChanged {
     pub tags: bool,
     pub todos: bool,
+    pub agents: bool,
 }
 
 impl MemoDerivedChanged {
@@ -56,6 +57,9 @@ impl MemoDerivedChanged {
             todos: before
                 .map(|memo| memo.todos.as_slice() != after.todos.as_slice())
                 .unwrap_or_else(|| !after.todos.is_empty()),
+            agents: before
+                .map(|memo| memo.agents.as_slice() != after.agents.as_slice())
+                .unwrap_or_else(|| !after.agents.is_empty()),
         }
     }
 
@@ -63,6 +67,7 @@ impl MemoDerivedChanged {
         Self {
             tags: !memo.tags.is_empty(),
             todos: !memo.todos.is_empty(),
+            agents: !memo.agents.is_empty(),
         }
     }
 }
@@ -169,6 +174,7 @@ mod tests {
             thumbnail: Some("https://example.com/cover.png".to_string()),
             tags: vec!["t1".to_string()],
             todos: vec![],
+            agents: vec![],
             created_at: 1_700_000_000_000,
             updated_at: 1_700_000_000_000,
             favorited: false,
@@ -186,6 +192,7 @@ mod tests {
             derived_changed: MemoDerivedChanged {
                 tags: true,
                 todos: false,
+                agents: false,
             },
             source: MemoChangeSource::UserNew,
         };
@@ -227,6 +234,7 @@ mod tests {
             derived_changed: MemoDerivedChanged {
                 tags: false,
                 todos: true,
+                agents: false,
             },
         };
         let v: serde_json::Value = serde_json::to_value(&event).unwrap();

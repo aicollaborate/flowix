@@ -105,6 +105,9 @@ export function DragContextMenu({ editor }: DragContextMenuProps) {
 
   useEffect(() => {
     if (!showMenu) return
+    // showMenu 可能在 editor 销毁之后还变化 (e.g. 卸载过程)
+    // 此时 editor.view.dom 会触发 view-not-available 警告。
+    if (editor.isDestroyed) return
 
     const editorDom = editor.view.dom as HTMLElement
     const scrollContainer = editorDom.closest('.markdown-editor') as HTMLElement | null

@@ -8,8 +8,8 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { HashIcon, StackIcon } from '@phosphor-icons/react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { StarFourIcon, CheckSquareIcon, HashIcon, StackIcon } from '@phosphor-icons/react';
+import { Pencil, Plus } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { cn } from '@/lib/utils';
@@ -19,12 +19,12 @@ import { NoteNavigationPanelHeaderMac } from '@features/memo/components/note-nav
 import { NoteNavigationPanelHeaderWin } from '@features/memo/components/note-navigation-panel-header-win';
 import {
   NotebookIcon,
+  useMemoLibraryMetadataStore,
   useMemoStore,
   useTagStore,
   type Notebook,
 } from '@features/memo';
 import {
-  loadMemoLibraryMetadata,
   persistTagLayout,
   type MemoTagLayoutItem,
   type MemoTagTreeItem,
@@ -51,7 +51,6 @@ interface NoteNavigationPanelProps {
   selectedNotebook: Notebook | null;
   onSelectNotebook: (notebook: Notebook) => void;
   onEditNotebook: (notebook: Notebook) => void;
-  onDeleteNotebook: (notebook: Notebook) => void;
   onTogglePanel: () => void;
 }
 
@@ -120,7 +119,6 @@ export function NoteNavigationPanel({
   selectedNotebook,
   onSelectNotebook,
   onEditNotebook,
-  onDeleteNotebook,
   onTogglePanel,
 }: NoteNavigationPanelProps) {
   const { t } = useI18n();
@@ -133,9 +131,14 @@ export function NoteNavigationPanel({
   const selectedTagId = useTagStore((s) => s.selectedTagId);
   const setSelectedTagId = useTagStore((s) => s.setSelectedTagId);
   const tagMetadataRefreshVersion = useTagStore((s) => s.metadataRefreshVersion);
+  const loadLibraryMetadata = useMemoLibraryMetadataStore((s) => s.loadMetadata);
+  const clearLibraryMetadata = useMemoLibraryMetadataStore((s) => s.clearMetadata);
   const [tagOptions, setTagOptions] = useState<MemoTagTreeItem[]>([]);
   const [tagLayout, setTagLayout] = useState<MemoTagLayoutItem[]>([]);
   const [hiddenTagIds, setHiddenTagIds] = useState<string[]>([]);
+  const [totalMemoCount, setTotalMemoCount] = useState(0);
+  const [agentMemoCount, setAgentMemoCount] = useState(0);
+  const [todoMemoCount, setTodoMemoCount] = useState(0);
   const [collapsedTagIds, setCollapsedTagIds] = useState<string[]>([]);
   const [draggingTagId, setDraggingTagId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<TagDropTarget | null>(null);
@@ -201,14 +204,18 @@ export function NoteNavigationPanel({
 
     const loadTags = async (notebook: Notebook) => {
       try {
-        const metadata = await loadMemoLibraryMetadata({
+        const metadata = await loadLibraryMetadata(
           notebook,
-          selectedTagId: useTagStore.getState().selectedTagId,
-        });
+          useTagStore.getState().selectedTagId,
+          tagMetadataRefreshVersion
+        );
         if (!metadata || cancelled) return;
         setTagOptions(metadata.tagOptions);
         setTagLayout(metadata.tagLayout);
         setHiddenTagIds(metadata.hiddenTagIds);
+        setTotalMemoCount(metadata.totalMemoCount);
+        setAgentMemoCount(metadata.agentMemoCount);
+        setTodoMemoCount(metadata.todoMemoCount);
         if (selectedNotebook) {
           const validTagIds = new Set(metadata.tagOptions.map((tag) => tag.id));
           const nextCollapsed = readPersistedCollapsedTagIds(selectedNotebook.id)
@@ -225,6 +232,9 @@ export function NoteNavigationPanel({
           setTagOptions([]);
           setTagLayout([]);
           setHiddenTagIds([]);
+          setTotalMemoCount(0);
+          setAgentMemoCount(0);
+          setTodoMemoCount(0);
           setCollapsedTagIds([]);
         }
       }
@@ -234,7 +244,11 @@ export function NoteNavigationPanel({
       setTagOptions([]);
       setTagLayout([]);
       setHiddenTagIds([]);
+      setTotalMemoCount(0);
+      setAgentMemoCount(0);
+      setTodoMemoCount(0);
       setCollapsedTagIds([]);
+      clearLibraryMetadata();
       return;
     }
 
@@ -243,7 +257,7 @@ export function NoteNavigationPanel({
     return () => {
       cancelled = true;
     };
-  }, [tagMetadataRefreshVersion, selectedNotebook, setSelectedTagId]);
+  }, [clearLibraryMetadata, loadLibraryMetadata, tagMetadataRefreshVersion, selectedNotebook, setSelectedTagId]);
 
   const handleTagSelect = useCallback(
     (tagId: string) => {
@@ -259,6 +273,16 @@ export function NoteNavigationPanel({
   const handleShowAllTags = useCallback(() => {
     setSelectedTagId(null);
     setActiveFilter('all');
+  }, [setActiveFilter, setSelectedTagId]);
+
+  const handleShowAgentMemos = useCallback(() => {
+    setSelectedTagId(null);
+    setActiveFilter('agents');
+  }, [setActiveFilter, setSelectedTagId]);
+
+  const handleShowTaskMemos = useCallback(() => {
+    setSelectedTagId(null);
+    setActiveFilter('todos');
   }, [setActiveFilter, setSelectedTagId]);
 
   const handleTagCollapseToggle = useCallback((tagId: string) => {
@@ -463,8 +487,9 @@ export function NoteNavigationPanel({
       void persistTagLayout(nextLayout, notebookId).catch((error) => {
         console.warn('[NoteNavigationPanel] Failed to persist tag layout:', error);
       });
+      clearLibraryMetadata();
     },
-    [getSubtreeIds, rebuildTagOptionsFromLayout, tagLayout, tagOptions]
+    [clearLibraryMetadata, getSubtreeIds, rebuildTagOptionsFromLayout, tagLayout, tagOptions]
   );
 
   const findDropTarget = useCallback(
@@ -576,7 +601,7 @@ export function NoteNavigationPanel({
   }, [applyTagMove, findDropTarget, handleTagSelect]);
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-[var(--agent-bg)] text-[var(--agent-foreground)]">
+    <div className="flex h-full min-w-0 select-none flex-col bg-[var(--agent-bg)] text-[var(--agent-foreground)]">
       {/* 顶部 header ── Mac/Win 差分:
             - Mac: h-12 (与 OS 标题栏同高) + pl-[90px] 避开红绿灯 + rounded-xl 按钮
             - Win: h-9 (在 OS 标题栏下方, 仅做内部 UI) + rounded-lg 按钮
@@ -635,6 +660,7 @@ export function NoteNavigationPanel({
                       icon={notebook.icon}
                       name={notebook.name}
                       className="h-6 w-6 rounded-md bg-[var(--muted)] text-[11px] font-semibold text-[var(--secondary-foreground)]"
+                      imageClassName="h-5 w-5"
                     />
                     <div className="flex-1 min-w-0 flex items-center gap-1.5">
                       <span className="min-w-0 truncate">
@@ -651,8 +677,9 @@ export function NoteNavigationPanel({
                         )}
                       </span>
                     </div>
-                    {/* 编辑 / 删除 ── 与 NotebookSwitcher 行内操作保持一致,
-                        absolute 定位 + group-hover 渐显, 默认笔记本无删除。 */}
+                    {/* 编辑 ── 与 NotebookSwitcher 行内操作保持一致,
+                        absolute 定位 + group-hover 渐显。删除入口已迁到
+                        编辑弹窗的「移除」按钮, 列表行不再提供。 */}
                     <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <span
                         role="button"
@@ -666,20 +693,6 @@ export function NoteNavigationPanel({
                       >
                         <Pencil className="h-3 w-3" />
                       </span>
-                      {!notebook.isDefault && (
-                        <span
-                          role="button"
-                          tabIndex={-1}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDeleteNotebook(notebook);
-                          }}
-                          className="flex h-6 w-6 items-center justify-center rounded bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--destructive)] cursor-pointer"
-                          aria-label={t('status.deleteNotebook')}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </span>
-                      )}
                     </div>
                   </div>
                 );
@@ -748,6 +761,69 @@ export function NoteNavigationPanel({
                 />
               </span>
               <span className="min-w-0 flex-1 truncate">{t("memo.list.filterAll")}</span>
+              <span className="ml-2 shrink-0 tabular-nums text-xs text-[var(--muted-foreground)]">
+                {totalMemoCount}
+              </span>
+            </div>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={handleShowAgentMemos}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleShowAgentMemos();
+                }
+              }}
+              className={cn(
+                'group relative flex h-8 w-full cursor-pointer select-none items-center gap-0 rounded-md pr-2 text-left text-sm transition-colors',
+                activeFilter === 'agents'
+                  ? 'bg-[var(--muted)] text-[var(--foreground)]'
+                  : 'text-[var(--foreground)] hover:bg-[var(--muted)]',
+              )}
+              style={{ paddingLeft: 6 }}
+              aria-pressed={activeFilter === 'agents'}
+            >
+              <span className="mr-2 shrink-0 opacity-60">
+                <StarFourIcon
+                  className="h-3.5 w-3.5 text-[var(--muted-foreground)]"
+                  weight="bold"
+                />
+              </span>
+              <span className="min-w-0 flex-1 truncate">{t("memo.list.filterAgents")}</span>
+              <span className="ml-2 shrink-0 tabular-nums text-xs text-[var(--muted-foreground)]">
+                {agentMemoCount}
+              </span>
+            </div>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={handleShowTaskMemos}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleShowTaskMemos();
+                }
+              }}
+              className={cn(
+                'group relative flex h-8 w-full cursor-pointer select-none items-center gap-0 rounded-md pr-2 text-left text-sm transition-colors',
+                activeFilter === 'todos'
+                  ? 'bg-[var(--muted)] text-[var(--foreground)]'
+                  : 'text-[var(--foreground)] hover:bg-[var(--muted)]',
+              )}
+              style={{ paddingLeft: 6 }}
+              aria-pressed={activeFilter === 'todos'}
+            >
+              <span className="mr-2 shrink-0 opacity-60">
+                <CheckSquareIcon
+                  className="h-3.5 w-3.5 text-[var(--muted-foreground)]"
+                  weight="bold"
+                />
+              </span>
+              <span className="min-w-0 flex-1 truncate">{t("memo.list.filterTasks")}</span>
+              <span className="ml-2 shrink-0 tabular-nums text-xs text-[var(--muted-foreground)]">
+                {todoMemoCount}
+              </span>
             </div>
             {tagOptions.length > 0 && (
               <>
@@ -813,6 +889,14 @@ export function NoteNavigationPanel({
                       )}
                     >
                       {tag.name}
+                    </span>
+                    <span
+                      className={cn(
+                        'ml-2 shrink-0 tabular-nums text-xs text-[var(--muted-foreground)]',
+                        isSelected && 'text-[var(--foreground)]/70',
+                      )}
+                    >
+                      {tag.count}
                     </span>
                     {isDropBefore && (
                       <span className="pointer-events-none absolute inset-x-1 top-0 h-0.5 rounded-full bg-[var(--primary)]" />

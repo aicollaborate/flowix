@@ -14,8 +14,8 @@ use crate::memo_events::{self, MemoChangeSource, MemoDerivedChanged, MemoEvent};
 use crate::watcher::path::normalize_for_compare;
 use crate::USER_CONFIG_DIR_NAME;
 use flowix_core::memo_file::{
-    atomic_write_bytes, extract_body_content, Memo, MemoColor, MemoFile, MemoTodoEntry,
-    MemoVersionMeta, MemoVersionSource,
+    atomic_write_bytes, extract_body_content, extract_frontmatter_properties, Memo, MemoColor,
+    MemoFile, MemoTodoEntry, MemoVersionMeta, MemoVersionSource,
 };
 use flowix_core::search::MemoSearchHit;
 
@@ -52,8 +52,31 @@ pub struct MentionNoteSearchItem {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentRoleMemoItem {
+    pub memo_id: String,
+    pub role_name: String,
+    pub filename: String,
+    pub memo_icon: Option<String>,
+    pub notebook_id: String,
+    pub notebook_name: String,
+    pub notebook_icon: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UsedMemoTagIdsResponse {
     pub used_tag_ids: Vec<String>,
+    pub tag_counts: Vec<MemoTagCount>,
+    pub total_memo_count: usize,
+    pub agent_memo_count: usize,
+    pub todo_memo_count: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoTagCount {
+    pub tag_id: String,
+    pub count: usize,
 }
 
 #[derive(Serialize)]
@@ -118,12 +141,7 @@ fn emit_updated_memo_event(
 }
 
 /// Mark the written file, refresh the search index, and notify the UI.
-fn emit_updated_after_write(
-    state: &AppState,
-    app: &AppHandle,
-    id: &str,
-    before: Option<Memo>,
-) {
+fn emit_updated_after_write(state: &AppState, app: &AppHandle, id: &str, before: Option<Memo>) {
     let path = abs_path_for(state, id);
     if !path.is_empty() {
         mark_self_write_for(app, Path::new(&path));
@@ -314,14 +332,85 @@ pub fn search_mention_notes(
 }
 
 #[tauri::command]
+pub fn list_agent_role_memos(state: State<AppState>) -> Vec<AgentRoleMemoItem> {
+    let memo_file = read_lock(&state.memo_file, "memo_file");
+    let previous_notebook_id = memo_file.current_notebook_id_value();
+    let notebooks = memo_file.read_notebook_configs().unwrap_or_default();
+
+    let mut ordered_notebooks = notebooks.clone();
+    if let Some(current_id) = previous_notebook_id.as_deref() {
+        ordered_notebooks.sort_by(|a, b| {
+            let a_current = a.id == current_id;
+            let b_current = b.id == current_id;
+            b_current.cmp(&a_current)
+        });
+    }
+
+    let mut items = Vec::new();
+    for notebook in ordered_notebooks {
+        for memo in memo_file.read_all_memos_for_notebook_id(Some(&notebook.id)) {
+            let disk_properties = fs::read_to_string(Path::new(&notebook.path).join(&memo.filename))
+                .ok()
+                .map(|content| extract_frontmatter_properties(&content));
+            let properties = disk_properties.as_ref().unwrap_or(&memo.properties);
+
+            let role_name = properties
+                .get("agent-role")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let Some(role_name) = role_name else {
+                continue;
+            };
+            let memo_icon = properties
+                .get("icon")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .or_else(|| memo.icon.clone());
+
+            items.push(AgentRoleMemoItem {
+                memo_id: memo.id,
+                role_name: role_name.to_string(),
+                filename: memo.filename,
+                memo_icon,
+                notebook_id: notebook.id.clone(),
+                notebook_name: notebook.name.clone(),
+                notebook_icon: notebook.icon.clone(),
+            });
+        }
+    }
+
+    items.sort_by(|a, b| {
+        a.role_name
+            .to_lowercase()
+            .cmp(&b.role_name.to_lowercase())
+            .then_with(|| a.notebook_name.to_lowercase().cmp(&b.notebook_name.to_lowercase()))
+            .then_with(|| a.filename.to_lowercase().cmp(&b.filename.to_lowercase()))
+    });
+    items
+}
+
+#[tauri::command]
 pub fn get_used_memo_tag_ids(
     notebook_id: Option<String>,
     state: State<AppState>,
 ) -> UsedMemoTagIdsResponse {
-    let used_tag_ids = read_lock(&state.memo_file, "memo_file")
-        .read_used_tag_ids_for_notebook_id(notebook_id.as_deref())
-        .unwrap_or_default();
-    UsedMemoTagIdsResponse { used_tag_ids }
+    let (used_tag_ids, tag_counts, total_memo_count, agent_memo_count, todo_memo_count) =
+        read_lock(&state.memo_file, "memo_file")
+            .read_tag_usage_summary_for_notebook_id(notebook_id.as_deref())
+            .unwrap_or_default();
+    UsedMemoTagIdsResponse {
+        used_tag_ids,
+        tag_counts: tag_counts
+            .into_iter()
+            .map(|(tag_id, count)| MemoTagCount { tag_id, count })
+            .collect(),
+        total_memo_count,
+        agent_memo_count,
+        todo_memo_count,
+    }
 }
 
 #[tauri::command]
@@ -699,6 +788,7 @@ pub fn add_document(
                 thumbnail: None,
                 tags: vec![],
                 todos: vec![],
+                agents: vec![],
                 created_at: now,
                 updated_at: now,
                 favorited: false,

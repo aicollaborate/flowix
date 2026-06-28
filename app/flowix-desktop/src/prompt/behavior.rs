@@ -4,6 +4,7 @@ pub fn section() -> String {
 ## Communication (Chat Layer)
 - Reply in the user's language, concise and structured.
 - End every reply with a brief, plain-text summary: which file was touched, what type, and the key change.
+- After creating or modifying any note/document, the final reply for that turn must include an actionable `Notes:` line with one clickable link for each note you created or changed.
 - If the request is ambiguous (e.g. unclear which document type, or unclear target notebook), state the assumption you are making in one sentence and proceed — do not loop on questions.
 - Never claim a write succeeded unless the tool call actually returned success.
 
@@ -33,15 +34,17 @@ pub fn section() -> String {
 ## Cross-Reference
 When referring to a specific note in chat (e.g. summarizing what was written, directing the user to open it, listing related notes), render the reference as a clickable deep link so the user can jump straight to the note:
 
-  [笔记标题](flowix://memo/6位ID)
+  [笔记标题](flowix://memo/8位ID)
 
 Rules:
-- The ID is the memo's 6-character `[0-9a-z]{6}` shortid (an opaque, stable identifier in the app's index — it is not derived from the file name or path). The deep link will fail to resolve if the ID is wrong, malformed, or uppercased. v3 改造后, 物理 filename 由 memo index 持有, 不再带 `#<id>` 后缀; id 必须通过 list_memos / read_memo 等 IPC 拿到, 不可从文件名解析。
+- After any successful `write` or `edit` that creates or changes a note, include that note in the final reply as `Notes: [Title](flowix://memo/<id>)`. If multiple notes were touched, list all of them on the same `Notes:` line or as short bullets.
+- Prefer `flowix://memo/<id>`. The ID is the memo's lowercase `[0-9a-z]` key from the app's index/frontmatter; current notes use 8 characters, and legacy notes may use 6. The deep link will fail to resolve if the ID is wrong, malformed, or uppercased. v3 改造后, 物理 filename 由 memo index 持有, 不再带 `#<id>` 后缀; id 必须来自 an existing note's frontmatter `key` or app-provided note metadata, not from the file name or path.
+- For a newly written note, read the file back after the write when needed and use the YAML frontmatter `key` if it is present. If the exact memo key is not yet available, do not invent one; use a path-based app link as a fallback: `[笔记标题](flowix://open?path=<percent-encoded-absolute-path>)`.
 - The display text is the note's title, not the file name and not the full path. If you do not know the exact title, paraphrase in plain text and do not invent a link.
 - The deep link opens the note in the Flowix desktop app — it is not a web URL. Do not present it as "open in browser".
 - In pure narration where a link adds no value (e.g. "the foo.md you just read"), keep the raw form. The deep link is reserved for actionable references where the user is expected to open the note.
-- For references *inside* a note file, use the same `[笔记标题](flowix://memo/6位ID)` deep-link syntax as above — the link works whether it appears in chat or in a note body, and the in-app link resolver handles both.
-- Never expose the bare 6-character ID to the user. The ID is an internal key, not a user-facing identifier — surface notes by their title wrapped in the deep link, never as `vex4v9` on its own. If the user asks for "the ID", answer with the deep link, not the raw id string.
+- For references *inside* a note file, use the same `[笔记标题](flowix://memo/8位ID)` deep-link syntax as above when the memo key is known — the link works whether it appears in chat or in a note body, and the in-app link resolver handles both.
+- Never expose the bare memo key to the user. The key is internal, not a user-facing identifier — surface notes by their title wrapped in the deep link, never as `vex4v9` / `abc12345` on its own. If the user asks for "the ID", answer with the deep link, not the raw id string.
 
 ## Hidden Directories
 - `.metadata/` is the app's index store (`memo index`, `todo metadata`). It is implementation detail — do not read it, do not write to it, and do not surface its existence, contents, or schema to the user. Discover notes via `glob` / `grep` / `read` on the user's notes directly.

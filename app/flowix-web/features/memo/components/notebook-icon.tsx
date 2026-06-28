@@ -96,6 +96,11 @@ export function getNotebookIconOption(icon: string | null | undefined): Notebook
   return NOTEBOOK_ICON_BY_ID.get(icon) ?? null;
 }
 
+export function getNotebookIconMarkup(icon: string | null | undefined): string | null {
+  const option = getNotebookIconOption(icon);
+  return option ? NOTEBOOK_ICON_MARKUP_BY_ID[option.id] ?? null : null;
+}
+
 export function getNotebookIconLetter(name: string | undefined | null, fallback: string = 'N'): string {
   if (!name) return fallback;
   const trimmed = name.trim();

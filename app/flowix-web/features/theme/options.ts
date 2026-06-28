@@ -52,4 +52,13 @@ export const THEME_OPTIONS: ThemeOption[] = [
     descriptionKey: 'theme.mist.description',
     preview: { background: '#fdfdfd', surface: '#ededed', primary: '#4693FF', accent: '#eaeaea' },
   },
+  {
+    id: 'ember',
+    labelKey: 'theme.ember.label',
+    descriptionKey: 'theme.ember.description',
+    /* 预览: 近白暖纸 (#faf5ee) + 几乎纯白卡片 (#fefcf8) + FB6A42 主色 +
+     * 浅米描边 (#ede5d8) ── 与 ember.css v2 的 OKLCH 值取最接近的 sRGB
+     * hex (ΔL<0.005), 让偏好面板小样与真实主题渲染视觉一致。 */
+    preview: { background: '#faf5ee', surface: '#fefcf8', primary: '#FB6A42', accent: '#ede5d8' },
+  },
 ];

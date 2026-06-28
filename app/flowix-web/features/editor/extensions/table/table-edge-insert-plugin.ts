@@ -84,6 +84,10 @@ class TableEdgeInsertView {
   private hoverArea: HTMLElement;
   private overlayRoot: HTMLElement;
   private hideTimer: number | null = null;
+  // view 可能因为所在 Editor.destroy() 而失效；任何走 view.dom / view.posAtDOM
+  // 的路径都要先看这个旗子。事件 listener 在 destroy 里已经 remove, 但
+  // 浏览器仍可能 flush 一帧在途事件, 不守卫就会读到 detached dom 抛 warning。
+  private isDestroyed = false;
 
   constructor(
     private view: EditorView,
@@ -108,11 +112,13 @@ class TableEdgeInsertView {
   }
 
   update(view: EditorView): void {
+    if (this.isDestroyed) return;
     this.view = view;
     if (!this.editor.isEditable) this.hide();
   }
 
   destroy(): void {
+    this.isDestroyed = true;
     this.hoverArea.removeEventListener('mousemove', this.handleMouseMove);
     this.hoverArea.removeEventListener('mouseleave', this.handleMouseLeave);
     this.hoverArea.removeEventListener('scroll', this.hide);
@@ -159,6 +165,7 @@ class TableEdgeInsertView {
   }
 
   private handleButtonMouseDown(event: MouseEvent, kind: EdgeKind): void {
+    if (this.isDestroyed) return;
     event.preventDefault();
     event.stopPropagation();
 
@@ -183,6 +190,7 @@ class TableEdgeInsertView {
   }
 
   private handleMouseMove = (event: MouseEvent): void => {
+    if (this.isDestroyed) return;
     if (!this.editor.isEditable) {
       this.hide();
       return;

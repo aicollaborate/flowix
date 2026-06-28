@@ -16,6 +16,7 @@ export interface SettingsStore {
   reasoningCollapsed: boolean;
   appview: AppViewState;
   memoListVisible: boolean;
+  noteNavigationVisible: boolean;
   agentPanelVisible: boolean;
   agentColWidth: number;
   toolbarCollapsed: boolean;
@@ -25,6 +26,8 @@ export interface SettingsStore {
   setAppViewModeAllSize: (size: { w: number; h: number }) => void;
   setMemoListVisible: (visible: boolean) => void;
   toggleMemoListVisible: () => void;
+  setNoteNavigationVisible: (visible: boolean) => void;
+  toggleNoteNavigationVisible: () => void;
   setAgentPanelVisible: (visible: boolean) => void;
   toggleAgentPanelVisible: () => void;
   setAgentColWidth: (width: number) => void;
@@ -39,6 +42,7 @@ export const useSettingsStore = create<SettingsStore>()(
         mode: 'all',
       },
       memoListVisible: true,
+      noteNavigationVisible: false,
       agentPanelVisible: true,
       agentColWidth: 360,
       toolbarCollapsed: false,
@@ -53,6 +57,9 @@ export const useSettingsStore = create<SettingsStore>()(
       })),
       setMemoListVisible: (visible) => set({ memoListVisible: visible }),
       toggleMemoListVisible: () => set((state) => ({ memoListVisible: !state.memoListVisible })),
+      setNoteNavigationVisible: (visible) => set({ noteNavigationVisible: visible }),
+      toggleNoteNavigationVisible: () =>
+        set((state) => ({ noteNavigationVisible: !state.noteNavigationVisible })),
       setAgentPanelVisible: (visible) => set({ agentPanelVisible: visible }),
       toggleAgentPanelVisible: () => set((state) => ({ agentPanelVisible: !state.agentPanelVisible })),
       setAgentColWidth: (width) => set({ agentColWidth: width }),
@@ -64,6 +71,7 @@ export const useSettingsStore = create<SettingsStore>()(
         reasoningCollapsed: state.reasoningCollapsed,
         appview: state.appview,
         memoListVisible: state.memoListVisible,
+        noteNavigationVisible: state.noteNavigationVisible,
         agentPanelVisible: state.agentPanelVisible,
         agentColWidth: state.agentColWidth,
         toolbarCollapsed: state.toolbarCollapsed,

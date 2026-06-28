@@ -1,3 +1,4 @@
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { Node, mergeAttributes } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
@@ -6,13 +7,15 @@ import DOMPurify from 'dompurify';
 import { Marked } from 'marked';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
-import { agent } from '@platform/tauri/client';
+import { agent, memos as memosClient, type AgentRoleMemoItem } from '@platform/tauri/client';
 import { useChatStore, type ThreadState } from '@features/agent/store/chat-store';
 import { useAgentAccessStore } from '@features/agent/store/agent-access-store';
 import { useMemoStore } from '@features/memo';
+import { getNotebookIconLetter, getNotebookIconMarkup } from '@features/memo/components/notebook-icon';
+import { getPropertyIconOption } from '@features/document/properties/property-icons';
 import { Tooltip } from '@shared/ui/tooltip';
 import { translate, type AppLanguage, type I18nKey } from '@features/i18n';
-import type { AgentRoleKey } from '@/types/agent';
+import type { AgentTypeKey } from '@/types/agent';
 import type { AgentAccessEntry } from '@/lib/types/agent-access';
 import {
   createAgentMessageViewModel,
@@ -21,14 +24,16 @@ import {
 import { getToolIconPath } from '@features/agent/message/tools';
 import { openNoteByDeepLink } from '@platform/open-target';
 import { isWindowsPlatform } from '@features/shortcuts';
-import { DEFAULT_AGENT_ROLE_KEY, getAgentRole, normalizeAgentRoleKey } from '@/lib/agent-roles';
+import { normalizePlainLinkHref } from '@features/editor/extensions/markdown-link';
+import { DEFAULT_AGENT_TYPE_KEY, getAgentType, normalizeAgentTypeKey } from '@/lib/agent-types';
 import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
+import { displayTitleFromFilename } from '@/lib/utils';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     agentThreadCard: {
       insertAgentThreadCard: (options?: {
-        roleKey?: AgentRoleKey;
+        typeKey?: AgentTypeKey;
         replaceRange?: { from: number; to: number };
         initialPrompt?: string;
         autoSubmit?: boolean;
@@ -61,6 +66,63 @@ const DEFAULT_TITLE = 'AI 对话';
 // 一边就要同步改另一边, 这里保留纯数字 + 注释避免魔法值漂移。
 const WINDOWS_TITLEBAR_HEIGHT_PX = 36;
 const BOTTOM_FOLLOW_THRESHOLD_PX = 96;
+const ACCESS_POPOVER_OFFSET_ABOVE_PX = 15;
+const ACCESS_POPOVER_OFFSET_BELOW_PX = 2;
+const ACCESS_POPOVER_VIEWPORT_PADDING_PX = 8;
+const ACCESS_POPOVER_WIDTH_PX = 208;
+const ACCESS_POPOVER_MAX_HEIGHT_PX = 320;
+const ACCESS_POPOVER_MIN_HEIGHT_PX = 96;
+// 注: 二级弹窗走纯 CSS 定位 (right: 100% / top: 0), 不需要 JS
+// 计算坐标所需的 viewport padding / offset / hide-delay 常量。
+
+interface AgentRoleOption {
+  memoId: string;
+  name: string;
+  filename: string;
+  memoIcon?: string | null;
+  notebookName: string;
+  notebookIcon?: string | null;
+}
+
+function getMemoAgentRoleName(properties: Record<string, unknown> | undefined): string | null {
+  const value = properties?.['agent-role'];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function getMemoIconValue(memoIcon: string | null | undefined, properties: Record<string, unknown> | undefined): string | null {
+  const value = properties?.icon;
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return typeof memoIcon === 'string' && memoIcon.trim() ? memoIcon.trim() : null;
+}
+
+function getIconText(value: string): string {
+  return Array.from(value.trim())[0] ?? '';
+}
+
+function appendRoleIconContent(target: HTMLElement, icon: string, label: string): boolean {
+  const memoIcon = icon.trim();
+  if (!memoIcon) return false;
+
+  const propertyIcon = getPropertyIconOption(memoIcon);
+  if (propertyIcon) {
+    const image = document.createElement('img');
+    image.src = propertyIcon.src;
+    image.alt = '';
+    image.draggable = false;
+    target.append(image);
+    return true;
+  }
+
+  const iconMarkup = getNotebookIconMarkup(memoIcon);
+  if (iconMarkup) {
+    target.classList.add('agent-thread-card__role-icon--svg');
+    target.innerHTML = iconMarkup;
+    return true;
+  }
+
+  target.textContent = getIconText(memoIcon || label);
+  return true;
+}
 
 // Phosphor 路径内联 ── NodeView 是纯 DOM，不引入 React 渲染 Phosphor 组件。
 // 路径取自 @phosphor-icons/react v2.1.x (regular / fill)，viewBox 均为 256x256。
@@ -98,6 +160,21 @@ const ICON_FULLSCREEN_EXIT_PATH = 'M96,40V80A16,16,0,0,1,80,96H40a8,8,0,0,1,0-16
 const ICON_FOLDER_PATH = 'M216,72H131.31L104,44.69A15.86,15.86,0,0,0,92.69,40H40A16,16,0,0,0,24,56V200.89A15.13,15.13,0,0,0,39.11,216H216.89A15.13,15.13,0,0,0,232,200.89V88A16,16,0,0,0,216,72ZM40,56H92.69l16,16H40ZM216,200H40V88H216Z';
 const ICON_PLUS_PATH = 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z';
 const ICON_ALERT_PATH = 'M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z';
+// UserCircleDashed 图标 ── 在 Agent Thread Card 输入框左侧"未设置角色"时
+// 展示。 视觉: 24×24 viewBox (lucide 风格), 虚线外圈 (stroke-dasharray) +
+// 实心头部 (circle) + 实心身体 (path)。 用三个 SVG 子元素组合表达
+// "dashed avatar placeholder" ── 表达 "此处可设置角色" 的占位语义。
+//
+// 为什么不用 lucide 的 UserCircle ── 它没有 Dashed 变体 (0.577 仅有 UserCircle/
+// UserRound/UserSquare)。 这里直接内联 SVG, 避免引入新依赖 ── 与文件内
+// ICON_ALERT_PATH / ICON_PLUS_PATH / ICON_CHEVRON_* 完全同思路。
+//
+// "未设置角色" 图标 ── Plus (lucide 24×24 viewBox + fill=currentColor,
+// 与 ICON_PLUS_PATH 共用 path)。 "未设置时显示 +" 表达"点击新增角色"
+// 的强引导, 比 UserCircleDashed (虚线占位) 更直接。
+//
+// 视觉重量与 memo 文档图标相近 ── 切换为 memo icon 时不会突兀。
+//
 // 工具消息图标 ── 走 @features/agent/message/tools 的单源 registry。
 // 卡片是纯 DOM (Tiptap NodeView), 用 SVG path 字符串 (与 panel inline
 // SVG 共享同一份 data, 视觉完全一致)。getToolIconPath 已带 Terminal fallback。
@@ -131,9 +208,9 @@ function createChevronIcon(direction: 'up' | 'down'): SVGSVGElement {
   return svg;
 }
 
-// 头部左侧 Agent 角色图标 ── 通过 getAgentRole(roleKey).icon 读取
-// agent-roles.ts 里集中管理的图片资源 (Vite import 解析后的 URL)。
-// 用 <img> 而非内联 SVG, 因为角色图标是 PNG / 外部 SVG, 不需要走
+// 头部左侧 Agent 类型图标 ── 通过 getAgentType(typeKey).icon 读取
+// agent-types.ts 里集中管理的图片资源 (Vite import 解析后的 URL)。
+// 用 <img> 而非内联 SVG, 因为类型图标是 PNG / 外部 SVG, 不需要走
 // 256×256 phosphor 路径体系。CSS 控制 14×14 渲染尺寸。
 function createCopyIcon(): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -236,6 +313,37 @@ function createPlusIcon(): SVGSVGElement {
   svg.setAttribute('focusable', 'false');
   svg.classList.add('agent-thread-card__access-add-icon');
 
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', ICON_PLUS_PATH);
+  path.setAttribute('fill', 'currentColor');
+  svg.append(path);
+  return svg;
+}
+
+// 输入框左侧"未设置角色"图标 ── Plus 图标, **完全复用 access popover
+// 新增资料夹按钮** (`createPlusIcon` / `ICON_PLUS_PATH` / 14×14 渲染)
+// 的视觉规格 ── 同样 24×24 的容器 + 14×14 的 filled cross。 为什么复
+// 用同一份: "未设置角色" 与 "新增资料夹" 是同一类语义 (空态 +
+// "新增"动作), 视觉一致性 > 差异化, 让用户识别"次级 indicator"
+// 这一类 UI 元素有统一节奏。
+//
+// 之前用过 stroke 风格 (`ICON_PLUS_STROKE_PATH`) 在 20×20 渲染 ── 仍偏
+// 重, 因为 (a) stroke 在小尺寸渲染下反而更显眼 (细线与背景对比强),
+// (b) 20×20 相对按钮 24×24 几乎填满。 用 filled cross + 14×14 后, 加
+// 上按钮自身的 `var(--muted)` 背景, 整体观感与新增资料夹按钮完全一致。
+//
+// CSS `.agent-thread-card__composer-role-icon svg` 已设 `pointer-events:
+// none`, 子元素不接收点击事件 ── 点击落到父 button, 走统一的 click handler。
+function createComposerRoleEmptyIcon(): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  // 挂独立 class 让 CSS 把这个 SVG 渲染成 14×14 ── 与 access popover
+  // 新增资料夹的 `__access-add-icon` 同尺寸。 默认 `__composer-role-icon
+  // svg` 是 20×20 (适合 memo 文档图标 / 字母头像), 但 Plus 图标在
+  // 14×14 才看起来与按钮整体平衡。
+  svg.classList.add('agent-thread-card__composer-role-icon-empty');
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   path.setAttribute('d', ICON_PLUS_PATH);
   path.setAttribute('fill', 'currentColor');
@@ -423,10 +531,16 @@ class AgentThreadCardView implements ProseMirrorNodeView {
   private sendButtonRoot: Root;
   private body: HTMLElement;
   private composer: HTMLElement;
+  // 输入框左侧 role 图标 ── 升级为 button (之前是 span), 让点击直接打开
+  // 「选择角色」弹窗。 字段类型用 HTMLButtonElement, 以便调用 `.type = 'button'`
+  // 等 button 专属 API (HTMLElement 上没有)。 HTMLElement 的所有 API
+  // (replaceChildren / classList / setAttribute / addEventListener) 在 button
+  // 上仍然可用 ── 不影响其它调用方。
+  private composerRoleIcon: HTMLButtonElement;
   private container: HTMLDivElement;
   private titleEl: HTMLElement;
-  // Agent 角色徽章 ── span (icon | role.name), 1.3rem 高, 1px 描边。
-  // 详情与样式见 css/editor-agent-thread-card.css (.agent-role-badge 块,
+  // Agent 类型徽章 ── span (icon | type.name), 1.3rem 高, 1px 描边。
+  // 详情与样式见 css/editor-agent-thread-card.css (.agent-type-badge 块,
   // 位于文件顶部、未加 .markdown-editor 限定)。这里三件套 (badge / icon / name)
   // 在构造器一次性创建并挂到 agentWrap, refreshAttrs 时只更新 src / alt /
   // textContent, 不重建 DOM (避免重渲染期间图标 src 短暂为空造成闪烁)。
@@ -452,29 +566,50 @@ class AgentThreadCardView implements ProseMirrorNodeView {
   private copyThreadIdButton: HTMLButtonElement;
   private accessButton: HTMLButtonElement;
   private accessPopover: HTMLDivElement;
+  // 角色选择下拉弹窗 ── 直接挂在 composerRoleIcon button 下方/上方, 取代
+  // 之前 accessPopover → 「角色」按钮 → typeSettingsPopover 的两级展开。
+  // 一次性创建, 构造器挂到 document.body, 后续 renderRoleOptionsList
+  // 复用, 不再频繁重建节点。 与 accessPopover 同一套 fixed 定位范式 ──
+  // 详见 CSS .agent-thread-card__composer-role-popover 块。
+  private composerRolePopover: HTMLDivElement;
+  private isComposerRolePopoverOpen = false;
+  private composerRolePopoverResizeObserver: ResizeObserver | null = null;
+  private composerRolePopoverPositionFrame: number | null = null;
+  private agentRoleOptions: AgentRoleOption[] | null = null;
+  private isLoadingAgentRoleOptions = false;
+  private agentRoleOptionsRequestSeq = 0;
   private unsubscribe?: () => void;
   private unsubscribeAccess?: () => void;
   private unsubscribeNotebooks?: () => void;
   private isCreating = false;
+  private isComposing = false;
   private isAccessPopoverOpen = false;
   private isLoadingThreadCache = false;
   private loadedThreadCacheFor: string | null = null;
   private loadingThreadCacheFor: string | null = null;
   private loadThreadCacheTimeout: ReturnType<typeof setTimeout> | null = null;
   private loadThreadCacheIdleId: number | null = null;
+  private isThreadCacheSettling = false;
+  private threadCacheRevealFrame: number | null = null;
   private resolvingCodexSessionFor: string | null = null;
   private isDestroyed = false;
   private isFullscreen = false;
   private fullscreenContainer: HTMLElement | null = null;
   private fullscreenResizeObserver: ResizeObserver | null = null;
+  private accessPopoverResizeObserver: ResizeObserver | null = null;
+  private accessPopoverPositionFrame: number | null = null;
   // 上一帧折叠态, 仅用于识别'折叠→展开'瞬时事件触发置顶。
   private prevCollapsed: boolean = false;
   private shouldFollowBottom = true;
   private boundHandleBodyScroll = (): void => {
     this.shouldFollowBottom = this.isBodyNearBottom();
+    this.scheduleAccessPopoverPosition();
   };
   private boundSyncFullscreenBounds = (): void => {
     this.syncFullscreenBounds();
+  };
+  private boundPositionAccessPopover = (): void => {
+    this.scheduleAccessPopoverPosition();
   };
   private boundHandleFullscreenKeydown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape' && this.isFullscreen) {
@@ -485,8 +620,34 @@ class AgentThreadCardView implements ProseMirrorNodeView {
   private boundHandleAccessOutsidePointer = (event: PointerEvent): void => {
     if (!this.isAccessPopoverOpen) return;
     const target = event.target as globalThis.Node | null;
-    if (target && (this.accessPopover.contains(target) || this.accessButton.contains(target))) return;
+    if (
+      target &&
+      (
+        this.accessPopover.contains(target) ||
+        this.accessButton.contains(target) ||
+        this.composerRoleIcon.contains(target)
+      )
+    ) return;
     this.setAccessPopoverOpen(false);
+  };
+  // 独立 outside-click 处理 ── 与 accessPopover 完全独立, 因为现在是
+  // 两套独立的下拉弹窗, 一开一关互不干扰。 同样把 click 目标在
+  // composerRoleIcon / composerRolePopover 内部的情况判作"内部", 不关
+  // 弹窗。
+  private boundHandleComposerRoleOutsidePointer = (event: PointerEvent): void => {
+    if (!this.isComposerRolePopoverOpen) return;
+    const target = event.target as globalThis.Node | null;
+    if (
+      target &&
+      (
+        this.composerRolePopover.contains(target) ||
+        this.composerRoleIcon.contains(target)
+      )
+    ) return;
+    this.setComposerRolePopoverOpen(false);
+  };
+  private boundPositionComposerRolePopover = (): void => {
+    this.scheduleComposerRolePopoverPosition();
   };
 
   /** 当前 AppLanguage ── NodeView 不在 React 树里, 不能用 useI18n,
@@ -540,26 +701,26 @@ class AgentThreadCardView implements ProseMirrorNodeView {
     const agentWrap = document.createElement('div');
     agentWrap.className = 'agent-thread-card__agent';
 
-    // 头部左侧: Agent 角色徽章 (icon + role.name) + 对话标题。
-    // 徽章是通用 .agent-role-badge span ── 左 icon 右非加粗 role 名,
-    // 总高 1.3rem, 1px var(--border) 描边。图标 src 从 agent-roles.ts 集中
-    // 管理 (Vite import 解析后的图片 URL), 按 roleKey 动态读取 ── 与
-    // Agent 面板的 Runtime Switcher 同源。
+    // 头部左侧: Agent 类型徽章 (icon + type.name) + 对话标题。
+    // 徽章是通用 .agent-type-badge span ── 左 icon 右非加粗 type 名,
+    // 总高 1.3rem, 1px var(--border) 描边。图标 src 从 agent-types.ts 集中
+    // 管理 (Vite import 解析后的图片 URL), 按 typeKey 动态读取 ── 与
+    // Agent 面板的 Type Switcher 同源。
     //
-    // 角色名从 title 移到 badge 里: badge 显式表达'当前 role', title 只
+    // 类型名从 title 移到 badge 里: badge 显式表达'当前 type', title 只
     // 承担对话标题 ── 避免'Flowix · Flowix · 我的对话'这种视觉重复。
     // 多 Agent 视觉区分配色方案在 chat-store 侧 message role 上做, 这里
-    // 视觉区分通过 badge 自身 (role 图标 + name) 已经足够。
+    // 视觉区分通过 badge 自身 (type 图标 + name) 已经足够。
     this.badgeEl = document.createElement('span');
-    this.badgeEl.className = 'agent-role-badge';
+    this.badgeEl.className = 'agent-type-badge';
 
     this.badgeIcon = document.createElement('img');
-    this.badgeIcon.className = 'agent-role-badge__icon';
+    this.badgeIcon.className = 'agent-type-badge__icon';
     this.badgeIcon.draggable = false;
     this.badgeIcon.alt = '';
 
     this.badgeName = document.createElement('span');
-    this.badgeName.className = 'agent-role-badge__name';
+    this.badgeName.className = 'agent-type-badge__name';
 
     this.badgeEl.append(this.badgeIcon, this.badgeName);
 
@@ -708,13 +869,47 @@ actions.append(
     composer.className = 'agent-thread-card__composer';
     this.composer = composer;
 
+    // 输入框左侧 role 图标 ── 升级为 button, 让点击直接打开「选择角色」弹窗。
+    // 之前是 <span hidden=true>, 用户在未设置角色时看不到入口, 必须从右侧
+    // `accessButton` 进入「可访问文件」弹窗再 hover「角色」才能选 ── 路径
+    // 太深。 改成始终可见的 button, 未设置时显示 UserCircleDashedIcon (虚线
+    // 占位), 设置后显示 memo 文档图标; 点击直接 toggleComposerRolePopover(),
+    // 单级直达角色选择面板 (无二级展开)。
+    //
+    // aria-* 与文件内其它 trigger button (accessButton / collapseButton
+    // 等) 完全同构: aria-haspopup="menu" 表达"打开的是菜单型弹窗",
+    // aria-expanded 由 setComposerRolePopoverOpen 切换, 同步反映给屏幕阅读器。
+    this.composerRoleIcon = document.createElement('button');
+    this.composerRoleIcon.type = 'button';
+    this.composerRoleIcon.className = 'agent-thread-card__composer-role-icon';
+    this.composerRoleIcon.setAttribute('aria-haspopup', 'menu');
+    this.composerRoleIcon.setAttribute('aria-expanded', 'false');
+    this.composerRoleIcon.setAttribute('aria-label', this.t('editor.threadCard.selectRole'));
+    this.composerRoleIcon.title = this.t('editor.threadCard.roleIconTooltip');
+    this.composerRoleIcon.addEventListener('click', (event) => {
+      // 与同文件其它 trigger button (accessButton 等) 一致 ── stopPropagation
+      // 阻止冒泡到卡片根 mousedown, 避免卡片被 selected / focus 状态接管,
+      // 同时不让 document 级 outside-click listener 把"打开弹窗"那一下误判
+      // 为 outside 而立即关闭。 boundHandleComposerRoleOutsidePointer 的
+      // allowlist 已包含 this.composerRoleIcon, 见构造函数上方的 handler。
+      event.stopPropagation();
+      this.toggleComposerRolePopover();
+    });
+
     this.input = document.createElement('textarea');
     this.input.rows = 1;
     this.input.placeholder = this.t('editor.threadCard.inputPlaceholder');
     this.input.addEventListener('keydown', (event) => {
-      if (event.isComposing || event.key !== 'Enter' || event.shiftKey) return;
+      if (this.isComposing || event.isComposing || event.keyCode === 229) return;
+      if (event.key !== 'Enter' || event.shiftKey) return;
       event.preventDefault();
       void this.submit();
+    });
+    this.input.addEventListener('compositionstart', () => {
+      this.isComposing = true;
+    });
+    this.input.addEventListener('compositionend', () => {
+      this.isComposing = false;
     });
     // 多行检测: 内容超过 min-height 时给 composer 切换 align-items (居中 → 贴底)。
     // 阈值比 min-height (48px) 略高, 留 2px 抗亚像素抖动。
@@ -737,13 +932,32 @@ actions.append(
     this.accessPopover.hidden = true;
     this.accessPopover.addEventListener('mousedown', (event) => event.stopPropagation());
     this.accessPopover.addEventListener('click', (event) => event.stopPropagation());
+    document.body.appendChild(this.accessPopover);
+
+    // composerRolePopover ── 角色选择下拉弹窗, 直接挂在 composerRoleIcon
+    // button 下方/上方, 不再嵌套在 accessPopover 里。 构造器一次性创建,
+    // 挂到 document.body, 后续 renderRoleOptionsList 在它内部 replaceChildren
+    // 复用 ── 与 accessPopover 同一套"单例 + replaceChildren"模式, 不
+    // 每次重建节点 (避免反复 bind event listener / ResizeObserver)。
+    this.composerRolePopover = document.createElement('div');
+    this.composerRolePopover.className = 'agent-thread-card__composer-role-popover';
+    this.composerRolePopover.setAttribute('role', 'menu');
+    this.composerRolePopover.hidden = true;
+    // 阻止 mousedown / click 冒泡 ── 弹窗内部的点击不应该触发卡片根
+    // mousedown 处理 (避免 composer mousedown 把焦点抢到 textarea), 也
+    // 不应该冒泡到 outside-click listener 把"选角色"误判为 outside 而
+    // 关闭弹窗。 boundHandleComposerRoleOutsidePointer 的 allowlist
+    // 已包含 composerRolePopover 自身 ── 内部点击不会被判 outside。
+    this.composerRolePopover.addEventListener('mousedown', (event) => event.stopPropagation());
+    this.composerRolePopover.addEventListener('click', (event) => event.stopPropagation());
+    document.body.appendChild(this.composerRolePopover);
 
     this.sendButtonMount = document.createElement('span');
     this.sendButtonMount.className = 'agent-thread-card__send-tooltip';
     this.sendButtonRoot = createRoot(this.sendButtonMount);
     this.renderSendButton(false, true);
 
-    composer.append(this.input, this.accessButton, this.sendButtonMount, this.accessPopover);
+    composer.append(this.composerRoleIcon, this.input, this.accessButton, this.sendButtonMount);
     // 点击 composer 空白区域 ── 自动聚焦 textarea; stopPropagation
     // 阻止冒泡到 card 根 mousedown 处理, 避免 focus 状态互相影响
     // 整张卡片 (与"聚焦输入"语义冲突)。textarea / button 自身的点击
@@ -774,11 +988,18 @@ actions.append(
     return (this.node.attrs.title as string | null) || this.t('editor.threadCard.title');
   }
 
-  private get roleKey(): AgentRoleKey {
-    return normalizeAgentRoleKey(
-      (this.node.attrs.roleKey as string | null) ||
-      (this.node.attrs.agentId as string | null)
-    );
+  private get typeKey(): AgentTypeKey {
+    return normalizeAgentTypeKey(this.node.attrs.typeKey as string | null);
+  }
+
+  private get agentRoleMemoId(): string | null {
+    const value = this.node.attrs.agentRoleMemoId;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private get agentRoleName(): string | null {
+    const value = this.node.attrs.agentRoleName;
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
   }
 
   private get collapsed(): boolean {
@@ -819,7 +1040,7 @@ actions.append(
       previousThreadState = nextThreadState;
       this.renderThreadState();
       if (
-        this.roleKey === 'codex' &&
+        this.typeKey === 'codex' &&
         threadId?.startsWith('codex-local-') &&
         nextThreadState &&
         !nextThreadState.isLoading
@@ -855,8 +1076,15 @@ actions.append(
         void memoState.loadNotebooks().catch(() => {});
       }
       this.renderAccessPopover();
+      this.scheduleAccessPopoverPosition();
+      this.startAccessPopoverPositionTracking();
       document.addEventListener('pointerdown', this.boundHandleAccessOutsidePointer, true);
     } else {
+      // 之前"关闭主弹窗时同时关闭二级弹窗 (typeSettingsPopover)"的逻辑
+      // 已删除 ── role popover 现在是独立的 composerRolePopover, 与
+      // accessPopover 完全解耦, 不再跟随主弹窗一起关。 用户可以在
+      // accessPopover 关闭后仍打开 role popover, 反之亦然。
+      this.stopAccessPopoverPositionTracking();
       document.removeEventListener('pointerdown', this.boundHandleAccessOutsidePointer, true);
     }
   }
@@ -869,33 +1097,64 @@ actions.append(
 
     this.accessPopover.replaceChildren();
 
+    // ── DOM 结构 ──
+    // outer access-popover (fixed, overflow visible) 包两层:
+    //   .access-popover-scroll  ── entries 列表, 单独滚动, 占主高度
+    //   .access-popover-footer  ── 底部操作区, 装"添加资料夹"按钮
+    //
+    // 之前"添加资料夹"在 actions 顶部, 用户视觉路径是先看到按钮再看列表 ──
+    // 现在移到列表下方, 视觉路径变成"先扫列表 → 末尾才看到添加", 跟大多数
+    // list-with-CTA 模式 (邮件应用 / 文件管理器) 一致。 列表本身仍是主
+    // 要内容, 按钮是末尾的"还有更多 / 加一个"动作, 不是第一视觉锚点。
+    //
+    // 角色选择入口已从 accessPopover 移除 ── 改为左侧 composerRoleIcon
+    // button → 独立的 composerRolePopover 单级下拉。
+    const scrollWrap = document.createElement('div');
+    scrollWrap.className = 'agent-thread-card__access-popover-scroll';
+    this.accessPopover.append(scrollWrap);
+
     if (notebookEntries.length === 0 && folderEntries.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'agent-thread-card__access-empty';
       empty.textContent = isLoading ? this.t('agent.access.empty.loading') : this.t('agent.access.empty.empty');
-      this.accessPopover.append(empty);
+      scrollWrap.append(empty);
     } else {
       if (notebookEntries.length > 0) {
-        this.accessPopover.append(this.createAccessSectionLabel(this.t('agent.access.sectionNotebook')));
+        scrollWrap.append(this.createAccessSectionLabel(this.t('agent.access.sectionNotebook')));
         notebookEntries.forEach((entry) => {
-          this.accessPopover.append(this.createAccessEntryRow(entry, notebooks, toggle, removeFolder));
+          scrollWrap.append(this.createAccessEntryRow(entry, notebooks, toggle, removeFolder));
         });
       }
       if (notebookEntries.length > 0 && folderEntries.length > 0) {
-        this.accessPopover.append(this.createAccessDivider());
+        scrollWrap.append(this.createAccessDivider());
       }
       if (folderEntries.length > 0) {
-        this.accessPopover.append(this.createAccessSectionLabel(this.t('agent.access.sectionFolder')));
+        scrollWrap.append(this.createAccessSectionLabel(this.t('agent.access.sectionFolder')));
         folderEntries.forEach((entry) => {
-          this.accessPopover.append(this.createAccessEntryRow(entry, notebooks, toggle, removeFolder));
+          scrollWrap.append(this.createAccessEntryRow(entry, notebooks, toggle, removeFolder));
         });
       }
     }
 
+    // 底部 footer ── 装"添加资料夹"按钮, 与列表之间用 border-top 视觉分
+    // 隔, 让用户清楚按钮是"列表之外的辅助操作"而非列表里的一项。 按钮
+    // 视觉与左栏笔记本列表「+ 新建」同源 ── 24×24 圆角图标容器包 14px
+    // Plus 图标 + 单行文字左对齐。 结构:
+    //   [icon-wrap(24×24) → Plus(14×14)] [label(单行截断)]
+    const footerWrap = document.createElement('div');
+    footerWrap.className = 'agent-thread-card__access-popover-footer';
+    this.accessPopover.append(footerWrap);
+
     const addButton = document.createElement('button');
     addButton.type = 'button';
     addButton.className = 'agent-thread-card__access-add';
-    addButton.append(createPlusIcon(), document.createTextNode(this.t('agent.access.addFolder')));
+    const addIconWrap = document.createElement('span');
+    addIconWrap.className = 'agent-thread-card__access-add-icon-wrap';
+    addIconWrap.append(createPlusIcon());
+    const addLabel = document.createElement('span');
+    addLabel.className = 'agent-thread-card__access-add-label';
+    addLabel.textContent = this.t('agent.access.addFolder');
+    addButton.append(addIconWrap, addLabel);
     addButton.addEventListener('click', (event) => {
       event.stopPropagation();
       void addFolderFromPicker().then((result) => {
@@ -904,7 +1163,434 @@ actions.append(
         }
       });
     });
-    this.accessPopover.append(addButton);
+    footerWrap.append(addButton);
+
+    this.scheduleAccessPopoverPosition();
+  }
+
+  private fallbackAgentRoleOptionsFromStore(): AgentRoleOption[] {
+    const { memos, selectedMemo } = useMemoStore.getState();
+    const candidates = selectedMemo ? [selectedMemo, ...memos] : memos;
+    const seen = new Set<string>();
+    const entries: AgentRoleOption[] = [];
+
+    for (const memo of candidates) {
+      if (!memo || seen.has(memo.id)) continue;
+      seen.add(memo.id);
+      const name = getMemoAgentRoleName(memo.properties);
+      if (!name) continue;
+      entries.push({
+        memoId: memo.id,
+        name,
+        filename: memo.filename,
+        memoIcon: getMemoIconValue(memo.icon, memo.properties),
+        notebookName: '',
+        notebookIcon: null,
+      });
+    }
+
+    return entries.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private getAgentRoleOptions(): AgentRoleOption[] {
+    return this.agentRoleOptions ?? this.fallbackAgentRoleOptionsFromStore();
+  }
+
+  private loadAgentRoleOptions(): void {
+    if (this.isLoadingAgentRoleOptions) return;
+    const requestSeq = ++this.agentRoleOptionsRequestSeq;
+    this.isLoadingAgentRoleOptions = true;
+    void memosClient.listAgentRoleMemos()
+      .then((items: AgentRoleMemoItem[]) => {
+        if (this.isDestroyed || requestSeq !== this.agentRoleOptionsRequestSeq) return;
+        this.agentRoleOptions = items.map((item) => ({
+          memoId: item.memoId,
+          name: item.roleName,
+          filename: item.filename,
+          memoIcon: item.memoIcon,
+          notebookName: item.notebookName,
+          notebookIcon: item.notebookIcon,
+        }));
+      })
+      .catch((error) => {
+        console.error('[AgentThreadCard] Failed to load agent-role memos:', error);
+        if (!this.isDestroyed && requestSeq === this.agentRoleOptionsRequestSeq) {
+          this.agentRoleOptions = this.fallbackAgentRoleOptionsFromStore();
+        }
+      })
+      .finally(() => {
+        if (this.isDestroyed || requestSeq !== this.agentRoleOptionsRequestSeq) return;
+        this.isLoadingAgentRoleOptions = false;
+        this.refreshComposerRoleIcon();
+        if (this.isComposerRolePopoverOpen && !this.composerRolePopover.hidden) {
+          this.renderRoleOptionsList(this.composerRolePopover);
+        }
+      });
+  }
+
+  // ── 角色设置弹窗 (composer role popover) ────────────────────────────
+  // 直接挂在 composerRoleIcon button 下方/上方的下拉弹窗, 取代之前
+  // accessPopover → 「角色」按钮 → typeSettingsPopover 的两级展开。
+  //
+  // 三件套:
+  //   - renderRoleOptionsList(target) ── 把"选择角色"内容渲染到传入 popover
+  //   - setComposerRolePopoverOpen(open) ── 控制显隐 + 定位 + outside-click
+  //   - positionComposerRolePopover() ── 计算按钮上下空间, 自动选择方向
+
+  // 角色列表内容渲染 ── 把"选择角色"列表渲染到传入 popover 容器, 不依赖
+  // 具体挂在哪个 DOM 树下。 click 行为统一: 选中角色 → updateAttrs → 关
+  // 闭 composerRolePopover。
+  private renderRoleOptionsList(target: HTMLElement): void {
+    target.replaceChildren();
+    const entries = this.getAgentRoleOptions();
+    const currentMemoId = this.agentRoleMemoId;
+
+    const header = document.createElement('div');
+    header.className = 'agent-thread-card__composer-role-popover-header';
+    const title = document.createElement('div');
+    title.className = 'agent-thread-card__composer-role-popover-title';
+    title.textContent = '选择角色';
+    header.append(title);
+    target.append(header);
+
+    if (this.isLoadingAgentRoleOptions && this.agentRoleOptions === null) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'agent-thread-card__composer-role-item agent-thread-card__composer-role-item--disabled';
+      item.disabled = true;
+      item.setAttribute('role', 'menuitem');
+      const fallback = document.createElement('span');
+      fallback.className = 'agent-thread-card__composer-role-item-fallback';
+      fallback.textContent = '...';
+      const body = document.createElement('span');
+      body.className = 'agent-thread-card__composer-role-item-body';
+      const name = document.createElement('span');
+      name.className = 'agent-thread-card__composer-role-item-name';
+      name.textContent = '加载角色';
+      const desc = document.createElement('span');
+      desc.className = 'agent-thread-card__composer-role-item-desc';
+      desc.textContent = '正在读取所有笔记本';
+      body.append(name, desc);
+      item.append(fallback, body);
+      target.append(item);
+      return;
+    }
+
+    if (entries.length === 0) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'agent-thread-card__composer-role-item agent-thread-card__composer-role-item--disabled';
+      item.disabled = true;
+      item.setAttribute('role', 'menuitem');
+      const fallback = document.createElement('span');
+      fallback.className = 'agent-thread-card__composer-role-item-fallback';
+      fallback.textContent = '-';
+      const body = document.createElement('span');
+      body.className = 'agent-thread-card__composer-role-item-body';
+      const name = document.createElement('span');
+      name.className = 'agent-thread-card__composer-role-item-name';
+      name.textContent = '没有角色';
+      const desc = document.createElement('span');
+      desc.className = 'agent-thread-card__composer-role-item-desc';
+      desc.textContent = '在笔记属性中设置 agent-role';
+      body.append(name, desc);
+      item.append(fallback, body);
+      target.append(item);
+      return;
+    }
+
+    for (const entry of entries) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'agent-thread-card__composer-role-item';
+      item.setAttribute('role', 'menuitem');
+
+      if (entry.memoId === currentMemoId) {
+        item.classList.add('agent-thread-card__composer-role-item--selected');
+      }
+
+      const sourceIcon = document.createElement('span');
+      sourceIcon.className = 'agent-thread-card__composer-role-item-icon';
+      const memoIcon = entry.memoIcon?.trim() || '';
+      if (appendRoleIconContent(sourceIcon, memoIcon, entry.name)) {
+        sourceIcon.classList.toggle(
+          'agent-thread-card__composer-role-item-icon--svg',
+          !!getNotebookIconMarkup(memoIcon) && !getPropertyIconOption(memoIcon),
+        );
+      } else {
+        sourceIcon.textContent = getNotebookIconLetter(entry.name);
+      }
+
+      const body = document.createElement('span');
+      body.className = 'agent-thread-card__composer-role-item-body';
+
+      const name = document.createElement('span');
+      name.className = 'agent-thread-card__composer-role-item-name';
+      name.textContent = entry.name;
+
+      const desc = document.createElement('span');
+      desc.className = 'agent-thread-card__composer-role-item-desc';
+      desc.textContent = displayTitleFromFilename(entry.filename);
+
+      body.append(name, desc);
+      item.append(sourceIcon, body);
+
+      item.addEventListener('click', (event) => {
+        event.stopPropagation();
+        this.updateAttrs({
+          agentRoleMemoId: entry.memoId,
+          agentRoleName: entry.name,
+        });
+        this.setComposerRolePopoverOpen(false);
+      });
+
+      target.append(item);
+    }
+  }
+
+  private setComposerRolePopoverOpen(open: boolean): void {
+    if (this.isComposerRolePopoverOpen === open) return;
+    this.isComposerRolePopoverOpen = open;
+    this.composerRolePopover.hidden = !open;
+    // composerRoleIcon 是 trigger button, aria-expanded 必须同步反映
+    // 弹窗状态 ── 与同文件其它 trigger button 完全同构。
+    this.composerRoleIcon.setAttribute('aria-expanded', open ? 'true' : 'false');
+    this.composerRoleIcon.classList.toggle(
+      'agent-thread-card__composer-role-icon--open',
+      open,
+    );
+
+    if (open) {
+      this.loadAgentRoleOptions();
+      this.renderRoleOptionsList(this.composerRolePopover);
+      this.scheduleComposerRolePopoverPosition();
+      this.startComposerRolePopoverPositionTracking();
+      document.addEventListener('pointerdown', this.boundHandleComposerRoleOutsidePointer, true);
+    } else {
+      this.stopComposerRolePopoverPositionTracking();
+      document.removeEventListener('pointerdown', this.boundHandleComposerRoleOutsidePointer, true);
+    }
+  }
+
+  private toggleComposerRolePopover(): void {
+    this.setComposerRolePopoverOpen(!this.isComposerRolePopoverOpen);
+  }
+
+  private startComposerRolePopoverPositionTracking(): void {
+    window.addEventListener('resize', this.boundPositionComposerRolePopover);
+    window.addEventListener('scroll', this.boundPositionComposerRolePopover, true);
+
+    if ('ResizeObserver' in window) {
+      this.composerRolePopoverResizeObserver?.disconnect();
+      this.composerRolePopoverResizeObserver = new ResizeObserver(() => {
+        this.scheduleComposerRolePopoverPosition();
+      });
+      this.composerRolePopoverResizeObserver.observe(this.composerRoleIcon);
+      this.composerRolePopoverResizeObserver.observe(this.composerRolePopover);
+    }
+  }
+
+  private stopComposerRolePopoverPositionTracking(): void {
+    window.removeEventListener('resize', this.boundPositionComposerRolePopover);
+    window.removeEventListener('scroll', this.boundPositionComposerRolePopover, true);
+    this.composerRolePopoverResizeObserver?.disconnect();
+    this.composerRolePopoverResizeObserver = null;
+    if (this.composerRolePopoverPositionFrame !== null) {
+      window.cancelAnimationFrame(this.composerRolePopoverPositionFrame);
+      this.composerRolePopoverPositionFrame = null;
+    }
+  }
+
+  private scheduleComposerRolePopoverPosition(): void {
+    if (!this.isComposerRolePopoverOpen || this.composerRolePopover.hidden || this.isDestroyed) return;
+    if (this.composerRolePopoverPositionFrame !== null) return;
+    this.composerRolePopoverPositionFrame = window.requestAnimationFrame(() => {
+      this.composerRolePopoverPositionFrame = null;
+      this.positionComposerRolePopover();
+    });
+  }
+
+  // 定位 ── 与 accessPopover 完全同思路:
+  //   - 视口上下空间比较, 自动选择 above / below
+  //   - ACCESS_POPOVER_OFFSET_*_PX / ACCESS_POPOVER_VIEWPORT_PADDING_PX 复用
+  //   - 水平方向: button 左对齐到 popover 左, 避免右侧溢出
+  private positionComposerRolePopover(): void {
+    if (!this.isComposerRolePopoverOpen || this.composerRolePopover.hidden || this.isDestroyed) return;
+    if (!this.composerRoleIcon.isConnected || !this.composerRolePopover.isConnected) {
+      this.setComposerRolePopoverOpen(false);
+      return;
+    }
+
+    const anchorRect = this.composerRoleIcon.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const padding = ACCESS_POPOVER_VIEWPORT_PADDING_PX;
+    const spaceAbove = anchorRect.top - padding - ACCESS_POPOVER_OFFSET_ABOVE_PX;
+    const spaceBelow = viewportHeight - anchorRect.bottom - padding - ACCESS_POPOVER_OFFSET_BELOW_PX;
+    // 与 accessPopover 同策略: 上方空间 ≥ 下方时放上方 ── 让卡片底
+    // 边不挤 input。
+    const placeAbove = spaceAbove >= ACCESS_POPOVER_MIN_HEIGHT_PX || spaceAbove >= spaceBelow;
+
+    const popoverRect = this.composerRolePopover.getBoundingClientRect();
+    const popoverWidth = popoverRect.width || ACCESS_POPOVER_WIDTH_PX;
+    const popoverHeight = popoverRect.height || ACCESS_POPOVER_MAX_HEIGHT_PX;
+
+    // 水平: 按钮左对齐, 但右边不能超出 viewport。
+    const maxLeft = Math.max(padding, viewportWidth - padding - popoverWidth);
+    const left = Math.min(Math.max(anchorRect.left, padding), maxLeft);
+
+    const offset = placeAbove ? ACCESS_POPOVER_OFFSET_ABOVE_PX : ACCESS_POPOVER_OFFSET_BELOW_PX;
+    const rawTop = placeAbove
+      ? anchorRect.top - offset - popoverHeight
+      : anchorRect.bottom + offset;
+    const maxTop = Math.max(padding, viewportHeight - padding - popoverHeight);
+    const top = Math.min(Math.max(rawTop, padding), maxTop);
+
+    this.composerRolePopover.style.left = `${left}px`;
+    this.composerRolePopover.style.top = `${top}px`;
+  }
+
+  private selectedAgentRoleOption(): AgentRoleOption | null {
+    const memoId = this.agentRoleMemoId;
+    const roleName = this.agentRoleName;
+    if (!memoId && !roleName) return null;
+    const entries = this.getAgentRoleOptions();
+    return entries.find((entry) => entry.memoId === memoId)
+      ?? entries.find((entry) => roleName !== null && entry.name === roleName)
+      ?? null;
+  }
+
+  // 输入框左侧 role 图标内容 ── 始终可见 (不再 hidden=true): 未设置角色
+  // 时显示 UserCircleDashedIcon (虚线占位), 设置后显示 memo 文档图标。
+  // 同步 aria-expanded 与 composerRolePopover 开合态 (独立 popover,
+  // 不再跟随 accessPopover), 给屏幕阅读器一致反馈。
+  private refreshComposerRoleIcon(): void {
+    const roleName = this.agentRoleName;
+    this.composerRoleIcon.replaceChildren();
+    // 重置类 ── 切掉可能的 .--open / .--svg 修饰, 后面按需重新挂。
+    this.composerRoleIcon.className = 'agent-thread-card__composer-role-icon';
+    // aria-expanded 与 composerRolePopover 同步 (独立 popover)。 --open
+    // 修饰类同样同步, 让 CSS 的 hover/open 视觉态正确反映。
+    this.composerRoleIcon.setAttribute(
+      'aria-expanded',
+      this.isComposerRolePopoverOpen ? 'true' : 'false',
+    );
+    this.composerRoleIcon.classList.toggle(
+      'agent-thread-card__composer-role-icon--open',
+      this.isComposerRolePopoverOpen,
+    );
+
+    if (!roleName) {
+      // 未设置角色 ── 显示 Plus 图标作为 "点击新增角色" 的强引导。
+      this.composerRoleIcon.append(createComposerRoleEmptyIcon());
+      this.composerRoleIcon.title = this.t('editor.threadCard.roleIconTooltip');
+      return;
+    }
+
+    const entry = this.selectedAgentRoleOption();
+    const memoIcon = entry?.memoIcon?.trim() ?? '';
+    if (!memoIcon && this.agentRoleMemoId && this.agentRoleOptions === null && !this.isLoadingAgentRoleOptions) {
+      // 已设置角色但 options 还在加载 ── 触发异步加载。 但不在这里
+      // 立刻画 fallback, 而是先让 appendRoleIconContent 走 fallback 路径:
+      // 等 options 回来后会再调 refreshComposerRoleIcon, 那时 memoIcon 就
+      // 能拿到了。
+      this.loadAgentRoleOptions();
+    }
+
+    if (!appendRoleIconContent(this.composerRoleIcon, memoIcon, roleName)) {
+      // appendRoleIconContent 返回 false ── 通常意味着 memo icon 为空
+      // (entry 没有 icon)。 遵循列表的图标规则, 走首字母头像 (与
+      // renderRoleOptionsList 完全同源的 getNotebookIconLetter): ASCII 取
+      // 首字符大写, CJK 走 pinyin-pro 取拼音首字母。 这样"已选但无图标"
+      // 的 role 与列表里"无图标"的 role 视觉一致 ── 用户在两个位置看
+      // 同一个 role 是同一个头像, 不会产生认知割裂。
+      this.composerRoleIcon.textContent = getNotebookIconLetter(roleName);
+    }
+    this.composerRoleIcon.title = roleName;
+  }
+
+  private startAccessPopoverPositionTracking(): void {
+    window.addEventListener('resize', this.boundPositionAccessPopover);
+    window.addEventListener('scroll', this.boundPositionAccessPopover, true);
+
+    if ('ResizeObserver' in window) {
+      this.accessPopoverResizeObserver?.disconnect();
+      this.accessPopoverResizeObserver = new ResizeObserver(() => {
+        this.scheduleAccessPopoverPosition();
+      });
+      this.accessPopoverResizeObserver.observe(this.accessButton);
+      this.accessPopoverResizeObserver.observe(this.accessPopover);
+    }
+  }
+
+  private stopAccessPopoverPositionTracking(): void {
+    window.removeEventListener('resize', this.boundPositionAccessPopover);
+    window.removeEventListener('scroll', this.boundPositionAccessPopover, true);
+    this.accessPopoverResizeObserver?.disconnect();
+    this.accessPopoverResizeObserver = null;
+    if (this.accessPopoverPositionFrame !== null) {
+      window.cancelAnimationFrame(this.accessPopoverPositionFrame);
+      this.accessPopoverPositionFrame = null;
+    }
+  }
+
+  private scheduleAccessPopoverPosition(): void {
+    if (!this.isAccessPopoverOpen || this.accessPopover.hidden || this.isDestroyed) return;
+    if (this.accessPopoverPositionFrame !== null) return;
+    this.accessPopoverPositionFrame = window.requestAnimationFrame(() => {
+      this.accessPopoverPositionFrame = null;
+      this.positionAccessPopover();
+    });
+  }
+
+  private positionAccessPopover(): void {
+    if (!this.isAccessPopoverOpen || this.accessPopover.hidden || this.isDestroyed) return;
+    if (!this.accessButton.isConnected || !this.accessPopover.isConnected) {
+      this.setAccessPopoverOpen(false);
+      return;
+    }
+
+    const anchorRect = this.accessButton.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const padding = ACCESS_POPOVER_VIEWPORT_PADDING_PX;
+    const spaceAbove = anchorRect.top - padding - ACCESS_POPOVER_OFFSET_ABOVE_PX;
+    const spaceBelow = viewportHeight - anchorRect.bottom - padding - ACCESS_POPOVER_OFFSET_BELOW_PX;
+    const placeAbove = spaceAbove >= 160 || spaceAbove >= spaceBelow;
+    const availableHeight = Math.max(
+      ACCESS_POPOVER_MIN_HEIGHT_PX,
+      Math.min(ACCESS_POPOVER_MAX_HEIGHT_PX, placeAbove ? spaceAbove : spaceBelow)
+    );
+
+    // 底部 footer 不滚动, 装"添加资料夹"按钮。 列表区域单独滚动, 高度
+    // 扣掉 footer ── 列表 max-height = availableHeight - footerHeight。
+    // footer 在底部, 不影响列表视觉; 列表行超出时只在列表区域内滚动,
+    // footer 始终保持可见 ── 让"添加资料夹"按钮在长列表下也不丢失。
+    const footerEl = this.accessPopover.querySelector<HTMLDivElement>(
+      '.agent-thread-card__access-popover-footer'
+    );
+    const footerHeight = footerEl?.getBoundingClientRect().height ?? 0;
+    const scrollEl = this.accessPopover.querySelector<HTMLDivElement>(
+      '.agent-thread-card__access-popover-scroll'
+    );
+    if (scrollEl) {
+      scrollEl.style.maxHeight = `${Math.max(0, availableHeight - footerHeight)}px`;
+    }
+
+    const popoverRect = this.accessPopover.getBoundingClientRect();
+    const popoverWidth = popoverRect.width || ACCESS_POPOVER_WIDTH_PX;
+    const popoverHeight = Math.min(popoverRect.height || availableHeight, availableHeight);
+    const maxLeft = Math.max(padding, viewportWidth - padding - popoverWidth);
+    const left = Math.min(Math.max(anchorRect.right - popoverWidth, padding), maxLeft);
+    const offset = placeAbove ? ACCESS_POPOVER_OFFSET_ABOVE_PX : ACCESS_POPOVER_OFFSET_BELOW_PX;
+    const rawTop = placeAbove
+      ? anchorRect.top - offset - popoverHeight
+      : anchorRect.bottom + offset;
+    const maxTop = Math.max(padding, viewportHeight - padding - popoverHeight);
+    const top = Math.min(Math.max(rawTop, padding), maxTop);
+
+    this.accessPopover.style.left = `${left}px`;
+    this.accessPopover.style.top = `${top}px`;
   }
 
   private createAccessSectionLabel(label: string): HTMLElement {
@@ -940,7 +1626,13 @@ actions.append(
     const avatar = document.createElement('span');
     avatar.className = 'agent-thread-card__access-avatar';
     if (isNotebook) {
-      avatar.textContent = getAccessEntryLetter(entry.name);
+      const iconMarkup = getNotebookIconMarkup(notebook?.icon);
+      if (iconMarkup) {
+        avatar.classList.add('agent-thread-card__access-avatar--icon');
+        avatar.innerHTML = iconMarkup;
+      } else {
+        avatar.textContent = getAccessEntryLetter(entry.name);
+      }
     } else {
       avatar.append(createFolderIcon());
     }
@@ -955,13 +1647,6 @@ actions.append(
 
     if (entry.missing) {
       nameWrap.append(createAlertIcon());
-    }
-
-    if (notebook?.isDefault) {
-      const badge = document.createElement('span');
-      badge.className = 'agent-thread-card__access-default-badge';
-      badge.textContent = this.t('agent.access.defaultBadge');
-      nameWrap.append(badge);
     }
 
     row.append(avatar, nameWrap);
@@ -1012,7 +1697,7 @@ actions.append(
       }
       this.updateAttrs({
         threadId: sessionId,
-        roleKey: 'codex',
+        typeKey: 'codex',
       });
       useChatStore.getState().setActiveAgentThread('codex', sessionId);
       await useChatStore.getState().loadCodexThread(sessionId);
@@ -1034,12 +1719,14 @@ actions.append(
 
     this.loadingThreadCacheFor = threadId;
     this.isLoadingThreadCache = true;
+    this.isThreadCacheSettling = false;
+    this.cancelThreadCacheRevealFrame();
     this.renderThreadState();
 
     const run = async (): Promise<void> => {
       try {
         if (!this.isDestroyed && this.threadId === threadId) {
-          if (this.roleKey === 'codex') {
+          if (this.typeKey === 'codex') {
             const sessionId = threadId.startsWith('codex-local-')
               ? await this.resolveCodexSessionId(threadId)
               : threadId;
@@ -1056,7 +1743,17 @@ actions.append(
           this.loadingThreadCacheFor = null;
           this.isLoadingThreadCache = false;
         }
-        if (!this.isDestroyed) this.renderThreadState();
+        if (!this.isDestroyed && this.threadId === threadId) {
+          this.isThreadCacheSettling = true;
+          this.renderThreadState();
+          this.cancelThreadCacheRevealFrame();
+          this.threadCacheRevealFrame = window.requestAnimationFrame(() => {
+            this.threadCacheRevealFrame = null;
+            if (this.isDestroyed || this.threadId !== threadId) return;
+            this.isThreadCacheSettling = false;
+            this.renderThreadState();
+          });
+        }
       }
     };
 
@@ -1091,16 +1788,26 @@ actions.append(
   private refreshAttrs(): void {
     this.dom.dataset.threadId = this.threadId ?? '';
     this.dom.dataset.title = this.title;
-    this.dom.dataset.roleKey = this.roleKey;
+    // typeKey getter 每次访问都跑 normalizeAgentTypeKey → getAgentType.find ──
+    // 本方法同一函数内访问 2 次, 缓存到局部变量避免重复计算 (在 ProseMirror node
+    // update 高频路径上累计调用很多)。
+    const typeKey = this.typeKey;
+    // data-agent-type ── 与 types/agent.ts 里的 AgentTypeKey / AgentType
+    // 概念对齐, 区分于 data-agent-role-* (角色 persona)。 之前用
+    // data-role-key 容易跟 agent role 字段混淆, 改名为 agent-type。
+    this.dom.dataset.agentType = typeKey;
+    this.dom.dataset.agentRoleMemoId = this.agentRoleMemoId ?? '';
+    this.dom.dataset.agentRoleName = this.agentRoleName ?? '';
     this.dom.dataset.collapsed = this.collapsed ? 'true' : 'false';
-    const role = getAgentRole(this.roleKey);
-    // role.name 已被 badge 承担, title 只显示对话标题 ── 避免与 badge 重复。
+    const type = getAgentType(typeKey);
+    // type.name 已被 badge 承担, title 只显示对话标题 ── 避免与 badge 重复。
     this.titleEl.textContent = this.title;
-    // 徽章内容与 roleKey 同步 ── 切换 role 或初次挂载时刷新,
+    // 徽章内容与 typeKey 同步 ── 切换 type 或初次挂载时刷新,
     // 避免依赖外部组件级 mount 来确保 img 拿到正确 src。
-    this.badgeIcon.src = role.icon;
-    this.badgeIcon.alt = role.name;
-    this.badgeName.textContent = role.name;
+    this.badgeIcon.src = type.icon;
+    this.badgeIcon.alt = type.name;
+    this.badgeName.textContent = type.name;
+    this.refreshComposerRoleIcon();
     this.renderCollapseState();
     this.renderFullscreenState();
   }
@@ -1207,6 +1914,7 @@ actions.append(
     // 控件遮挡。
     const titlebarHeight = isWindowsPlatform() ? WINDOWS_TITLEBAR_HEIGHT_PX : 0;
     this.dom.style.setProperty('--atc-titlebar-height', `${titlebarHeight}px`);
+    this.scheduleAccessPopoverPosition();
   }
 
   private getFullscreenContainer(): HTMLElement | null {
@@ -1233,6 +1941,16 @@ actions.append(
 
   private isBodyNearBottom(): boolean {
     return this.getBodyBottomDistance() <= BOTTOM_FOLLOW_THRESHOLD_PX;
+  }
+
+  private isThreadCachePresentationHidden(): boolean {
+    return !!this.threadId && (this.isLoadingThreadCache || this.isThreadCacheSettling);
+  }
+
+  private cancelThreadCacheRevealFrame(): void {
+    if (this.threadCacheRevealFrame === null) return;
+    window.cancelAnimationFrame(this.threadCacheRevealFrame);
+    this.threadCacheRevealFrame = null;
   }
 
   private scrollBodyToBottom(): void {
@@ -1271,22 +1989,25 @@ actions.append(
     this.prevCollapsed = this.collapsed;
   }
 
-  // flowix:// 深链委托 ── 卡片场景下 AI 消息里的 `flowix://memo/<id>` 链接
-  // 需点击打开对应笔记。marked 默认保留自定义 scheme, sanitizeMarkdownHtml
-  // 只过滤 javascript: / data:text/html, 不会剥 flowix:// ── 因此 <a href>
-  // 节点会真实出现在 DOM 里, 浏览器不识别 scheme 时点击无动作, 这里在容器
-  // 上挂一次 click 委托拦下来, 走 openByTarget 统一管线 (与右栏 MarkdownRenderer /
-  // noteReference 双击 / 单 instance 二次启动同一入口)。
+  // 消息链接点击委托 ── AgentThreadCard 是只读 NodeView, 不使用编辑器正文的
+  // link hover tooltip。这里本地接管点击, 保留 flowix:// 深链和普通外链打开能力。
   private handleBodyClick(event: MouseEvent): void {
     const target = event.target as HTMLElement | null;
     if (!target) return;
-    const a = target.closest<HTMLAnchorElement>('a[href^="flowix://"]');
+    const a = target.closest<HTMLAnchorElement>('a[href]');
     if (!a) return;
     event.preventDefault();
     // 阻止冒泡到外层可能存在的 React handler (例如把 click 解读为'打开卡片')
     event.stopPropagation();
-    const href = a.getAttribute('href');
-    if (href) void openNoteByDeepLink(href);
+    const href = normalizePlainLinkHref(a.getAttribute('href'));
+    if (!href) return;
+    if (href.startsWith('flowix://')) {
+      void openNoteByDeepLink(href);
+      return;
+    }
+    void openUrl(href).catch((error) => {
+      console.error('Failed to open agent thread card link:', error);
+    });
   }
 
   private renderThreadState(): void {
@@ -1296,6 +2017,10 @@ actions.append(
     const previousScrollTop = this.body.scrollTop;
     const wasNearBottom = this.isBodyNearBottom();
     const shouldFollowStreaming = this.shouldFollowBottom || wasNearBottom;
+    this.dom.classList.toggle(
+      'agent-thread-card--thread-cache-loading',
+      this.isThreadCachePresentationHidden(),
+    );
 
     this.input.disabled = isLoading;
     this.composer.classList.toggle('agent-thread-card__composer--disabled', isLoading);
@@ -1621,30 +2346,32 @@ actions.append(
         this.isCreating = true;
         this.renderThreadState();
         const nextTitle = buildTitle(rawPrompt, this.t('editor.threadCard.title'));  // 标题用原文, 不带 system 块
-        const role = getAgentRole(this.roleKey);
-        if (role.runtime === 'codex') {
+        const type = getAgentType(this.typeKey);
+        if (type.key === 'codex') {
           nextThreadId = `codex-local-${Date.now()}`;
           this.updateAttrs({
             threadId: nextThreadId,
             title: nextTitle,
-            roleKey: role.key,
+            typeKey: type.key,
           });
-          useChatStore.getState().setActiveAgentThread(role.key, nextThreadId);
+          useChatStore.getState().setActiveAgentThread(type.key, nextThreadId);
         } else {
           const thread = await agent.createThread(nextTitle);
           nextThreadId = thread.threadId;
           this.updateAttrs({
             threadId: thread.threadId,
             title: thread.title || nextTitle,
-            roleKey: role.key,
+            typeKey: type.key,
           });
-          useChatStore.getState().setActiveAgentThread(role.key, thread.threadId);
+          useChatStore.getState().setActiveAgentThread(type.key, thread.threadId);
           void useChatStore.getState().loadThreadList();
         }
       }
 
-      await useChatStore.getState().sendMessageToThread(nextThreadId, rawPrompt, this.roleKey, {
+      await useChatStore.getState().sendMessageToThread(nextThreadId, rawPrompt, this.typeKey, {
         currentNoteContent: documentContext,
+        agentRoleMemoId: this.agentRoleMemoId ?? undefined,
+        agentRoleName: this.agentRoleName ?? undefined,
       });
     } catch (err) {
       this.setError(typeof err === 'string' ? err : this.t('editor.threadCard.sendFailed'));
@@ -1675,6 +2402,13 @@ actions.append(
   destroy(): void {
     this.setFullscreen(false);
     this.setAccessPopoverOpen(false);
+    // composerRolePopover 关闭放在 isDestroyed 置位之前 ── 它内部的
+    // scheduleComposerRolePopoverPosition 会检查 isDestroyed 提前返,
+    // 必须先把弹窗关掉再置标志。 setComposerRolePopoverOpen 本身不
+    // 依赖 isDestroyed, 但其后续清理路径 (RemoveEventListener /
+    // ResizeObserver disconnect) 需要弹窗 open 状态, 否则 idempotent
+    // 早返会跳过清理。
+    this.setComposerRolePopoverOpen(false);
     this.isDestroyed = true;
     if (this.loadThreadCacheTimeout !== null) {
       globalThis.clearTimeout(this.loadThreadCacheTimeout);
@@ -1684,11 +2418,27 @@ actions.append(
       window.cancelIdleCallback(this.loadThreadCacheIdleId);
       this.loadThreadCacheIdleId = null;
     }
+    this.cancelThreadCacheRevealFrame();
     this.body.removeEventListener('scroll', this.boundHandleBodyScroll);
     this.unsubscribe?.();
     this.unsubscribeAccess?.();
     this.unsubscribeNotebooks?.();
     this.sendButtonRoot.unmount();
+    // accessPopover 不再嵌套 typeSettingsPopover ── accessPopover 自己
+    // 独立 remove 即可。typeSettingsPopover 字段已删除, 不需要清理。
+    this.accessPopover.remove();
+    // composerRolePopover 是独立挂在 document.body 的弹窗, 跟 accessPopover
+    // 互不嵌套, 需要单独 remove。 setComposerRolePopoverOpen(false) 已经在
+    // destroy 顶部调用过, 这里再 cleanup 一次 ResizeObserver / position
+    // frame / document listener, 保证视图销毁后没有 ghost callback。
+    this.composerRolePopoverResizeObserver?.disconnect();
+    this.composerRolePopoverResizeObserver = null;
+    if (this.composerRolePopoverPositionFrame !== null) {
+      window.cancelAnimationFrame(this.composerRolePopoverPositionFrame);
+      this.composerRolePopoverPositionFrame = null;
+    }
+    document.removeEventListener('pointerdown', this.boundHandleComposerRoleOutsidePointer, true);
+    this.composerRolePopover.remove();
   }
 }
 
@@ -1703,7 +2453,9 @@ export const AgentThreadCard = Node.create({
     return {
       threadId: { default: null },
       title: { default: DEFAULT_TITLE },
-      roleKey: { default: DEFAULT_AGENT_ROLE_KEY },
+      typeKey: { default: DEFAULT_AGENT_TYPE_KEY },
+      agentRoleMemoId: { default: null },
+      agentRoleName: { default: null },
       collapsed: { default: false },
       initialPrompt: { default: null },
       autoSubmit: { default: false },
@@ -1718,9 +2470,15 @@ export const AgentThreadCard = Node.create({
         return {
           threadId: element.getAttribute('data-thread-id') || null,
           title: element.getAttribute('data-title') || DEFAULT_TITLE,
-          roleKey: normalizeAgentRoleKey(
-            element.getAttribute('data-role-key') || element.getAttribute('data-agent-id')
+          typeKey: normalizeAgentTypeKey(
+            // data-agent-type 是当前规范命名 ── 与 types/agent.ts 里的
+            // AgentTypeKey / AgentType 概念对齐, 区分于 data-agent-role-*
+            // (角色 persona)。 旧 data-role-key / data-agent-id 已废弃,
+            // 不再兼容 ── 旧笔记加载会回退到默认 typeKey (flowix)。
+            element.getAttribute('data-agent-type')
           ),
+          agentRoleMemoId: element.getAttribute('data-agent-role-memo-id') || null,
+          agentRoleName: element.getAttribute('data-agent-role-name') || null,
           collapsed: element.getAttribute('data-collapsed') === 'true',
         };
       },
@@ -1730,8 +2488,10 @@ export const AgentThreadCard = Node.create({
   renderHTML({ node }) {
     const threadId = node.attrs.threadId || '';
     const title = node.attrs.title || DEFAULT_TITLE;
-    const roleKey = normalizeAgentRoleKey(node.attrs.roleKey || node.attrs.agentId);
-    const role = getAgentRole(roleKey);
+    const typeKey = normalizeAgentTypeKey(node.attrs.typeKey as string | null);
+    const type = getAgentType(typeKey);
+    const agentRoleMemoId = node.attrs.agentRoleMemoId || '';
+    const agentRoleName = node.attrs.agentRoleName || '';
     const collapsed = !!node.attrs.collapsed;
 
     return [
@@ -1740,7 +2500,12 @@ export const AgentThreadCard = Node.create({
         'data-agent-thread-card': 'true',
         'data-thread-id': threadId,
         'data-title': title,
-        'data-role-key': roleKey,
+        // data-agent-type ── 与 types/agent.ts 里的 AgentTypeKey / AgentType
+        // 概念对齐, 区分于 data-agent-role-* (角色 persona)。 旧 data-role-key
+        // 已废弃, 不再输出 ── 旧 HTML 输出再 roundtrip 会回退到默认 typeKey。
+        'data-agent-type': typeKey,
+        'data-agent-role-memo-id': agentRoleMemoId,
+        'data-agent-role-name': agentRoleName,
         'data-collapsed': collapsed ? 'true' : 'false',
         class: collapsed ? 'agent-thread-card agent-thread-card--collapsed' : 'agent-thread-card',
         contenteditable: 'false',
@@ -1748,7 +2513,7 @@ export const AgentThreadCard = Node.create({
       [
         'div',
         { class: 'agent-thread-card__container' },
-        ['div', { class: 'agent-thread-card__title' }, `${role.name} · ${title}`],
+        ['div', { class: 'agent-thread-card__title' }, `${type.name} · ${title}`],
         ['div', { class: 'agent-thread-card__empty' }, 'Use current note to start an AI conversation'],
         [
           'div',
@@ -1786,13 +2551,15 @@ export const AgentThreadCard = Node.create({
           // 并把 selection 设为这个段落内的 TextSelection。
           const nodeType = state.schema.nodes[this.name];
           if (!nodeType) return false;
-          const roleKey = normalizeAgentRoleKey(
-            options?.roleKey ?? useChatStore.getState().activeAgentRoleKey
+          const typeKey = normalizeAgentTypeKey(
+            options?.typeKey ?? useChatStore.getState().activeAgentTypeKey
           );
           const node = nodeType.create({
             threadId: null,
             title: DEFAULT_TITLE,
-            roleKey,
+            typeKey,
+            agentRoleMemoId: null,
+            agentRoleName: null,
             collapsed: false,
             initialPrompt: options?.initialPrompt ?? null,
             autoSubmit: !!options?.autoSubmit,
@@ -1846,7 +2613,12 @@ export const AgentThreadCard = Node.create({
       attrs: {
         threadId: attrs.threadId || null,
         title: attrs.title || DEFAULT_TITLE,
-        roleKey: normalizeAgentRoleKey(attrs.roleKey || attrs.agentId),
+        // markdown token attr 用 `agentType=` ── 与 HTML `data-agent-type`
+        // 和 types/agent.ts AgentType 概念对齐, 区分于 agentRole* (角色 persona)。
+        // 旧 `roleKey=` 已废弃, 不再兼容 ── 旧笔记 roundtrip 会回退到默认 typeKey。
+        typeKey: normalizeAgentTypeKey(attrs.agentType as string | undefined),
+        agentRoleMemoId: attrs.agentRoleMemoId || null,
+        agentRoleName: attrs.agentRoleName || null,
         collapsed: attrs.collapsed === 'true',
       },
     };
@@ -1855,8 +2627,12 @@ export const AgentThreadCard = Node.create({
   renderMarkdown(node) {
     const threadId = escapeAttr(node.attrs?.threadId);
     const title = escapeAttr(node.attrs?.title || DEFAULT_TITLE);
-    const roleKey = normalizeAgentRoleKey(node.attrs?.roleKey || node.attrs?.agentId);
+    const typeKey = normalizeAgentTypeKey(node.attrs?.typeKey as string | undefined);
+    const agentRoleMemoId = escapeAttr(node.attrs?.agentRoleMemoId);
+    const agentRoleName = escapeAttr(node.attrs?.agentRoleName);
     const collapsed = !!node.attrs?.collapsed;
-    return `::agent-thread-card{threadId="${threadId}" title="${title}" roleKey="${roleKey}" collapsed="${collapsed}"}\n`;
+    // markdown token attr 用 `agentType=` ── 与 HTML `data-agent-type` 和
+    // types/agent.ts AgentType 概念对齐。 schema attr 内部是 `typeKey`。
+    return `::agent-thread-card{threadId="${threadId}" title="${title}" agentType="${typeKey}" agentRoleMemoId="${agentRoleMemoId}" agentRoleName="${agentRoleName}" collapsed="${collapsed}"}\n`;
   },
 });

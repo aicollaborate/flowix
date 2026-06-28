@@ -44,7 +44,10 @@ export function useDragHandlePosition(
   const trailingResizeRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!editor?.view?.dom) return
+    // editor 可能被销毁后这条 effect 还触发 (e.g. 切换文档/语言时父组件
+    // 先卸载, store 又 dispatch 了一次新引用)。访问 editor.view.dom 会
+    // 触发 "editor view is not available"。
+    if (!editor?.view?.dom || editor.view.isDestroyed) return
 
     let mounted = true
 
@@ -87,6 +90,7 @@ export function useDragHandlePosition(
     }
 
     const editorDom = editor.view.dom as HTMLElement
+    if (editor.view.isDestroyed) return
     const scrollContainer = editorDom.closest('.markdown-editor') as HTMLElement | null
     const scrollTarget = scrollContainer || editorDom
     const resizeTarget = scrollContainer || editorDom

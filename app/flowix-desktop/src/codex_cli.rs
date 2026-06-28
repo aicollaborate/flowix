@@ -11,7 +11,7 @@ use crate::codex_history::is_codex_session_id;
 use crate::threads::ThreadManager;
 use crate::watcher::dispatcher;
 
-const RUNTIME: &str = "codex";
+const AGENT_TYPE: &str = "codex";
 
 pub struct CodexCliManager {
     thread_manager: Arc<tokio::sync::RwLock<ThreadManager>>,
@@ -104,7 +104,7 @@ impl CodexCliManager {
         let session_id = {
             let manager = self.thread_manager.read().await;
             let mapped = manager
-                .get_external_session(thread_id, RUNTIME)
+                .get_external_session(thread_id, AGENT_TYPE)
                 .await
                 .map_err(|e| e.to_string())?;
             mapped.or_else(|| is_codex_session_id(thread_id).then(|| thread_id.to_string()))
@@ -351,7 +351,7 @@ where
             if seen_sessions.insert(session_id.clone()) {
                 let manager = thread_manager.read().await;
                 if let Err(err) = manager
-                    .upsert_external_session(&thread_id, RUNTIME, &session_id, Some(value.clone()))
+                    .upsert_external_session(&thread_id, AGENT_TYPE, &session_id, Some(value.clone()))
                     .await
                 {
                     tracing::warn!(

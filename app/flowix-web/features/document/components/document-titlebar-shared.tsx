@@ -1,8 +1,9 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronRight, Ellipsis, Loader2, Paintbrush, Palette, Search } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Ellipsis, Loader2, Paintbrush, Palette, Search } from 'lucide-react';
 import {
+  StarFourIcon,
   LinkSimpleIcon,
   CopyIcon,
   PushPinIcon,
@@ -20,6 +21,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
 } from '@shared/ui/dropdown-menu';
 import { Tooltip } from '@shared/ui/tooltip';
 import {
@@ -43,6 +45,9 @@ import {
 } from '@features/document';
 import { memos as memosClient, type MemoVersionMeta } from '@platform/tauri/client';
 import { toast } from '@/lib/toast';
+import { useChatStore } from '@features/agent/store/chat-store';
+import { getAgentType, DEFAULT_AGENT_TYPE_KEY } from '@/lib/agent-types';
+import type { ThreadListItem } from '@/types';
 import { useI18n, translate, type AppLanguage, type I18nKey, type I18nParams } from '@features/i18n';
 
 /**
@@ -264,6 +269,165 @@ export function MemoColorPicker({
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+interface AgentThreadTitlebarItem {
+  id: string;
+  title: string;
+  type: string;
+  element: HTMLElement;
+  updatedAt?: number;
+  createdAt?: number;
+}
+
+function getAgentThreadTitlebarItems(
+  t: (key: I18nKey, params?: I18nParams) => string,
+  threadMetaById: Map<string, ThreadListItem>
+): AgentThreadTitlebarItem[] {
+  const nodes = Array.from(
+    document.querySelectorAll<HTMLElement>('.document-container .ProseMirror section[data-agent-thread-card]')
+  );
+
+  return nodes.map((element, index) => {
+    // data-agent-type ── 与 AgentThreadCard NodeView 输出对齐 (rename 后),
+    // 之前用 data-role-key 容易跟 agent role (角色 persona) 混淆。
+    const type = element.dataset.agentType?.trim() || DEFAULT_AGENT_TYPE_KEY;
+    const threadId = element.dataset.threadId?.trim();
+    const meta = threadId ? threadMetaById.get(threadId) : undefined;
+    const title = meta?.title?.trim() || element.dataset.title?.trim() || t('editor.threadCard.title');
+    return {
+      id: threadId || `${type}-${index}`,
+      title,
+      type,
+      element,
+      updatedAt: meta?.updatedAt,
+      createdAt: meta?.createdAt,
+    };
+  });
+}
+
+function scrollToAgentThreadCard(element: HTMLElement): void {
+  element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+}
+
+function formatAgentThreadTime(
+  timestamp: number | undefined,
+  language: AppLanguage,
+  t: (key: I18nKey, params?: I18nParams) => string
+): string {
+  if (!timestamp) return '';
+
+  const intlLocale = language === 'zh-CN' ? 'zh-CN' : 'en-US';
+  const now = Date.now();
+  const diffMs = Math.max(0, now - timestamp);
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffSec < 60) return t('agent.time.justNow');
+  if (diffMin < 60) return t('agent.time.minutesAgo', { m: diffMin } satisfies I18nParams);
+  if (diffHour < 24) return t('agent.time.hoursAgo', { h: diffHour } satisfies I18nParams);
+  if (diffDay < 7) return t('agent.time.daysAgo', { d: diffDay } satisfies I18nParams);
+  return new Date(timestamp).toLocaleDateString(intlLocale);
+}
+
+function AgentThreadNavigator({
+  iconButtonClass,
+}: {
+  iconButtonClass: string;
+}) {
+  const { t, language } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<AgentThreadTitlebarItem[]>([]);
+  const threadList = useChatStore((state) => state.threadList);
+  const codexThreadList = useChatStore((state) => state.codexThreadList);
+  const loadThreadList = useChatStore((state) => state.loadThreadList);
+  const loadCodexThreadList = useChatStore((state) => state.loadCodexThreadList);
+  const isLargeButton = iconButtonClass.includes('w-8') || iconButtonClass.includes('h-8');
+  const buttonSizeClass = isLargeButton ? 'h-8 px-1.5 rounded-xl' : 'h-7 px-1 rounded-lg';
+
+  const threadMetaById = useMemo(() => {
+    const map = new Map<string, ThreadListItem>();
+    for (const item of threadList) map.set(item.threadId, item);
+    for (const item of codexThreadList) map.set(item.threadId, item);
+    return map;
+  }, [codexThreadList, threadList]);
+
+  const refreshItems = () => {
+    const nextItems = getAgentThreadTitlebarItems(t, threadMetaById);
+    setItems(nextItems);
+    return nextItems;
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      refreshItems();
+      void Promise.allSettled([loadThreadList(), loadCodexThreadList()]);
+    }
+    setOpen(nextOpen);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    refreshItems();
+  }, [open, threadMetaById]);
+
+  return (
+    <div className="inline-flex shrink-0 items-center">
+      <DropdownMenu open={open} onOpenChange={handleOpenChange}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={t('document.agent.menu')}
+            title={t('document.agent.menuTooltip')}
+            className={`inline-flex ${buttonSizeClass} shrink-0 items-center justify-center gap-0.5 border border-[var(--border)] bg-[var(--bg-titlebar)] text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]`}
+          >
+            <StarFourIcon className="h-4 w-4" weight="bold" />
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-[224px] space-y-1 px-1 py-1.5">
+          <DropdownMenuLabel className="px-2 pb-1 text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
+            {t('document.agent.conversationsTitle')}
+          </DropdownMenuLabel>
+          <div className="max-h-[300px] space-y-1 overflow-y-auto">
+          {items.length > 0 ? (
+            items.map((item, index) => {
+              const timeLabel = formatAgentThreadTime(item.updatedAt || item.createdAt, language, t);
+              return (
+                <DropdownMenuItem
+                  key={`${item.id}-${index}`}
+                  onClick={() => scrollToAgentThreadCard(item.element)}
+                  className="flex min-w-0 items-center gap-2 rounded-md px-2 hover:bg-[var(--muted)]"
+                >
+                  <img
+                    src={getAgentType(item.type).icon}
+                    alt=""
+                    draggable={false}
+                    className="h-4 w-4 shrink-0 object-contain"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-left text-sm text-[var(--agent-foreground)]">
+                    {item.title}
+                  </span>
+                  {timeLabel && (
+                    <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
+                      {timeLabel}
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              );
+            })
+          ) : (
+            <div className="px-2 py-2 text-xs text-[var(--muted-foreground)]">
+              {t('document.agent.empty')}
+            </div>
+          )}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 
@@ -521,6 +685,9 @@ export function MemoActions({
 
   return (
     <>
+      {(memo.agents?.length ?? 0) > 0 && (
+        <AgentThreadNavigator iconButtonClass={iconButtonClass} />
+      )}
       <MemoColorPicker
         colors={memo.colors}
         iconButtonClass={iconButtonClass}

@@ -123,6 +123,9 @@ export function SearchReplacePanel({ editor, visible, onClose }: SearchReplacePa
 
     const scrollToCurrentMatch = () => {
       requestAnimationFrame(() => {
+        // rAF 触发时 editor 可能已经被父组件卸载 (切语言/切文档) —
+        // 此时 view.dom 已失效, 跳过整个滚动逻辑。
+        if (!editor || editor.isDestroyed) return;
         const currentEl = editor.view?.dom.querySelector('.search-result-current');
         if (currentEl) {
           currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });

@@ -162,6 +162,45 @@ impl MemoFile {
         }
     }
 
+    fn generate_global_memo_id(&self) -> String {
+        loop {
+            let id = nanoid::nanoid!(8, &super::MEMO_ID_ALPHABET);
+            if self.resolve_memo_location(&id).ok().flatten().is_none() {
+                return id;
+            }
+        }
+    }
+
+    fn memo_base_for_notebook_id_result(&self, notebook_id: &str) -> Result<PathBuf, String> {
+        self.get_notebook_config_by_id(notebook_id)
+            .map(|config| PathBuf::from(config.path))
+            .ok_or_else(|| format!("notebook {notebook_id} not found"))
+    }
+
+    pub fn read_memo_for_notebook_id(&self, notebook_id: &str, id: &str) -> Option<Memo> {
+        self.read_index_for_notebook_id(Some(notebook_id))
+            .ok()
+            .flatten()?
+            .memos
+            .into_iter()
+            .find(|entry| entry.id == id)
+            .map(|entry| MemoFile::index_entry_to_memo(&entry))
+    }
+
+    pub fn find_memo_by_filename_for_notebook_id(
+        &self,
+        notebook_id: &str,
+        filename: &str,
+    ) -> Option<Memo> {
+        self.read_index_for_notebook_id(Some(notebook_id))
+            .ok()
+            .flatten()?
+            .memos
+            .into_iter()
+            .find(|entry| entry.filename == filename)
+            .map(|entry| MemoFile::index_entry_to_memo(&entry))
+    }
+
     /// 公开 title 清洗工具: 供 index_store 复用, 行为等同 `sanitize_filename_component`。
     pub fn sanitize_memo_filename_component(title: &str) -> String {
         sanitize_filename_component(title)
@@ -219,6 +258,7 @@ impl MemoFile {
             thumbnail: None,
             tags: vec![],
             todos: vec![],
+            agents: vec![],
             created_at: now,
             updated_at: now,
             favorited: false,
@@ -597,6 +637,7 @@ impl MemoFile {
                 thumbnail: None,
                 tags: vec![],
                 todos: vec![],
+                agents: vec![],
                 created_at: now,
                 updated_at: now,
                 favorited: false,
@@ -627,6 +668,7 @@ impl MemoFile {
             thumbnail: None,
             tags: vec![],
             todos: vec![],
+            agents: vec![],
             created_at: now,
             updated_at: now,
             favorited: false,
@@ -689,6 +731,7 @@ impl MemoFile {
             thumbnail: None,
             tags: vec![],
             todos: vec![],
+            agents: vec![],
             created_at: now,
             updated_at: now,
             favorited: false,
@@ -698,6 +741,167 @@ impl MemoFile {
         };
         apply_derived_memo_fields(&mut memo, &stamped);
         MemoFile::sync_index_on_write_locked(self, &memo)
+            .map_err(|e| format!("sync memo index failed: {e}"))?;
+        Ok(memo)
+    }
+
+    pub fn register_existing_file_for_notebook_id(
+        &self,
+        notebook_id: &str,
+        abs_path: &Path,
+    ) -> Result<Memo, String> {
+        let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
+        self.register_existing_file_for_notebook_id_locked(notebook_id, abs_path)
+    }
+
+    pub fn register_existing_file_as_new_for_notebook_id(
+        &self,
+        notebook_id: &str,
+        abs_path: &Path,
+    ) -> Result<Memo, String> {
+        let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
+        self.register_existing_file_as_new_for_notebook_id_locked(notebook_id, abs_path)
+    }
+
+    fn register_existing_file_as_new_for_notebook_id_locked(
+        &self,
+        notebook_id: &str,
+        abs_path: &Path,
+    ) -> Result<Memo, String> {
+        if !abs_path.is_md() {
+            return Err(format!("not a markdown file: {}", abs_path.display()));
+        }
+        if !abs_path.exists() {
+            return Err(format!("file not found: {}", abs_path.display()));
+        }
+        let filename = abs_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("invalid path: {}", abs_path.display()))?
+            .to_string();
+
+        if let Some(memo) = self.find_memo_by_filename_for_notebook_id(notebook_id, &filename) {
+            return self.reload_memo_inner_for_notebook_id_locked(notebook_id, memo);
+        }
+
+        let content = fs::read_to_string(abs_path).map_err(|e| e.to_string())?;
+        let id = self.generate_global_memo_id();
+        let now = chrono::Utc::now().timestamp_millis();
+        let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
+        let stamped = merge_frontmatter(&content, &overrides);
+        atomic_write_bytes(abs_path, stamped.as_bytes()).map_err(|e| e.to_string())?;
+
+        let mut memo = Memo {
+            id: id.clone(),
+            filename,
+            preview: String::new(),
+            thumbnail: None,
+            tags: vec![],
+            todos: vec![],
+            agents: vec![],
+            created_at: now,
+            updated_at: now,
+            favorited: false,
+            icon: None,
+            colors: vec![],
+            properties: serde_json::json!({}),
+        };
+        apply_derived_memo_fields(&mut memo, &stamped);
+        MemoFile::sync_index_on_write_for_notebook_id_locked(self, notebook_id, &memo)
+            .map_err(|e| format!("sync memo index failed: {e}"))?;
+        Ok(memo)
+    }
+
+    fn register_existing_file_for_notebook_id_locked(
+        &self,
+        notebook_id: &str,
+        abs_path: &Path,
+    ) -> Result<Memo, String> {
+        if !abs_path.is_md() {
+            return Err(format!("not a markdown file: {}", abs_path.display()));
+        }
+        if !abs_path.exists() {
+            return Err(format!("file not found: {}", abs_path.display()));
+        }
+        let filename = abs_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("invalid path: {}", abs_path.display()))?
+            .to_string();
+
+        if let Some(memo) = self.find_memo_by_filename_for_notebook_id(notebook_id, &filename) {
+            return self.reload_memo_inner_for_notebook_id_locked(notebook_id, memo);
+        }
+
+        let content = fs::read_to_string(abs_path).map_err(|e| e.to_string())?;
+        if let Some(existing_id) = super::frontmatter::extract_frontmatter_key(&content) {
+            if let Some(existing_memo) = self.read_memo_for_notebook_id(notebook_id, &existing_id) {
+                if existing_memo.filename != filename {
+                    let base = self.memo_base_for_notebook_id_result(notebook_id)?;
+                    return self.rename_memo_file_for_notebook_id_locked(
+                        notebook_id,
+                        &base.join(&existing_memo.filename),
+                        abs_path,
+                    );
+                }
+                return Ok(existing_memo);
+            }
+            if self
+                .resolve_memo_location(&existing_id)
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                return self
+                    .register_existing_file_as_new_for_notebook_id_locked(notebook_id, abs_path);
+            }
+
+            let id = existing_id;
+            let now = chrono::Utc::now().timestamp_millis();
+            let mut memo = Memo {
+                id: id.clone(),
+                filename: filename.clone(),
+                preview: String::new(),
+                thumbnail: None,
+                tags: vec![],
+                todos: vec![],
+                agents: vec![],
+                created_at: now,
+                updated_at: now,
+                favorited: false,
+                icon: None,
+                colors: vec![],
+                properties: serde_json::json!({}),
+            };
+            apply_derived_memo_fields(&mut memo, &content);
+            MemoFile::sync_index_on_write_for_notebook_id_locked(self, notebook_id, &memo)
+                .map_err(|e| format!("sync memo index failed: {e}"))?;
+            return Ok(memo);
+        }
+
+        let id = self.generate_global_memo_id();
+        let now = chrono::Utc::now().timestamp_millis();
+        let overrides: MergeOverrides = [("key".to_string(), id.clone())].into_iter().collect();
+        let stamped = merge_frontmatter(&content, &overrides);
+        atomic_write_bytes(abs_path, stamped.as_bytes()).map_err(|e| e.to_string())?;
+
+        let mut memo = Memo {
+            id: id.clone(),
+            filename: filename.clone(),
+            preview: String::new(),
+            thumbnail: None,
+            tags: vec![],
+            todos: vec![],
+            agents: vec![],
+            created_at: now,
+            updated_at: now,
+            favorited: false,
+            icon: None,
+            colors: vec![],
+            properties: serde_json::json!({}),
+        };
+        apply_derived_memo_fields(&mut memo, &stamped);
+        MemoFile::sync_index_on_write_for_notebook_id_locked(self, notebook_id, &memo)
             .map_err(|e| format!("sync memo index failed: {e}"))?;
         Ok(memo)
     }
@@ -759,6 +963,7 @@ impl MemoFile {
                 thumbnail: None,
                 tags: vec![],
                 todos: vec![],
+                agents: vec![],
                 created_at: now,
                 updated_at: now,
                 favorited: false,
@@ -786,6 +991,7 @@ impl MemoFile {
             thumbnail: None,
             tags: vec![],
             todos: vec![],
+            agents: vec![],
             created_at: now,
             updated_at: now,
             favorited: false,
@@ -1083,12 +1289,40 @@ impl MemoFile {
         self.reload_memo_inner_locked(memo)
     }
 
+    pub fn reload_memo_from_disk_by_filename_for_notebook_id(
+        &self,
+        notebook_id: &str,
+        filename: &str,
+    ) -> Result<Memo, String> {
+        let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
+        let memo = self
+            .find_memo_by_filename_for_notebook_id(notebook_id, filename)
+            .ok_or_else(|| format!("memo with filename {filename} not in memo index"))?;
+        self.reload_memo_inner_for_notebook_id_locked(notebook_id, memo)
+    }
+
     fn reload_memo_inner_locked(&self, mut memo: Memo) -> Result<Memo, String> {
         let path = self.get_memo_base().join(&memo.filename);
         let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
         memo.updated_at = chrono::Utc::now().timestamp_millis();
         apply_derived_memo_fields(&mut memo, &content);
         MemoFile::sync_index_on_write_locked(self, &memo)
+            .map_err(|e| format!("sync memo index failed: {e}"))?;
+        Ok(memo)
+    }
+
+    fn reload_memo_inner_for_notebook_id_locked(
+        &self,
+        notebook_id: &str,
+        mut memo: Memo,
+    ) -> Result<Memo, String> {
+        let path = self
+            .memo_base_for_notebook_id_result(notebook_id)?
+            .join(&memo.filename);
+        let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        memo.updated_at = chrono::Utc::now().timestamp_millis();
+        apply_derived_memo_fields(&mut memo, &content);
+        MemoFile::sync_index_on_write_for_notebook_id_locked(self, notebook_id, &memo)
             .map_err(|e| format!("sync memo index failed: {e}"))?;
         Ok(memo)
     }
@@ -1154,6 +1388,37 @@ impl MemoFile {
             return false;
         }
         MemoFile::sync_index_on_delete_locked(self, &memo.id).is_ok()
+    }
+
+    pub fn unregister_memo_by_path_for_notebook_id(
+        &self,
+        notebook_id: &str,
+        abs_path: &Path,
+    ) -> bool {
+        let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
+        let filename = abs_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string());
+        let Some(filename) = filename else {
+            return false;
+        };
+        let Some(memo) = self.find_memo_by_filename_for_notebook_id(notebook_id, &filename) else {
+            return false;
+        };
+        let Ok(base) = self.memo_base_for_notebook_id_result(notebook_id) else {
+            return false;
+        };
+        let expected_abs = base.join(&memo.filename);
+        if normalize_for_compare(&expected_abs) != normalize_for_compare(abs_path) {
+            tracing::debug!(
+                "[unregister_memo_by_path_for_notebook_id] refused: memo index entry.filename={} but abs_path={}",
+                expected_abs.display(),
+                abs_path.display()
+            );
+            return false;
+        }
+        MemoFile::sync_index_on_delete_for_notebook_id_locked(self, notebook_id, &memo.id).is_ok()
     }
 
     /// Idempotently sync an existing memo entry to the filename currently on disk.
@@ -1225,6 +1490,72 @@ impl MemoFile {
         memo.updated_at = chrono::Utc::now().timestamp_millis();
 
         MemoFile::sync_index_on_write_for_notebook_id_locked(self, &location.notebook.id, &memo)
+            .map_err(|e| format!("sync memo index failed: {e}"))?;
+        Ok(memo)
+    }
+
+    pub fn sync_memo_filename_from_disk_key_for_notebook_id(
+        &self,
+        notebook_id: &str,
+        id: &str,
+        new_path: &Path,
+    ) -> Result<Memo, String> {
+        let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
+        let existing = self
+            .read_memo_for_notebook_id(notebook_id, id)
+            .ok_or_else(|| format!("memo id not in notebook {notebook_id}: {id}"))?;
+
+        let new_filename = new_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("invalid new path: {}", new_path.display()))?
+            .to_string();
+        if !new_path.is_md() {
+            return Err(format!("new path is not markdown: {}", new_path.display()));
+        }
+
+        let base = self.memo_base_for_notebook_id_result(notebook_id)?;
+        let expected_new_abs = base.join(&new_filename);
+        if normalize_for_compare(&expected_new_abs) != normalize_for_compare(new_path) {
+            return Err(format!(
+                "new path not under memo notebook base: {}",
+                new_path.display()
+            ));
+        }
+
+        if existing.filename != new_filename {
+            let old_abs = base.join(&existing.filename);
+            if old_abs.exists() {
+                return Err(format!(
+                    "indexed file still exists; treating as copy instead of rename: {}",
+                    old_abs.display()
+                ));
+            }
+        }
+
+        let list = self
+            .read_index_for_notebook_id(Some(notebook_id))
+            .map_err(|e| format!("read memo index failed: {e}"))?
+            .unwrap_or_default();
+        if let Some(occupied) = list
+            .memos
+            .iter()
+            .find(|entry| entry.filename == new_filename && entry.id != id)
+        {
+            return Err(format!(
+                "new filename already occupied by another memo (id={})",
+                occupied.id
+            ));
+        }
+
+        let content = std::fs::read_to_string(new_path)
+            .map_err(|e| format!("failed to read new path {}: {e}", new_path.display()))?;
+        let mut memo = existing;
+        memo.filename = new_filename;
+        apply_derived_memo_fields(&mut memo, &content);
+        memo.updated_at = chrono::Utc::now().timestamp_millis();
+
+        MemoFile::sync_index_on_write_for_notebook_id_locked(self, notebook_id, &memo)
             .map_err(|e| format!("sync memo index failed: {e}"))?;
         Ok(memo)
     }
@@ -1303,6 +1634,76 @@ impl MemoFile {
 
         // 6. 同步 memo index (沿用 sync_index_on_write_locked, 它走 filename 做索引)
         MemoFile::sync_index_on_write_locked(self, &memo)
+            .map_err(|e| format!("sync memo index failed: {e}"))?;
+        Ok(memo)
+    }
+
+    pub fn rename_memo_file_for_notebook_id(
+        &self,
+        notebook_id: &str,
+        old_path: &Path,
+        new_path: &Path,
+    ) -> Result<Memo, String> {
+        let _index_io_guard = self.current_index_io.lock().expect("index_io poisoned");
+        self.rename_memo_file_for_notebook_id_locked(notebook_id, old_path, new_path)
+    }
+
+    fn rename_memo_file_for_notebook_id_locked(
+        &self,
+        notebook_id: &str,
+        old_path: &Path,
+        new_path: &Path,
+    ) -> Result<Memo, String> {
+        let old_filename = old_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("invalid old path: {}", old_path.display()))?
+            .to_string();
+        let new_filename = new_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("invalid new path: {}", new_path.display()))?
+            .to_string();
+
+        let mut memo = match self.find_memo_by_filename_for_notebook_id(notebook_id, &old_filename)
+        {
+            Some(m) => m,
+            None => return Err(format!("old filename not in memo index: {old_filename}")),
+        };
+        let id = memo.id.clone();
+
+        let base = self.memo_base_for_notebook_id_result(notebook_id)?;
+        let expected_old_abs = base.join(&old_filename);
+        if normalize_for_compare(&expected_old_abs) != normalize_for_compare(old_path) {
+            return Err(format!(
+                "old path not under notebook base: {}",
+                old_path.display()
+            ));
+        }
+
+        if !new_path.is_md() {
+            return Err(format!("new path is not markdown: {}", new_path.display()));
+        }
+
+        if let Some(existing) =
+            self.find_memo_by_filename_for_notebook_id(notebook_id, &new_filename)
+        {
+            if existing.id != id {
+                return Err(format!(
+                    "new filename already occupied by another memo (id={})",
+                    existing.id
+                ));
+            }
+        }
+
+        memo.filename = new_filename.clone();
+        let new_abs = base.join(&new_filename);
+        let content = std::fs::read_to_string(&new_abs)
+            .map_err(|e| format!("failed to read new path {}: {e}", new_abs.display()))?;
+        apply_derived_memo_fields(&mut memo, &content);
+        memo.updated_at = chrono::Utc::now().timestamp_millis();
+
+        MemoFile::sync_index_on_write_for_notebook_id_locked(self, notebook_id, &memo)
             .map_err(|e| format!("sync memo index failed: {e}"))?;
         Ok(memo)
     }

@@ -4,16 +4,22 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 import { translate } from '@features/i18n';
 import { useUserSettingsStore } from '@features/preferences/store/user-settings-store';
 
-function formatChineseDateTime(date: Date): string {
+function formatEditorDateTime(date: Date): string {
   const language = useUserSettingsStore.getState().settings.language;
-  // 英文用 Intl.DateTimeFormat 简写「June 24, 2025」样式 (long month + day + year, 无时间);
+  // 英文日期和时间分开格式化, 避免 en-US 日期时间组合格式自动插入 "at"。
   // 中文保留完整数字格式带时分, 便于按时间排序对照。
   if (language === 'en-US') {
-    return new Intl.DateTimeFormat('en-US', {
+    const datePart = new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
     }).format(date);
+    const timePart = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(date);
+    return `${datePart} ${timePart}`;
   }
   const year = date.getFullYear();
   const month = date.getMonth() + 1;
@@ -42,7 +48,7 @@ export const DateTimeWidget = Extension.create({
           decorations(state) {
             if (!currentUpdatedAt) return DecorationSet.empty;
 
-            const dateStr = formatChineseDateTime(currentUpdatedAt);
+            const dateStr = formatEditorDateTime(currentUpdatedAt);
             const dom = document.createElement('div');
             dom.className = 'editor-datetime-widget';
             dom.textContent = dateStr;

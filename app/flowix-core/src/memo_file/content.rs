@@ -111,6 +111,10 @@ impl MemoFile {
                 .into_iter()
                 .filter(|m| !m.todos.is_empty())
                 .collect(),
+            "agents" => all_memos
+                .into_iter()
+                .filter(|m| !m.agents.is_empty())
+                .collect(),
             "favorited" => all_memos.into_iter().filter(|m| m.favorited).collect(),
             "tagged" => {
                 if let Some(tid) = tag_id {

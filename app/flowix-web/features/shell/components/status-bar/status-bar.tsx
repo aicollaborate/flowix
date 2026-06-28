@@ -28,10 +28,16 @@ interface StatusBarProps {
 /**
  * Bottom status bar for the main window.
  *
- * Layout (left → right):
- *   [NotebookSwitcher] [Todos] [char count]   …flex spacer…   [AI Chat] [⚙]
+ * Layout (two columns):
+ *   [NotebookSwitcher] | [Todos] [char count]   …flex spacer…   [Note Nav] [AI Chat] [⚙]
+ *                       ↑ top border
  *
- * Renders no chrome of its own — it assumes it lives in a `h-6` flex strip.
+ * The left column is the notebook switcher (fixed width by its own button
+ * content); the right column takes the remaining width and carries the top
+ * border so the switcher's primary-colored block reads as a standalone first
+ * column.
+ *
+ * Renders no chrome of its own — it assumes it lives in a `h-[26px]` flex strip.
  */
 export function StatusBar({
   memoColWidth,
@@ -52,8 +58,9 @@ export function StatusBar({
 }: StatusBarProps) {
   const { t } = useI18n();
   return (
-    <div className="h-[28px] shrink-0 flex items-center text-xs text-[var(--muted-foreground)] border-t border-[var(--divider)] bg-[var(--statusbar-bg)]">
-      <div className="h-full flex items-center gap-1.5">
+    <div className="flex h-[26px] shrink-0 select-none items-stretch bg-[var(--statusbar-bg)] text-xs text-[var(--muted-foreground)]">
+      {/* Left column: notebook switcher (fixed width by its own button content). */}
+      <div className="shrink-0 flex items-center">
         <NotebookSwitcher
           open={notebookPopupOpen}
           onOpenChange={setNotebookPopupOpen}
@@ -65,6 +72,9 @@ export function StatusBar({
           onRefresh={onRefreshNotebooks}
           dropdownWidth={memoColWidth}
         />
+      </div>
+      {/* Right column: full-width content area; carries the top border. */}
+      <div className="flex-1 min-w-0 flex items-center gap-1.5 pl-1.5 border-t border-[var(--divider)]">
         <button
           type="button"
           className="h-full inline-flex items-center gap-1 px-1.5 text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
@@ -76,38 +86,38 @@ export function StatusBar({
           <span>{todoCount}</span>
         </button>
         {charCount > 0 && <span className="text-[var(--muted-foreground)]">{t('status.characters')} {charCount}</span>}
+        <div className="flex-1" />
+        <Tooltip content={t('shell.statusBar.noteNavTooltip')}>
+          <button
+            type="button"
+            onClick={onToggleNoteNavigation}
+            className="h-full flex items-center gap-1 px-1.5 py-0 hover:bg-[var(--muted)] mr-1"
+            aria-label={t('shell.statusBar.noteNav')}
+          >
+            <Hash className="w-3.5 h-3.5" />
+          </button>
+        </Tooltip>
+        <Tooltip content={t('status.aiChat')} shortcut="panel.agent.toggle">
+          <button
+            type="button"
+            onClick={onToggleAgentPanel}
+            className="h-full flex items-center gap-1 px-1.5 py-0 hover:bg-[var(--muted)] mr-1"
+          >
+            <Infinity className="w-3.5 h-3.5" />
+            <span>{t('status.aiChat')}</span>
+          </button>
+        </Tooltip>
+        <Tooltip content={t('status.preferences')} shortcut="menu.open" side="top">
+          <button
+            type="button"
+            onClick={onOpenPreferences}
+            className="h-full flex items-center justify-center px-1.5 py-0 hover:bg-[var(--muted)] mr-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            aria-label={t('status.preferences')}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+          </button>
+        </Tooltip>
       </div>
-      <div className="flex-1" />
-      <Tooltip content={t('shell.statusBar.noteNavTooltip')}>
-        <button
-          type="button"
-          onClick={onToggleNoteNavigation}
-          className="h-full flex items-center gap-1 px-1.5 py-0 hover:bg-[var(--muted)] mr-1"
-          aria-label={t('shell.statusBar.noteNav')}
-        >
-          <Hash className="w-3.5 h-3.5" />
-        </button>
-      </Tooltip>
-      <Tooltip content={t('status.aiChat')} shortcut="panel.agent.toggle">
-        <button
-          type="button"
-          onClick={onToggleAgentPanel}
-          className="h-full flex items-center gap-1 px-1.5 py-0 hover:bg-[var(--muted)] mr-1"
-        >
-          <Infinity className="w-3.5 h-3.5" />
-          <span>{t('status.aiChat')}</span>
-        </button>
-      </Tooltip>
-      <Tooltip content={t('status.preferences')} shortcut="menu.open" side="top">
-        <button
-          type="button"
-          onClick={onOpenPreferences}
-          className="h-full flex items-center justify-center px-1.5 py-0 hover:bg-[var(--muted)] mr-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-          aria-label={t('status.preferences')}
-        >
-          <SlidersHorizontal className="w-3.5 h-3.5" />
-        </button>
-      </Tooltip>
     </div>
   );
 }

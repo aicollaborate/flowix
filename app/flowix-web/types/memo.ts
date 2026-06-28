@@ -19,6 +19,7 @@ export type MemoChangeSource =
 export type MemoDerivedChanged = {
   tags: boolean;
   todos: boolean;
+  agents: boolean;
 };
 
 export type MemoEvent =

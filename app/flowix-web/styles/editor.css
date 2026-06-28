@@ -477,13 +477,19 @@
   color: var(--brand);
 }
 
-.markdown-editor .tiptap img {
+.markdown-editor .tiptap > img,
+.markdown-editor .tiptap > p > img,
+.markdown-editor .tiptap li > img,
+.markdown-editor .tiptap li > p > img {
   border-radius: 8px;
   border: 1px solid var(--border);
   margin-bottom: 1rem;
 }
 
-.markdown-editor .tiptap img.error {
+.markdown-editor .tiptap > img.error,
+.markdown-editor .tiptap > p > img.error,
+.markdown-editor .tiptap li > img.error,
+.markdown-editor .tiptap li > p > img.error {
   border: 1px dashed var(--muted-foreground);
   border-radius: 8px;
   opacity: 1 !important;

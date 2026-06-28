@@ -20,6 +20,9 @@ interface TableMenuPosition {
 }
 
 function getCurrentTableElement(editor: Editor): HTMLElement | null {
+  // selectionUpdate 可能在 editor 销毁后还 flush 进来 (transaction 队列里
+  // 还有未处理项, view DOM 已被 detach) — 守住避免 "view not available"。
+  if (editor.isDestroyed) return null;
   const { state } = editor;
   const { $from } = state.selection;
 
@@ -153,6 +156,9 @@ export function TableBubbleMenu({ editor }: TableBubbleMenuProps) {
   const [position, setPosition] = useState<TableMenuPosition | null>(null);
 
   useEffect(() => {
+    // editor 可能在 effect 排队时已被销毁 (切语言/切文档的卸载路径),
+    // 此时 view.dom 已 detach — 直接 closest 会触发 view-not-available 警告。
+    if (editor.isDestroyed) return;
     const root = editor.view.dom.closest('.markdown-editor');
     setOverlayRoot(root instanceof HTMLElement ? root : null);
   }, [editor]);

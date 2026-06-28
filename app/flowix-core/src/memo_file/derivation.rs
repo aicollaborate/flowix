@@ -25,21 +25,109 @@ use regex::Regex;
 use std::collections::HashSet;
 
 use super::frontmatter::{extract_body_content, extract_frontmatter_properties};
-use super::types::{Memo, TodoItem};
+use super::types::{AgentThreadItem, Memo, TodoItem};
 
-/// 判定 markdown 行是否"语义空白" (空行 / 全空格 / HTML 实体 `&nbsp;` /
+/// 解码常见 HTML 实体为对应 Unicode 字符。title/preview 派生的最小集:
+/// - 空白类 (`&nbsp;` / `&ensp;` / `&emsp;` / `&thinsp;` / `&hairsp;` /
+///   `&numsp;` / `&puncsp;` / `&mediumsp;` / `&idsp;` / `&#160;` / `&#xa0;`)
+///   → Unicode Zs 空白, 由下游 `\s+` 自然折叠为单空格, `.trim()` 吃掉首尾
+/// - 基础符号 (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&#34;`) → 对应字符
+///
+/// 未知 / 畸形实体原样保留 (不抛错也不吃字符), 保证非 HTML 内容不受影响。
+/// 故意未含零宽连接符 (`&zwnj;` / `&zwj;`) ── 它们在 Unicode 中不是空白,
+/// 字面保留能让文本塑形语义不丢; 若日后要按"全空白"过滤再单独加。
+fn decode_html_entities(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < s.len() {
+        let c = s[i..].chars().next().unwrap();
+        if c == '&' {
+            if let Some((decoded, consumed)) = try_decode_entity(&s[i..]) {
+                out.push(decoded);
+                i += consumed;
+                continue;
+            }
+        }
+        out.push(c);
+        i += c.len_utf8();
+    }
+    out
+}
+
+/// 尝试从 `s` 起始位置匹配一个已知 HTML 实体。成功返回 (解码字符, 消费的字节数);
+/// 失败返回 `None`, 调用方按普通字符处理。
+fn try_decode_entity(s: &str) -> Option<(char, usize)> {
+    // 命名实体 ── 互不为前缀, 顺序无关; `&` 已在 caller 判定过。
+    // 空白类全部归位到 Unicode Zs (Separator, Space), 让下游 `is_whitespace` /
+    // `str::trim` / Rust regex `\s` (匹配 White_Space) 统一处理 ── 不需要在
+    // 这里为每种空白单独写折叠逻辑。
+    const NAMED: &[(&str, char)] = &[
+        // 空白类 (HTML5 named character references)
+        ("&nbsp;", '\u{00A0}'),     // NO-BREAK SPACE
+        ("&ensp;", '\u{2002}'),      // EN SPACE
+        ("&emsp;", '\u{2003}'),      // EM SPACE
+        ("&thinsp;", '\u{2009}'),    // THIN SPACE
+        ("&hairsp;", '\u{200A}'),    // HAIR SPACE
+        ("&numsp;", '\u{2007}'),     // FIGURE SPACE
+        ("&puncsp;", '\u{2008}'),    // PUNCTUATION SPACE
+        ("&mediumsp;", '\u{205F}'),  // MEDIUM MATHEMATICAL SPACE
+        ("&idsp;", '\u{3000}'),      // IDEOGRAPHIC SPACE
+        // 基础符号
+        ("&quot;", '"'),
+        ("&amp;", '&'),
+        ("&lt;", '<'),
+        ("&gt;", '>'),
+    ];
+    for (pat, ch) in NAMED {
+        if s.starts_with(pat) {
+            return Some((*ch, pat.len()));
+        }
+    }
+    // 数字实体 &#NN; / &#xHH; ── 上限 8 位防止病态输入。
+    let after_hash = s.strip_prefix("&#")?;
+    let semi_pos = after_hash.find(';')?;
+    let num_str = &after_hash[..semi_pos];
+    if num_str.is_empty() || num_str.len() > 8 {
+        return None;
+    }
+    let n = if let Some(hex) = num_str
+        .strip_prefix('x')
+        .or_else(|| num_str.strip_prefix('X'))
+    {
+        u32::from_str_radix(hex, 16).ok()?
+    } else {
+        num_str.parse::<u32>().ok()?
+    };
+    let ch = char::from_u32(n)?;
+    // 阻止 NUL 控制字符泄漏到 title / preview (HTML5 规范中 `&#0;` 渲染为空)。
+    if ch == '\0' {
+        return None;
+    }
+    Some((ch, 2 + semi_pos + 1))
+}
+
+/// 判定 markdown 行是否"语义空白" (空行 / 全空格 / 任意空白类 HTML 实体 /
 /// 不间断空格 U+00A0)。`is_blank_line` 用于过滤 title/preview/todo 提取前的源。
+///
+/// 先过 [`decode_html_entities`] 再 trim, 让所有空白类实体
+/// (`&nbsp;` / `&#160;` / `&#xa0;` 等) 都被正确折叠为单空格再被 trim 吃掉。
+/// 性能优化: 大多数行不含 `&`, 用 `contains('&')` 短路避免无谓的 String 分配。
 pub fn is_blank_line(line: &str) -> bool {
-    line.replace("&nbsp;", "")
-        .replace('\u{00a0}', "")
-        .trim()
-        .is_empty()
+    if line.contains('&') {
+        decode_html_entities(line).trim().is_empty()
+    } else {
+        line.trim().is_empty()
+    }
 }
 
 /// 去掉 markdown 装饰字符 (heading `#` / list `-*+` / quote `>` / checkbox `[ ]`
 /// / link 包装 / 强调 `*_` / 反引号), 折叠连续空白为单空格, 留作 title 派生。
+///
+/// 流水线首步先做 HTML 实体解码 (`&nbsp;` → U+00A0 等), 让 `&nbsp;` 行内残留
+/// 被下游 `\s+` 自然折叠为单空格, 然后被末尾 `.trim()` 吃掉 ── 这样无论
+/// `&nbsp;` 出现在行首 / 行尾 / 行内都能被清洗, 不再泄漏实体字符串。
 pub fn strip_markdown(text: &str) -> String {
-    let mut value = text.trim().to_string();
+    let mut value = decode_html_entities(text.trim());
 
     for prefix in ["#", "-", "*", "+", ">"] {
         while value.starts_with(prefix) {
@@ -73,7 +161,7 @@ pub fn strip_markdown(text: &str) -> String {
 // 块节点过滤档案
 // ---------------------------------------------------------------------------
 
-/// `::agent-thread-card{threadId="..." title="..." roleKey="..." collapsed="..."}`
+/// `::agent-thread-card{threadId="..." title="..." agentType="..." collapsed="..."}`
 /// ── 由 Tiptap `extensions/agent-thread-card.tsx` 的 `renderMarkdown` 序列化
 /// 出来的单行节点形态。行 trim 后整行匹配视为"该行属于块节点, 派生时跳过"。
 static AGENT_THREAD_CARD_LINE_RE: Lazy<Regex> =
@@ -225,21 +313,21 @@ fn is_markdown_table_delimiter(line: &str) -> bool {
 /// 两条规则之前先经过 [`strip_block_node_lines`] ── 任何已登记的 Tiptap 自定
 /// 义节点 (`::agent-thread-card{...}` / `:::agent-thread-card ... :::`) 都不会
 /// 占据首行或第二行, 也就不会泄漏到 `filename` (title) 或 `preview` 里。
+///
+/// 性能要点: 只取前两个非空行, 找到后立即结束迭代。典型笔记正文 5KB+ 也只
+/// 处理 2-10 行, 不再为求前两条结果跑遍整文件。
 pub fn extract_title_and_preview(content: &str) -> (String, String) {
-    let body_without_code = strip_fenced_code_blocks(extract_body_content(content));
-    let body = strip_block_node_lines(&body_without_code);
-    let lines: Vec<String> = body
+    let body = strip_block_node_lines(&strip_fenced_code_blocks(extract_body_content(content)));
+    let mut iter = body
         .lines()
         .map(str::trim)
         .filter(|line| !is_blank_line(line))
         .map(strip_markdown)
-        .filter(|line| !line.is_empty())
-        .collect();
+        .filter(|line| !line.is_empty());
 
-    let title = lines.first().cloned().unwrap_or_default();
-    let preview = lines
-        .get(1)
-        .cloned()
+    let title = iter.next().unwrap_or_default();
+    let preview = iter
+        .next()
         .unwrap_or_default()
         .chars()
         .take(200)
@@ -402,6 +490,10 @@ fn strip_code_regions(body: &str) -> String {
 }
 
 /// 从 body 抽 `- [ ]` / `- [x]` 复选框条目 (todo items)。
+///
+/// content 走 [`decode_html_entities`] 后再判 blank ── 让 `&nbsp;` /
+/// `&#160;` 等空白类实体被正确折叠为空, 不会作为空白条目泄漏到结果数组。
+/// 实体解码也保证存储的 content 与 title/preview 流水线语义一致。
 pub fn extract_todos_from_body(content: &str) -> Vec<TodoItem> {
     static TODO_RE: Lazy<Regex> =
         Lazy::new(|| Regex::new(r"(?m)^\s*-\s*\[([ xX])\]\s*(.+)$").unwrap());
@@ -409,22 +501,70 @@ pub fn extract_todos_from_body(content: &str) -> Vec<TodoItem> {
     TODO_RE
         .captures_iter(extract_body_content(content))
         .filter_map(|captures| {
-            let content = captures.get(2)?.as_str().trim();
-            if is_blank_line(content) {
+            let content = decode_html_entities(captures.get(2)?.as_str().trim());
+            if content.trim().is_empty() {
                 return None;
             }
 
             let checked = captures.get(1)?.as_str().eq_ignore_ascii_case("x");
             Some(TodoItem {
-                content: content.to_string(),
+                content,
                 status: if checked { "completed" } else { "pending" }.to_string(),
             })
         })
         .collect()
 }
 
+pub fn extract_agent_threads_from_body(content: &str) -> Vec<AgentThreadItem> {
+    static AGENT_THREAD_CARD_ATTRS_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r#"(?m)^\s*::agent-thread-card\{([^}]*)\}\s*$"#).unwrap());
+    static ATTR_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r#"([A-Za-z][A-Za-z0-9_-]*)="([^"]*)""#).unwrap());
+
+    let mut seen = HashSet::new();
+    let mut agents = Vec::new();
+    let body = strip_fenced_code_blocks(extract_body_content(content));
+
+    for captures in AGENT_THREAD_CARD_ATTRS_RE.captures_iter(&body) {
+        let attrs = captures.get(1).map(|m| m.as_str()).unwrap_or_default();
+        let mut thread_id = String::new();
+        let mut title = String::new();
+        let mut agent_type = String::new();
+
+        for attr in ATTR_RE.captures_iter(attrs) {
+            let key = attr.get(1).map(|m| m.as_str()).unwrap_or_default();
+            let value = attr
+                .get(2)
+                .map(|m| decode_markdown_attr(m.as_str()))
+                .unwrap_or_default();
+            match key {
+                "threadId" => thread_id = value,
+                "title" => title = value,
+                "agentType" => agent_type = value,
+                _ => {}
+            }
+        }
+
+        if thread_id.trim().is_empty() || !seen.insert(thread_id.clone()) {
+            continue;
+        }
+
+        agents.push(AgentThreadItem {
+            thread_id,
+            title,
+            agent_type,
+        });
+    }
+
+    agents
+}
+
+fn decode_markdown_attr(value: &str) -> String {
+    decode_html_entities(value)
+}
+
 /// 应用派生字段到 memo。`filename` 仅在为空时从 body 第一行覆盖 (用户显式设的
-/// title 优先), `preview` / `tags` / `todos` 总是从 body 重算。
+/// title 优先), `preview` / `tags` / `todos` / `agents` 总是从 body 重算。
 pub fn apply_derived_memo_fields(memo: &mut Memo, full_content: &str) {
     let (derived_title, preview) = extract_title_and_preview(full_content);
     if memo.filename.trim().is_empty() && !derived_title.is_empty() {
@@ -434,6 +574,7 @@ pub fn apply_derived_memo_fields(memo: &mut Memo, full_content: &str) {
     memo.thumbnail = extract_thumbnail(full_content);
     memo.tags = extract_tags_from_body(full_content);
     memo.todos = extract_todos_from_body(full_content);
+    memo.agents = extract_agent_threads_from_body(full_content);
     memo.properties = extract_frontmatter_properties(full_content);
 }
 
@@ -460,13 +601,27 @@ mod tests {
     #[test]
     fn agent_thread_card_single_line_is_skipped_for_title_and_preview() {
         let md = "\
-::agent-thread-card{threadId=\"abc\" title=\"AI 对话\" roleKey=\"flowix\" collapsed=\"false\"}
+::agent-thread-card{threadId=\"abc\" title=\"AI 对话\" agentType=\"flowix\" collapsed=\"false\"}
 # Real title
 real preview line
 ";
         let (t, p) = extract_title_and_preview(md);
         assert_eq!(t, "Real title");
         assert_eq!(p, "real preview line");
+    }
+
+    #[test]
+    fn agent_thread_card_refs_are_extracted_from_body() {
+        let md = "\
+::agent-thread-card{threadId=\"abc\" title=\"AI &amp; Helper\" agentType=\"flowix\" collapsed=\"false\"}
+::agent-thread-card{threadId=\"abc\" title=\"Duplicate\" agentType=\"flowix\" collapsed=\"true\"}
+::agent-thread-card{threadId=\"\" title=\"Draft\" agentType=\"flowix\" collapsed=\"false\"}
+";
+        let agents = extract_agent_threads_from_body(md);
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].thread_id, "abc");
+        assert_eq!(agents[0].title, "AI & Helper");
+        assert_eq!(agents[0].agent_type, "flowix");
     }
 
     /// 围栏形态 `:::agent-thread-card ... :::` 同样要在 title / preview 之前
@@ -524,7 +679,7 @@ real preview
     #[test]
     fn indented_single_line_agent_thread_card_is_stripped() {
         let md = "\
-    ::agent-thread-card{threadId=\"x\" title=\"t\" roleKey=\"flowix\" collapsed=\"false\"}
+    ::agent-thread-card{threadId=\"x\" title=\"t\" agentType=\"flowix\" collapsed=\"false\"}
 # Real title
 real preview
 ";
@@ -537,8 +692,8 @@ real preview
     #[test]
     fn stacked_agent_thread_cards_are_all_stripped() {
         let md = "\
-::agent-thread-card{threadId=\"a\" title=\"A\" roleKey=\"flowix\" collapsed=\"false\"}
-::agent-thread-card{threadId=\"b\" title=\"B\" roleKey=\"flowix\" collapsed=\"false\"}
+::agent-thread-card{threadId=\"a\" title=\"A\" agentType=\"flowix\" collapsed=\"false\"}
+::agent-thread-card{threadId=\"b\" title=\"B\" agentType=\"flowix\" collapsed=\"false\"}
 # Real title
 real preview
 ";
@@ -552,7 +707,7 @@ real preview
     #[test]
     fn card_only_document_yields_empty_title_and_preview() {
         let md = "\
-::agent-thread-card{threadId=\"abc\" title=\"AI 对话\" roleKey=\"flowix\" collapsed=\"false\"}
+::agent-thread-card{threadId=\"abc\" title=\"AI 对话\" agentType=\"flowix\" collapsed=\"false\"}
 ";
         let (t, p) = extract_title_and_preview(md);
         assert_eq!(t, "");
@@ -762,5 +917,228 @@ use `#skip-3` and `#skip-4`
         assert_eq!(v.len(), 2);
         assert_eq!(v[0].status, "pending");
         assert_eq!(v[1].status, "completed");
+    }
+
+    // ============== HTML 实体解码 (title / preview 派生) ==============
+
+    /// 行内 `&nbsp;` 不应作为实体字符串泄漏到 title ── 应被解码成 NBSP 后由
+    /// 末尾 `.trim()` / `\s+` 折叠掉。
+    #[test]
+    fn inline_nbsp_entity_is_decoded_and_trimmed() {
+        let (t, p) = extract_title_and_preview("&nbsp;Hello\n&nbsp;World\n");
+        assert_eq!(t, "Hello");
+        assert_eq!(p, "World");
+    }
+
+    /// 行首 `&nbsp;` + 字面内容: NBSP 解码后被 `.trim()` 吃掉; 但**不会**
+    /// 进一步吃掉后面的 `#` ── `strip_markdown` 的 markdown 前缀剥离在实体解码
+    /// 之后跑, 此时 NBSP 已吞掉, `#` 不再处于首位, 视为字面字符保留。
+    #[test]
+    fn leading_nbsp_entity_is_trimmed_from_title() {
+        let (t, _) = extract_title_and_preview("&nbsp;Real title\nbody\n");
+        assert_eq!(t, "Real title");
+    }
+
+    /// 行内 NBSP 折叠为单空格: `A&nbsp;B` → `A B`。
+    #[test]
+    fn inline_nbsp_acts_as_separator() {
+        let (t, _) = extract_title_and_preview("A&nbsp;B&nbsp;C\nbody\n");
+        assert_eq!(t, "A B C");
+    }
+
+    /// 十六进制形式 `&#xa0;` 同样能解码为 NBSP。
+    #[test]
+    fn hex_nbsp_entity_is_decoded() {
+        let (t, _) = extract_title_and_preview("&#xa0;Hello\nbody\n");
+        assert_eq!(t, "Hello");
+    }
+
+    /// `&amp;` 解码为 `&`, 不再以实体字符串残留。
+    #[test]
+    fn amp_entity_is_decoded() {
+        let (t, _) = extract_title_and_preview("A &amp; B\nbody\n");
+        assert_eq!(t, "A & B");
+    }
+
+    /// `&lt;` / `&gt;` 解码为 `<` / `>`。
+    #[test]
+    fn lt_gt_entities_are_decoded() {
+        let (t, _) = extract_title_and_preview("&lt;tag&gt;\nbody\n");
+        assert_eq!(t, "<tag>");
+    }
+
+    /// `&quot;` / `&#34;` 解码为 `"`。
+    #[test]
+    fn quot_entity_is_decoded() {
+        let (t, _) = extract_title_and_preview("say &quot;hi&quot;\nbody\n");
+        assert_eq!(t, "say \"hi\"");
+        let (t2, _) = extract_title_and_preview("say &#34;hi&#34;\nbody\n");
+        assert_eq!(t2, "say \"hi\"");
+    }
+
+    /// 未知 / 畸形实体原样保留, 不抛错也不吃字符。
+    #[test]
+    fn unknown_entity_is_left_as_is() {
+        let (t, _) = extract_title_and_preview("foo &unknown; bar\nbody\n");
+        assert_eq!(t, "foo &unknown; bar");
+        // 缺分号也原样保留
+        let (t2, _) = extract_title_and_preview("foo &amp bar\nbody\n");
+        assert_eq!(t2, "foo &amp bar");
+    }
+
+    /// HTML 实体解码不应对 markdown 装饰字符产生误判 ── `*` / `_` 仍按原
+    /// 逻辑被剥除。
+    #[test]
+    fn entity_decode_does_not_break_markdown_stripping() {
+        let (t, _) = extract_title_and_preview("**bold &amp; italic**\nbody\n");
+        assert_eq!(t, "bold & italic");
+    }
+
+    // ============== extract_title_and_preview 短路语义 ==============
+
+    /// 验证只取前 2 个非空行 ── 后面的内容无论多长都不会影响 title / preview。
+    /// 同时隐式验证短路不会破坏语义 (即使输入 100+ 行也只取首二)。
+    #[test]
+    fn title_and_preview_use_only_first_two_non_empty_lines() {
+        let mut lines: Vec<String> = vec!["# Title".to_string()];
+        for i in 0..200 {
+            lines.push(format!("body line {i}"));
+        }
+        let input = lines.join("\n");
+        let (t, p) = extract_title_and_preview(&input);
+        assert_eq!(t, "Title");
+        assert_eq!(p, "body line 0");
+    }
+
+    // ============== 边界 / 兜底行为 ==============
+
+    /// `&#0;` 不应解码为 NUL 控制字符泄漏到 title ── HTML5 规范里 `&#0;`
+    /// 渲染为空, 我们让整个实体原样保留以保持用户语义可读。
+    #[test]
+    fn numeric_null_entity_is_not_decoded_to_nul_char() {
+        let (t, _) = extract_title_and_preview("&#0;Hello\nbody\n");
+        assert_eq!(t, "&#0;Hello");
+        assert!(!t.contains('\0'));
+    }
+
+    /// `is_blank_line` 对所有空白类 HTML 实体 (命名 + 数字 + 十六进制) 都应
+    /// 识别为 blank, 同时对夹杂内容的行仍正确判定为非 blank。
+    #[test]
+    fn is_blank_line_recognizes_all_whitespace_entities() {
+        // 命名实体
+        for entity in [
+            "&nbsp;", "&ensp;", "&emsp;", "&thinsp;", "&hairsp;",
+            "&numsp;", "&puncsp;", "&mediumsp;", "&idsp;",
+        ] {
+            assert!(is_blank_line(entity), "named entity {entity} should be blank");
+        }
+        // 数字 / 十六进制实体 ── 验证 `decode_html_entities` 数字路径也对空白类生效
+        for entity in [
+            "&#160;", "&#xa0;", "&#xA0;",
+            "&#8194;", "&#x2002;",  // EN SPACE
+            "&#8201;", "&#x2009;",  // THIN SPACE
+            "&#12288;", "&#x3000;", // IDEOGRAPHIC SPACE
+        ] {
+            assert!(is_blank_line(entity), "numeric entity {entity} should be blank");
+        }
+        // 字面 NBSP 字符
+        assert!(is_blank_line("\u{00A0}"));
+        // 夹杂内容 → 非 blank
+        assert!(!is_blank_line("&ensp;Hello"));
+        assert!(!is_blank_line("A&emsp;B"));
+        assert!(!is_blank_line("&#160;x"));
+        assert!(!is_blank_line("A &amp; B"));
+    }
+
+    // ============== 其他空白类 HTML 实体 ==============
+
+    /// `&ensp;` / `&emsp;` / `&thinsp;` / `&hairsp;` / `&numsp;` / `&puncsp;` /
+    /// `&mediumsp;` / `&idsp;` ── 所有 Unicode Zs (Separator, Space) 命名实体
+    /// 都应被解码并被 `str::trim` + `\s+` 折叠为单空格, 不应作为可见字符
+    /// 残留在 title / preview 中。
+    #[test]
+    fn other_whitespace_entities_decode_and_collapse() {
+        for (entity, label) in [
+            ("&ensp;", "EN SPACE"),
+            ("&emsp;", "EM SPACE"),
+            ("&thinsp;", "THIN SPACE"),
+            ("&hairsp;", "HAIR SPACE"),
+            ("&numsp;", "FIGURE SPACE"),
+            ("&puncsp;", "PUNCTUATION SPACE"),
+            ("&mediumsp;", "MEDIUM MATHEMATICAL SPACE"),
+            ("&idsp;", "IDEOGRAPHIC SPACE"),
+        ] {
+            let md = format!("{entity}Hello\nbody\n");
+            let (t, p) = extract_title_and_preview(&md);
+            assert_eq!(t, "Hello", "entity {entity} ({label}) leaked into title");
+            assert_eq!(p, "body");
+        }
+    }
+
+    /// 行内混合多种空白实体 ── 全部折叠为单空格, 不出现连续多个空格。
+    #[test]
+    fn mixed_whitespace_entities_collapse_to_single_spaces() {
+        let (t, _) = extract_title_and_preview("A&ensp;B&emsp;C&nbsp;D&thinsp;E\nbody\n");
+        assert_eq!(t, "A B C D E");
+    }
+
+    /// 整行是任意空白类实体 ── 应被 `is_blank_line` 或下游 `is_empty` 过滤。
+    /// 覆盖命名实体 (`&nbsp;` 等 9 种) + 数字实体 (`&#160;` 等 4 种) 两条路径,
+    /// 验证 `is_blank_line` 解码 + `strip_markdown` 解码对空白类实体都生效。
+    #[test]
+    fn whole_line_whitespace_entity_is_blank() {
+        for entity in [
+            // 命名实体 ── 互不为前缀, 顺序无关
+            "&nbsp;",
+            "&ensp;",
+            "&emsp;",
+            "&thinsp;",
+            "&hairsp;",
+            "&numsp;",
+            "&puncsp;",
+            "&mediumsp;",
+            "&idsp;",
+            // 数字实体 ── 验证 `try_decode_entity` 数字路径也对空白类生效
+            "&#160;",  // NBSP 十进制
+            "&#xa0;",  // NBSP 十六进制
+            "&#8199;", // FIGURE SPACE 十进制
+            "&#x2002;", // EN SPACE 十六进制
+        ] {
+            let md = format!("{entity}\n# Real title\nbody\n");
+            let (t, p) = extract_title_and_preview(&md);
+            assert_eq!(t, "Real title", "entity {entity} should be blank");
+            assert_eq!(p, "body");
+        }
+    }
+
+    /// todo content 含空白类 HTML 实体时不应被提取 ── 与 title/preview 的
+    /// 空白判定对齐。修复前 `is_blank_line` 不识别 `&#160;`, 会泄漏空白 todo。
+    #[test]
+    fn todos_skip_blank_content_with_whitespace_entities() {
+        let v = extract_todos_from_body("- [ ] &nbsp;\n- [ ] &#160;\n- [x] real task\n");
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].content, "real task");
+        assert_eq!(v[0].status, "completed");
+    }
+
+    /// todo content 里的实体解码 (与 title/preview 流水线对齐)。
+    #[test]
+    fn todos_decode_entities_in_content() {
+        let v = extract_todos_from_body("- [ ] buy &amp; sell\n- [ ] A &lt; B\n");
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].content, "buy & sell");
+        assert_eq!(v[1].content, "A < B");
+    }
+
+    /// agent thread card 的 `title="..."` 属性应解全部实体 (此前 `decode_markdown_attr`
+    /// 只解 `&amp;` / `&quot;`, 现委托 `decode_html_entities` 后覆盖全部)。
+    /// 注: `&nbsp;` 解码后保留为字面 NBSP ── agent thread title 不走 `strip_markdown`
+    /// 的空白折叠流水线, 这是与 title/preview 的有意差别 (前者保留原文结构)。
+    #[test]
+    fn agent_thread_card_attr_decodes_all_supported_entities() {
+        let md = "::agent-thread-card{threadId=\"x\" title=\"&lt;AI&gt; &amp; Helper &nbsp; v2\" agentType=\"r\" collapsed=\"false\"}\n";
+        let agents = extract_agent_threads_from_body(md);
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents[0].title, "<AI> & Helper \u{00A0} v2");
     }
 }

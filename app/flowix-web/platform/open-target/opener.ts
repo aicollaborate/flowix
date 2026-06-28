@@ -26,8 +26,8 @@ import { resolveAbsolutePath } from '@platform/open-target/path-helper';
 import type { ResolvedOpenTarget } from '@platform/open-target/types';
 
 /**
- * 把 ResolvedOpenTarget 喂给 document-store。 跨 notebook 时先切, 切完
- * 等 memos 列表重新加载完成再设置 selectedMemo + openMemoDocument。
+ * 把 ResolvedOpenTarget 喂给 document-store。 跨 notebook 时先切 notebook,
+ * 预置目标 selectedMemo, 再加载目标列表并打开文档。
  *
  * 跟 `note-link/view-note.ts::openNoteReference` 同源, 但这里 ResolvedOpenTarget 来自
  * 后端权威解析 (memoId / notebookId / absolutePath 全部校验过)。
@@ -35,6 +35,22 @@ import type { ResolvedOpenTarget } from '@platform/open-target/types';
 export async function openNoteByTarget(resolved: ResolvedOpenTarget): Promise<void> {
   const store = useMemoStore.getState();
   const documentStore = useDocumentStore.getState();
+
+  const memoItem: MemoItem = {
+    id: resolved.memoId,
+    filename: resolved.memoTitle,
+    preview: '',
+    tags: [],
+    todos: [],
+    agents: [],
+    createdAt: 0,
+    updatedAt: 0,
+    favorited: false,
+    icon: null,
+    colors: [],
+    properties: {},
+    isOpen: true,
+  };
 
   // 1. 跨 notebook 切换
   const targetNotebook: Notebook | null = store.notebooks.find(
@@ -59,6 +75,10 @@ export async function openNoteByTarget(resolved: ResolvedOpenTarget): Promise<vo
           useMemoStore.getState().setSelectedNotebook(reloaded);
         }
       }
+      // 先写入目标 memo, 让随后 loadMemos 以目标 id 对齐 selectedMemo。
+      // 否则跨 notebook 时旧 selectedMemo 不在新列表中, loadMemos 会短暂置空,
+      // MemoList 的清空文档副作用可能插队到真正的打开流程里。
+      useMemoStore.getState().setSelectedMemo(memoItem);
       // 重新拉 memos (新 notebook 的列表)
       await useMemoStore.getState().loadMemos({ notebookId: resolved.notebookId });
     } catch (err) {
@@ -72,21 +92,6 @@ export async function openNoteByTarget(resolved: ResolvedOpenTarget): Promise<vo
   //    ── 顺序约束: setSelectedMemo **必须早于** openMemoDocument, 关闭
   //    enqueueTransition 异步窗口期间 activeMemoSession.memoId 滞后的
   //    "reopen 旧 memo" race (见 noteReference fix)。
-  const memoItem: MemoItem = {
-    id: resolved.memoId,
-    filename: resolved.memoTitle,
-    preview: '',
-    tags: [],
-    todos: [],
-    createdAt: 0,
-    updatedAt: 0,
-    favorited: false,
-    icon: null,
-    colors: [],
-    properties: {},
-    isOpen: true,
-  };
-
   const latest = useMemoStore.getState();
   if (!latest.memos.find((m) => m.id === memoItem.id)) {
     latest.upsertMemo(memoItem);

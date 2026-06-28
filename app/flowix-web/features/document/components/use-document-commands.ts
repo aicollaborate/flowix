@@ -48,7 +48,18 @@ function extractTitleFromMarkdown(body: string): string {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    return trimmed
+    // 与后端 `derivation::decode_html_entities` 对齐: 行首/行尾的空白类 HTML
+    // 实体 (例如 `&nbsp;` / `&ensp;` / `&#160;`) 在标题里会被折叠为空, 不应作为内容
+    // 泄漏到导出文件名 / 复制文本。
+    const cleaned = trimmed
+      .replace(/&nbsp;|&#160;|&#xa0;|&#xA0;| |&ensp;|&#8194;|&#x2002;|&emsp;|&#8195;|&#x2003;|&thinsp;|&#8201;|&#x2009;|&hairsp;|&#8202;|&#x200A;|&numsp;|&#8199;|&#x2007;|&puncsp;|&#8200;|&#x2008;|&mediumsp;|&#8287;|&#x205F;|&idsp;|&#12288;|&#x3000;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;|&#34;/g, '"')
+      .trim();
+    if (!cleaned) continue;
+    return cleaned
       .replace(/^#+\s*/, '')
       .replace(/^[-*+]\s*\[[ xX]?\]\s*/, '')
       .replace(/\*\*([^*]+)\*\*/g, '$1')

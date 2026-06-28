@@ -17,7 +17,7 @@ use crate::runtime_log;
 use crate::skills::SkillStore;
 use crate::threads::{ChatMessage as ThreadChatMessage, ThreadManager};
 use crate::user_config::{AiModelConfig, UserConfigStore};
-use flowix_core::memo_file::MemoFile;
+use flowix_core::memo_file::{extract_body_content, MemoFile};
 use rllm::chat::{ChatMessage as LlmChatMessage, ChatProvider, ChatRole, MessageType, Tool};
 use rllm::{FunctionCall, ToolCall as LlmToolCall};
 use uuid::Uuid;
@@ -179,9 +179,14 @@ pub struct AgentUserMessage {
     pub content: String,
     pub llm_content: Option<String>,
     pub system_reminder_directory: Option<String>,
-    pub runtime: Option<String>,
+    /// 选中 Agent 类型 ── `'flowix' | 'codex'` (JSON wire: `agentType`).
+    /// 前端 chat-store.ts `agent.chatStream()` 第二个入参 payload 字段.
+    /// 后端按值分流 (见 `commands/agent.rs:chat_with_agent_stream`).
+    pub agent_type: Option<String>,
     pub permission_mode: Option<String>,
     pub codex_model: Option<String>,
+    pub agent_role_memo_id: Option<String>,
+    pub agent_role_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -645,16 +650,34 @@ impl AgentManager {
         Ok(instance)
     }
 
-    fn build_instance(&self, config: &AiModelConfig) -> AgentInstance {
-        // Enable reasoning_split to separate thinking from final response
-        let reasoning_split = config.model.contains("MiniMax");
-        // 系统 prompt 注入 skills 摘要 (`# Skills` 段), LLM 看到名字后按需
-        // `load_skill` 拉全文 ── `summaries()` 是稳定排序, 跨重启无漂移。
-        let system_prompt = build_system_prompt(SystemPromptConfig {
+    /// Build the system prompt for `config`, optionally substituting the
+    /// default role section with a runtime-supplied Agent Role.
+    /// Pass `None` for `role_override` to use the default static role
+    /// (see [`crate::prompt::role::section`]).
+    fn base_system_prompt(
+        &self,
+        config: &AiModelConfig,
+        role_override: Option<&str>,
+    ) -> String {
+        build_system_prompt(SystemPromptConfig {
             model: &config.model,
             tools_enabled: true,
             skills: self.skill_store.summaries(),
-        });
+            role_override,
+        })
+    }
+
+    fn build_instance(&self, config: &AiModelConfig) -> AgentInstance {
+        self.build_instance_with_system_prompt(config, self.base_system_prompt(config, None))
+    }
+
+    fn build_instance_with_system_prompt(
+        &self,
+        config: &AiModelConfig,
+        system_prompt: String,
+    ) -> AgentInstance {
+        // Enable reasoning_split to separate thinking from final response
+        let reasoning_split = config.model.contains("MiniMax");
 
         let provider = OpenAICompatibleProvider::new(
             OpenAICompatibleConfig::new(&config.api_key, &config.model, &config.api_url)
@@ -666,6 +689,34 @@ impl AgentManager {
             provider: Arc::new(provider),
             tools: get_all_tools(),
         }
+    }
+
+    fn agent_role_system_section(&self, message: &AgentUserMessage) -> Option<String> {
+        let memo_id = message.agent_role_memo_id.as_deref()?.trim();
+        if memo_id.is_empty() {
+            return None;
+        }
+
+        let role_body = {
+            let memo_file = self.memo_file.read().ok()?;
+            let (_entry, content) = memo_file.read_memo_with_body_global(memo_id)?;
+            extract_body_content(&content).trim().to_string()
+        };
+
+        if role_body.is_empty() {
+            return None;
+        }
+
+        let role_name = message
+            .agent_role_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("未命名角色");
+
+        Some(format!(
+            "# Agent Role\nRole name: {role_name}\n\n<role-instructions>\n{role_body}\n</role-instructions>"
+        ))
     }
 
     /// 记录本轮 (tool, args) 调用, 返回是否达到熔断阈值。
@@ -962,7 +1013,16 @@ impl AgentManager {
         cancel: &Arc<AtomicBool>,
     ) -> Result<String, AgentError> {
         let ai_config = self.user_config.get_ai_config().model;
-        let instance = self.ensure_instance(&ai_config).await?;
+        let instance = if let Some(role_section) = self.agent_role_system_section(&message) {
+            // Runtime Agent Role takes the role slot — base_system_prompt
+            // omits the default static role section in this branch, keeping
+            // exactly one role block in the final prompt (mutual exclusion
+            // with [`crate::prompt::role::section`]).
+            let system_prompt = self.base_system_prompt(&ai_config, Some(&role_section));
+            self.build_instance_with_system_prompt(&ai_config, system_prompt)
+        } else {
+            self.ensure_instance(&ai_config).await?
+        };
 
         self.persist_user_message(thread_id, &message).await?;
         // 兜底清空该 thread 的卡死检测计数。LLM 给最终回答的正常路径也会清,

@@ -337,6 +337,7 @@ function memoFromSearchHit(hit: MemoSearchHit): MemoItem {
     preview: hit.snippet,
     tags: [],
     todos: [],
+    agents: [],
     createdAt: hit.updatedAt,
     updatedAt: hit.updatedAt,
     favorited: false,

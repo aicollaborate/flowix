@@ -4,7 +4,7 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { subscribe } from '@platform/tauri/event-bus';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import type { UserSettings } from '@/lib/constants';
-import type { AgentChunk, AgentCodexModel, AgentPermissionMode, AgentRuntime, ChatMessage, RunInfo } from '@/types/agent';
+import type { AgentChunk, AgentCodexModel, AgentPermissionMode, AgentTypeKey, ChatMessage, RunInfo } from '@/types/agent';
 import type { AgentAccessConfig } from '@/lib/types/agent-access';
 import type { MemoColor } from '@features/memo';
 
@@ -73,6 +73,16 @@ export interface WebPageMetadata {
   image: string;
 }
 
+export interface AgentRoleMemoItem {
+  memoId: string;
+  roleName: string;
+  filename: string;
+  memoIcon?: string | null;
+  notebookId: string;
+  notebookName: string;
+  notebookIcon?: string | null;
+}
+
 export const web = {
   parsePage: (url: string) => invoke<WebPageMetadata>('parse_web_page', { url }),
 };
@@ -104,7 +114,7 @@ export const settings = {
 };
 
 // Memos
-export type FilterType = 'all' | 'todos' | 'favorited' | 'tagged' | 'thisWeek' | 'thisMonth';
+export type FilterType = 'all' | 'todos' | 'agents' | 'favorited' | 'tagged' | 'thisWeek' | 'thisMonth';
 export type SortType = 'createdAt' | 'updatedAt';
 
 export type MatchField = 'title' | 'tag' | 'body';
@@ -147,18 +157,6 @@ export interface MemoVersionMeta {
   contentHash: string;
 }
 
-export interface MemoTodoMetadataEntry {
-  content: string;
-  status: string;
-  memoId: string;
-  priority?: string;
-  timeRange?: string;
-  owner?: string;
-  assignee?: string;
-  createdAt?: number;
-  updatedAt?: number;
-}
-
 export const memos = {
   getMemos: (params?: {
     notebookId?: string;
@@ -176,10 +174,16 @@ export const memos = {
       query,
       limit,
     }),
+  listAgentRoleMemos: () =>
+    invoke<AgentRoleMemoItem[]>('list_agent_role_memos'),
   getUsedTagIds: (notebookId?: string) =>
-    invoke<{ usedTagIds: string[] }>('get_used_memo_tag_ids', { notebookId }),
-  getTodoMetadata: (notebookId?: string, sort?: SortType) =>
-    invoke<MemoTodoMetadataEntry[]>('get_memo_todo_metadata', { notebookId, sort }),
+    invoke<{
+      usedTagIds: string[];
+      tagCounts: { tagId: string; count: number }[];
+      totalMemoCount: number;
+      agentMemoCount: number;
+      todoMemoCount: number;
+    }>('get_used_memo_tag_ids', { notebookId }),
   getTodoCount: (notebookId?: string) =>
     invoke<number>('get_memo_todo_count', { notebookId }),
   readMemo: (id: string) => invoke<any | null>('read_memo', { id }),
@@ -358,9 +362,11 @@ interface AgentUserMessage {
   llmContent?: string;
   systemReminderDirectory?: string;
   systemReminderDocumentPath?: string;
-  runtime?: AgentRuntime;
+  agentType?: AgentTypeKey;
   permissionMode?: AgentPermissionMode;
   codexModel?: AgentCodexModel;
+  agentRoleMemoId?: string;
+  agentRoleName?: string;
 }
 
 export interface ThreadInfo {

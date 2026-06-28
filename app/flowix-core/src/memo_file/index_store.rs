@@ -5,12 +5,12 @@ use std::path::PathBuf;
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use super::derivation::extract_thumbnail;
+use super::derivation::{extract_agent_threads_from_body, extract_thumbnail};
 use super::frontmatter::extract_frontmatter_properties;
 use super::notebook::sqlite_to_io;
 use super::types::{
-    Memo, MemoColor, MemoIndexEntry, MemoIndexFile, MemoLocation, MemoTodoEntry, NotebookConfig,
-    TodoItem,
+    AgentThreadItem, Memo, MemoColor, MemoIndexEntry, MemoIndexFile, MemoLocation, MemoTodoEntry,
+    NotebookConfig, TodoItem,
 };
 use super::MemoFile;
 
@@ -92,6 +92,7 @@ impl MemoFile {
                 preview TEXT NOT NULL,
                 thumbnail TEXT,
                 thumbnail_checked INTEGER NOT NULL DEFAULT 0,
+                agents_checked INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 favorited INTEGER NOT NULL,
@@ -131,6 +132,17 @@ impl MemoFile {
                 PRIMARY KEY(memo_id, content),
                 FOREIGN KEY(memo_id) REFERENCES memos(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS memo_agents (
+                memo_id TEXT NOT NULL,
+                thread_id TEXT NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                agent_type TEXT NOT NULL DEFAULT '',
+                position INTEGER NOT NULL,
+                PRIMARY KEY(memo_id, thread_id),
+                FOREIGN KEY(memo_id) REFERENCES memos(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_memo_agents_memo_id
+                ON memo_agents(memo_id);
             "#,
         )
         .map_err(sqlite_to_io)?;
@@ -140,12 +152,18 @@ impl MemoFile {
             "ALTER TABLE memos ADD COLUMN properties TEXT NOT NULL DEFAULT '{}'",
             "ALTER TABLE memos ADD COLUMN thumbnail TEXT",
             "ALTER TABLE memos ADD COLUMN thumbnail_checked INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE memos ADD COLUMN agents_checked INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE memo_todos ADD COLUMN priority TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE memo_todos ADD COLUMN time_range TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE memo_todos ADD COLUMN owner TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE memo_todos ADD COLUMN assignee TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE memo_todos ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE memo_todos ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+            // schema 改名: memo_agents.role_key → agent_type (与 Rust struct
+            // AgentThreadItem.agent_type + 前端 AgentTypeKey 对齐)。 用
+            // ALTER TABLE ... RENAME COLUMN 把已有数据保留迁移 ── 旧库
+            // 升级后字段自动重命名, 不需要额外数据搬运。
+            "ALTER TABLE memo_agents RENAME COLUMN role_key TO agent_type",
         ] {
             let _ = conn.execute(sql, []);
         }
@@ -201,8 +219,8 @@ impl MemoFile {
             tx.execute(
                 r#"
                 INSERT INTO memos
-                    (id, notebook_id, filename, preview, thumbnail, thumbnail_checked, created_at, updated_at, favorited, icon, properties)
-                VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?8, ?9, ?10)
+                    (id, notebook_id, filename, preview, thumbnail, thumbnail_checked, agents_checked, created_at, updated_at, favorited, icon, properties)
+                VALUES (?1, ?2, ?3, ?4, ?5, 1, 1, ?6, ?7, ?8, ?9, ?10)
                 "#,
                 params![
                     entry.id,
@@ -241,6 +259,11 @@ impl MemoFile {
         .map_err(sqlite_to_io)?;
         tx.execute(
             "DELETE FROM memo_todos WHERE memo_id = ?1",
+            params![entry.id],
+        )
+        .map_err(sqlite_to_io)?;
+        tx.execute(
+            "DELETE FROM memo_agents WHERE memo_id = ?1",
             params![entry.id],
         )
         .map_err(sqlite_to_io)?;
@@ -291,6 +314,23 @@ impl MemoFile {
                     existing.map(|entry| entry.assignee.as_str()).unwrap_or(""),
                     created_at,
                     updated_at,
+                    position as i64,
+                ],
+            )
+            .map_err(sqlite_to_io)?;
+        }
+        for (position, agent) in entry.agents.iter().enumerate() {
+            tx.execute(
+                r#"
+                INSERT OR REPLACE INTO memo_agents
+                    (memo_id, thread_id, title, agent_type, position)
+                VALUES (?1, ?2, ?3, ?4, ?5)
+                "#,
+                params![
+                    entry.id,
+                    agent.thread_id,
+                    agent.title,
+                    agent.agent_type,
                     position as i64,
                 ],
             )
@@ -367,6 +407,7 @@ impl MemoFile {
                     thumbnail: row.get(3)?,
                     tags: Vec::new(),
                     todos: Vec::new(),
+                    agents: Vec::new(),
                     created_at: row.get(4)?,
                     updated_at: row.get(5)?,
                     favorited: row.get::<_, i64>(6)? != 0,
@@ -385,9 +426,11 @@ impl MemoFile {
             entry.tags = self.read_entry_tags(conn, &entry.id)?;
             entry.colors = self.read_entry_colors(conn, &entry.id)?;
             entry.todos = self.read_entry_todos(conn, &entry.id)?;
+            entry.agents = self.read_entry_agents(conn, &entry.id)?;
         }
         let memo_base = self.memo_base_for_notebook_id(notebook_id);
         self.backfill_missing_properties(conn, notebook_id, &memo_base, &mut memos)?;
+        self.backfill_missing_agents(conn, notebook_id, &memo_base, &mut memos)?;
         self.backfill_missing_thumbnails(conn, notebook_id, &memo_base, &mut memos)?;
 
         Ok(Some(MemoIndexFile {
@@ -481,6 +524,71 @@ impl MemoFile {
         Ok(())
     }
 
+    fn backfill_missing_agents(
+        &self,
+        conn: &Connection,
+        notebook_id: &str,
+        memo_base: &std::path::Path,
+        memos: &mut [MemoIndexEntry],
+    ) -> std::io::Result<()> {
+        for entry in memos {
+            if !entry.agents.is_empty() {
+                continue;
+            }
+
+            let checked = conn
+                .query_row(
+                    "SELECT agents_checked FROM memos WHERE notebook_id = ?1 AND id = ?2",
+                    params![notebook_id, entry.id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(sqlite_to_io)?
+                .unwrap_or(0);
+            if checked != 0 {
+                continue;
+            }
+
+            let path = memo_base.join(&entry.filename);
+            let agents = fs::read_to_string(path)
+                .ok()
+                .map(|content| extract_agent_threads_from_body(&content))
+                .unwrap_or_default();
+
+            let tx = conn.unchecked_transaction().map_err(sqlite_to_io)?;
+            tx.execute(
+                "DELETE FROM memo_agents WHERE memo_id = ?1",
+                params![entry.id],
+            )
+            .map_err(sqlite_to_io)?;
+            for (position, agent) in agents.iter().enumerate() {
+                tx.execute(
+                    r#"
+                    INSERT OR REPLACE INTO memo_agents
+                        (memo_id, thread_id, title, agent_type, position)
+                    VALUES (?1, ?2, ?3, ?4, ?5)
+                    "#,
+                    params![
+                        entry.id,
+                        agent.thread_id,
+                        agent.title,
+                        agent.agent_type,
+                        position as i64,
+                    ],
+                )
+                .map_err(sqlite_to_io)?;
+            }
+            tx.execute(
+                "UPDATE memos SET agents_checked = 1 WHERE notebook_id = ?1 AND id = ?2",
+                params![notebook_id, entry.id],
+            )
+            .map_err(sqlite_to_io)?;
+            tx.commit().map_err(sqlite_to_io)?;
+            entry.agents = agents;
+        }
+        Ok(())
+    }
+
     fn read_entry_tags(&self, conn: &Connection, memo_id: &str) -> std::io::Result<Vec<String>> {
         let mut stmt = conn
             .prepare("SELECT tag FROM memo_tags WHERE memo_id = ?1 ORDER BY rowid ASC")
@@ -521,6 +629,28 @@ impl MemoFile {
                 Ok(TodoItem {
                     content: row.get(0)?,
                     status: row.get(1)?,
+                })
+            })
+            .map_err(sqlite_to_io)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(sqlite_to_io)
+    }
+
+    fn read_entry_agents(
+        &self,
+        conn: &Connection,
+        memo_id: &str,
+    ) -> std::io::Result<Vec<AgentThreadItem>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT thread_id, title, agent_type FROM memo_agents WHERE memo_id = ?1 ORDER BY position ASC",
+            )
+            .map_err(sqlite_to_io)?;
+        let rows = stmt
+            .query_map(params![memo_id], |row| {
+                Ok(AgentThreadItem {
+                    thread_id: row.get(0)?,
+                    title: row.get(1)?,
+                    agent_type: row.get(2)?,
                 })
             })
             .map_err(sqlite_to_io)?;
@@ -609,6 +739,7 @@ impl MemoFile {
                             thumbnail: row.get(3)?,
                             tags: Vec::new(),
                             todos: Vec::new(),
+                            agents: Vec::new(),
                             created_at: row.get(4)?,
                             updated_at: row.get(5)?,
                             favorited: row.get::<_, i64>(6)? != 0,
@@ -640,7 +771,14 @@ impl MemoFile {
         memo.tags = self.read_entry_tags(&conn, &memo.id)?;
         memo.colors = self.read_entry_colors(&conn, &memo.id)?;
         memo.todos = self.read_entry_todos(&conn, &memo.id)?;
+        memo.agents = self.read_entry_agents(&conn, &memo.id)?;
         self.backfill_missing_properties(
+            &conn,
+            &notebook.id,
+            &PathBuf::from(&notebook.path),
+            std::slice::from_mut(&mut memo),
+        )?;
+        self.backfill_missing_agents(
             &conn,
             &notebook.id,
             &PathBuf::from(&notebook.path),
@@ -701,6 +839,7 @@ impl MemoFile {
             thumbnail: memo.thumbnail.clone(),
             tags: memo.tags.clone(),
             todos: memo.todos.clone(),
+            agents: memo.agents.clone(),
             created_at: memo.created_at,
             updated_at: memo.updated_at,
             favorited: memo.favorited,
@@ -718,6 +857,7 @@ impl MemoFile {
             thumbnail: entry.thumbnail.clone(),
             tags: entry.tags.clone(),
             todos: entry.todos.clone(),
+            agents: entry.agents.clone(),
             created_at: entry.created_at,
             updated_at: entry.updated_at,
             favorited: entry.favorited,
@@ -795,6 +935,72 @@ impl MemoFile {
             .read_index_for_notebook_id(notebook_id)?
             .unwrap_or_default();
         Self::used_tag_ids_from_index(list)
+    }
+
+    pub fn read_tag_usage_summary_for_notebook_id(
+        &self,
+        notebook_id: Option<&str>,
+    ) -> std::io::Result<(Vec<String>, Vec<(String, usize)>, usize, usize, usize)> {
+        let notebook_id = self.notebook_id_for_index(notebook_id);
+        let _ = self.read_index_for_notebook_id(Some(&notebook_id));
+        let conn = self.open_memo_index_db()?;
+        let total_count = conn
+            .query_row(
+                "SELECT COUNT(*) FROM memos WHERE notebook_id = ?1",
+                params![notebook_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(sqlite_to_io)? as usize;
+        let agent_memo_count = conn
+            .query_row(
+                r#"
+                SELECT COUNT(DISTINCT ma.memo_id)
+                FROM memo_agents ma
+                JOIN memos m ON m.id = ma.memo_id
+                WHERE m.notebook_id = ?1
+                "#,
+                params![notebook_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(sqlite_to_io)? as usize;
+        let todo_memo_count = conn
+            .query_row(
+                r#"
+                SELECT COUNT(DISTINCT mt.memo_id)
+                FROM memo_todos mt
+                JOIN memos m ON m.id = mt.memo_id
+                WHERE m.notebook_id = ?1
+                "#,
+                params![notebook_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(sqlite_to_io)? as usize;
+        let mut stmt = conn
+            .prepare(
+                r#"
+                SELECT mt.tag, COUNT(*)
+                FROM memo_tags mt
+                JOIN memos m ON m.id = mt.memo_id
+                WHERE m.notebook_id = ?1
+                GROUP BY mt.tag
+                ORDER BY mt.tag COLLATE NOCASE ASC
+                "#,
+            )
+            .map_err(sqlite_to_io)?;
+        let rows = stmt
+            .query_map(params![notebook_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+            })
+            .map_err(sqlite_to_io)?;
+        let tag_counts = rows.collect::<Result<Vec<_>, _>>().map_err(sqlite_to_io)?;
+        let used_tag_ids = tag_counts.iter().map(|(tag, _)| tag.clone()).collect();
+        Ok((
+            used_tag_ids,
+            tag_counts,
+            total_count,
+            agent_memo_count,
+            todo_memo_count,
+        ))
     }
 
     fn used_tag_ids_from_index(list: MemoIndexFile) -> std::io::Result<Vec<String>> {

@@ -5,6 +5,7 @@ import {
   FONT_FAMILY_OPTIONS,
   type PersonalizeConfig,
   type FormatConfig,
+  type PropertiesConfig,
   type UserSettings,
 } from '@/lib/constants';
 import { sanitizeTheme, type ThemeId } from '@features/theme';
@@ -87,7 +88,34 @@ function mergeSettings(base: UserSettings, updates: UserSettingsUpdate): UserSet
     theme,
     language: sanitizeAppLanguage(updates.language ?? base.language),
     shortcuts: { ...base.shortcuts, ...(updates.shortcuts ?? {}) },
+    properties: {
+      ...base.properties,
+      ...(updates.properties ?? {}),
+    },
   };
+}
+
+function sanitizePropertiesConfig(properties: PropertiesConfig | undefined): PropertiesConfig {
+  const fields = Array.isArray(properties?.fields) ? properties.fields : [];
+  const deduped = new Map<string, PropertiesConfig['fields'][number]>();
+
+  fields.forEach((field) => {
+    const key = String(field?.key ?? '').trim();
+    const name = String(field?.name ?? '').trim();
+    const type = field?.type;
+    if (!key || !name) return;
+    if (!['Text', 'Number', 'Date', 'URL', 'Icon', 'Select', 'MultiSelect'].includes(type)) return;
+    deduped.set(key, {
+      key,
+      name,
+      type,
+      options: Array.isArray(field.options)
+        ? field.options.map((option) => String(option).trim()).filter(Boolean)
+        : undefined,
+    });
+  });
+
+  return { fields: [...deduped.values()] };
 }
 
 /** 兜底默认值 — 字段为空 (老 snake_case 数据 / 外部写入 / 迁移中等) 时填充,
@@ -120,6 +148,7 @@ function sanitizeSettings(settings: UserSettings): UserSettings {
     theme: settings.theme,
     language: sanitizeAppLanguage(settings.language),
     shortcuts: { ...DEFAULT_USER_SETTINGS.shortcuts, ...(settings.shortcuts ?? {}) },
+    properties: sanitizePropertiesConfig(settings.properties),
   };
 }
 
@@ -129,6 +158,7 @@ export interface UserSettingsUpdate {
   format?: Partial<FormatConfig>;
   theme?: ThemeId;
   language?: AppLanguage;
+  properties?: Partial<PropertiesConfig>;
   /**
    * 快捷键覆盖的浅合并 — 传入的字段会覆盖现有覆盖, 未提及的字段保留。
    * 注意: `{}` 不会清空 (是 no-op), 真正清空请用 `resetAllShortcutOverrides`。
